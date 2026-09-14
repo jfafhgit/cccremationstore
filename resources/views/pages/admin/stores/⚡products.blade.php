@@ -1,0 +1,362 @@
+<?php
+
+use App\Enums\ProductCategory;
+use App\Models\Product;
+use App\Models\ProductVariant;
+use App\Models\Store;
+use Flux\Flux;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Storage;
+use Livewire\Attributes\Validate;
+use Livewire\Component;
+use Livewire\WithFileUploads;
+
+new class extends Component
+{
+    use WithFileUploads;
+
+    public Store $currentStore;
+
+    public ?int $editingProductId = null;
+
+    #[Validate('required|string|max:255')]
+    public string $formName = '';
+
+    #[Validate('required|string')]
+    public string $formCategory = '';
+
+    #[Validate('nullable|string|max:2000')]
+    public string $formDescription = '';
+
+    #[Validate('required|numeric|min:0')]
+    public string $formPrice = '0.00';
+
+    #[Validate('boolean')]
+    public bool $formIsTaxable = true;
+
+    #[Validate('boolean')]
+    public bool $formIsActive = true;
+
+    #[Validate('boolean')]
+    public bool $formAllowMultipleQuantity = false;
+
+    #[Validate('boolean')]
+    public bool $formAvailableForImmediate = true;
+
+    #[Validate('boolean')]
+    public bool $formAvailableForPreNeed = true;
+
+    /** A newly-chosen upload waiting to replace the product's image. */
+    #[Validate('nullable|image|max:5120')]
+    public $formImage = null;
+
+    /**
+     * The product's image_path as it will be saved: starts equal to the
+     * existing DB value when editing, set to null by removeExistingImage()
+     * to mean "explicitly cleared" (as opposed to "untouched, still has
+     * whatever's in the database").
+     */
+    public ?string $existingImagePath = null;
+
+    public string $newVariantName = '';
+
+    public string $newVariantPrice = '0.00';
+
+    public function mount(Store $store): void
+    {
+        $this->currentStore = $store;
+        $this->formCategory = ProductCategory::Package->value;
+    }
+
+    public function products(): Collection
+    {
+        return $this->currentStore->products()->with('variants')->orderBy('category')->orderBy('sort_order')->get()->groupBy('category');
+    }
+
+    public function newProduct(?string $category = null): void
+    {
+        $this->reset(['editingProductId', 'formName', 'formDescription', 'formPrice', 'formImage', 'existingImagePath', 'newVariantName', 'newVariantPrice']);
+        $this->formCategory = $category ?? ProductCategory::Package->value;
+        $this->formIsTaxable = true;
+        $this->formIsActive = true;
+        $this->formAllowMultipleQuantity = false;
+        $this->formAvailableForImmediate = true;
+        $this->formAvailableForPreNeed = true;
+        $this->resetValidation();
+
+        Flux::modal('product-form')->show();
+    }
+
+    public function editProduct(int $productId): void
+    {
+        $product = $this->currentStore->products()->findOrFail($productId);
+
+        $this->editingProductId = $product->id;
+        $this->formName = $product->name;
+        $this->formCategory = $product->category->value;
+        $this->formDescription = $product->description ?? '';
+        $this->formPrice = number_format($product->price_cents / 100, 2, '.', '');
+        $this->formIsTaxable = $product->is_taxable;
+        $this->formIsActive = $product->is_active;
+        $this->formAllowMultipleQuantity = $product->allow_multiple_quantity;
+        $this->formAvailableForImmediate = $product->available_for_immediate;
+        $this->formAvailableForPreNeed = $product->available_for_pre_need;
+        $this->formImage = null;
+        $this->existingImagePath = $product->image_path;
+        $this->resetValidation();
+
+        Flux::modal('product-form')->show();
+    }
+
+    /**
+     * Clear the currently-showing image preview so saveProduct() knows the
+     * admin explicitly wants the image removed, not just left alone.
+     */
+    public function removeExistingImage(): void
+    {
+        $this->existingImagePath = null;
+    }
+
+    public function saveProduct(): void
+    {
+        $validated = $this->validate();
+
+        $product = $this->editingProductId
+            ? $this->currentStore->products()->findOrFail($this->editingProductId)
+            : null;
+
+        $data = [
+            'store_id' => $this->currentStore->id,
+            'category' => ProductCategory::from($validated['formCategory']),
+            'name' => $validated['formName'],
+            'slug' => str($validated['formName'])->slug().'-'.str()->random(4),
+            'description' => $validated['formDescription'] ?: null,
+            'price_cents' => (int) round(((float) $validated['formPrice']) * 100),
+            'is_taxable' => $this->formIsTaxable,
+            'is_active' => $this->formIsActive,
+            'allow_multiple_quantity' => $this->formAllowMultipleQuantity,
+            'available_for_immediate' => $this->formAvailableForImmediate,
+            'available_for_pre_need' => $this->formAvailableForPreNeed,
+        ];
+
+        if ($this->formImage) {
+            if ($product?->image_path) {
+                Storage::disk('public')->delete($product->image_path);
+            }
+            $data['image_path'] = $this->formImage->store('products', 'public');
+        } elseif ($product && $this->existingImagePath === null && $product->image_path) {
+            Storage::disk('public')->delete($product->image_path);
+            $data['image_path'] = null;
+        }
+
+        if ($product) {
+            unset($data['slug']); // keep the original slug on edit
+            $product->update($data);
+        } else {
+            Product::create($data);
+        }
+
+        Flux::modal('product-form')->close();
+        Flux::toast(variant: 'success', text: __('Product saved.'));
+    }
+
+    public function deleteProduct(int $productId): void
+    {
+        $product = $this->currentStore->products()->whereKey($productId)->first();
+
+        if ($product?->image_path) {
+            Storage::disk('public')->delete($product->image_path);
+        }
+
+        $product?->delete();
+
+        Flux::toast(variant: 'success', text: __('Product removed.'));
+    }
+
+    public function toggleActive(int $productId): void
+    {
+        $product = $this->currentStore->products()->findOrFail($productId);
+        $product->update(['is_active' => ! $product->is_active]);
+    }
+
+    public function addVariant(): void
+    {
+        if (! $this->editingProductId || trim($this->newVariantName) === '') {
+            return;
+        }
+
+        ProductVariant::create([
+            'product_id' => $this->editingProductId,
+            'name' => $this->newVariantName,
+            'price_delta_cents' => (int) round(((float) $this->newVariantPrice) * 100),
+        ]);
+
+        $this->newVariantName = '';
+        $this->newVariantPrice = '0.00';
+    }
+
+    public function removeVariant(int $variantId): void
+    {
+        ProductVariant::whereKey($variantId)->where('product_id', $this->editingProductId)->delete();
+    }
+
+    public function editingVariants(): Collection
+    {
+        if (! $this->editingProductId) {
+            return collect();
+        }
+
+        return ProductVariant::where('product_id', $this->editingProductId)->orderBy('sort_order')->get();
+    }
+}; ?>
+
+<div>
+    <flux:link :href="route('admin.stores.show', $currentStore)" wire:navigate class="text-sm text-zinc-500">&larr; {{ $currentStore->name }}</flux:link>
+
+    <div class="mt-4 flex items-center justify-between">
+        <flux:heading size="xl">{{ __('Products & packages') }}</flux:heading>
+        <flux:button variant="primary" wire:click="newProduct">{{ __('New product') }}</flux:button>
+    </div>
+
+    @foreach (ProductCategory::cases() as $category)
+        @php($categoryProducts = $this->products()->get($category->value, collect()))
+        <div class="mt-8">
+            <div class="flex items-center justify-between">
+                <flux:heading size="lg">{{ $category->label() }}s</flux:heading>
+                <flux:button size="sm" variant="ghost" wire:click="newProduct('{{ $category->value }}')">{{ __('Add') }}</flux:button>
+            </div>
+
+            @if ($categoryProducts->isEmpty())
+                <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{{ __('Nothing here yet.') }}</p>
+            @else
+                <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    @foreach ($categoryProducts as $product)
+                        <div wire:key="product-{{ $product->id }}" @class([
+                            'overflow-hidden rounded-xl border',
+                            'border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800' => $product->is_active,
+                            'border-dashed border-zinc-200 bg-zinc-50 opacity-60 dark:border-zinc-700 dark:bg-zinc-800/40' => ! $product->is_active,
+                        ])>
+                            @if ($product->imageUrl())
+                                <img src="{{ $product->imageUrl() }}" alt="" class="h-32 w-full object-cover">
+                            @endif
+                            <div class="p-4">
+                                <div class="flex items-start justify-between gap-2">
+                                    <p class="font-medium text-zinc-800 dark:text-zinc-100">{{ $product->name }}</p>
+                                    <flux:badge size="sm" :color="$product->is_active ? 'green' : 'zinc'">{{ $product->is_active ? __('Active') : __('Hidden') }}</flux:badge>
+                                </div>
+                                <div class="mt-1 flex items-center gap-2">
+                                    <p class="text-sm font-semibold text-brand-700 dark:text-brand-300">${{ $product->priceInDollars() }}</p>
+                                    @unless ($product->is_taxable)
+                                        <flux:badge size="sm" color="zinc">{{ __('Non-taxable') }}</flux:badge>
+                                    @endunless
+                                </div>
+                                @if ($product->description)
+                                    <p class="mt-1 line-clamp-2 text-xs text-zinc-500 dark:text-zinc-400">{{ $product->description }}</p>
+                                @endif
+                                @if ($product->variants->isNotEmpty())
+                                    <p class="mt-2 text-xs text-zinc-400">{{ __(':count variant options', ['count' => $product->variants->count()]) }}</p>
+                                @endif
+                                <div class="mt-3 flex gap-2">
+                                    <flux:button size="sm" variant="ghost" wire:click="editProduct({{ $product->id }})">{{ __('Edit') }}</flux:button>
+                                    <flux:button size="sm" variant="ghost" wire:click="toggleActive({{ $product->id }})">
+                                        {{ $product->is_active ? __('Hide') : __('Unhide') }}
+                                    </flux:button>
+                                    <flux:button size="sm" variant="ghost" wire:click="deleteProduct({{ $product->id }})" wire:confirm="{{ __('Delete this product?') }}">
+                                        {{ __('Delete') }}
+                                    </flux:button>
+                                </div>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            @endif
+        </div>
+    @endforeach
+
+    <flux:modal name="product-form" class="w-full max-w-lg">
+        <form wire:submit="saveProduct" class="space-y-4">
+            <flux:heading size="lg">{{ $editingProductId ? __('Edit product') : __('New product') }}</flux:heading>
+
+            <flux:field>
+                <flux:label>{{ __('Name') }}</flux:label>
+                <flux:input wire:model="formName" required />
+                <flux:error name="formName" />
+            </flux:field>
+
+            <flux:field>
+                <flux:label>{{ __('Category') }}</flux:label>
+                <flux:select wire:model="formCategory">
+                    @foreach (ProductCategory::cases() as $option)
+                        <option value="{{ $option->value }}">{{ $option->label() }}</option>
+                    @endforeach
+                </flux:select>
+                <flux:error name="formCategory" />
+            </flux:field>
+
+            <flux:field>
+                <flux:label>{{ __('Description') }}</flux:label>
+                <flux:textarea wire:model="formDescription" rows="3" />
+                <flux:error name="formDescription" />
+            </flux:field>
+
+            <flux:field>
+                <flux:label>{{ __('Price (USD)') }}</flux:label>
+                <flux:input type="number" step="0.01" min="0" wire:model="formPrice" />
+                <flux:error name="formPrice" />
+            </flux:field>
+
+            <flux:field>
+                <flux:label>{{ __('Image') }}</flux:label>
+                <div class="flex items-center gap-3">
+                    @if ($formImage)
+                        <img src="{{ $formImage->temporaryUrl() }}" alt="" class="size-16 rounded-lg object-cover">
+                    @elseif ($existingImagePath)
+                        <img src="{{ \App\Models\Product::imageUrlFor($existingImagePath) }}" alt="" class="size-16 rounded-lg object-cover">
+                    @endif
+                    <div class="flex-1">
+                        <input type="file" wire:model="formImage" accept="image/*" class="block w-full text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-zinc-200 dark:text-zinc-300 dark:file:bg-zinc-700" />
+                        <span wire:loading wire:target="formImage" class="text-xs text-zinc-400">{{ __('Uploading…') }}</span>
+                        @if ($existingImagePath && ! $formImage)
+                            <button type="button" wire:click="removeExistingImage" class="mt-1 block text-xs text-zinc-400 underline hover:text-red-600">{{ __('Remove image') }}</button>
+                        @endif
+                    </div>
+                </div>
+                <flux:error name="formImage" />
+            </flux:field>
+
+            <div class="grid grid-cols-2 gap-3">
+                <flux:checkbox wire:model="formIsActive" :label="__('Active (visible in store)')" />
+                <flux:checkbox wire:model="formIsTaxable" :label="__('Taxable')" />
+                <flux:checkbox wire:model="formAllowMultipleQuantity" :label="__('Allow quantity > 1')" />
+                <flux:checkbox wire:model="formAvailableForImmediate" :label="__('Available for immediate need')" />
+                <flux:checkbox wire:model="formAvailableForPreNeed" :label="__('Available for pre-need planning')" />
+            </div>
+
+            @if ($editingProductId)
+                <div class="border-t border-zinc-100 pt-4 dark:border-zinc-700">
+                    <flux:heading size="sm" class="text-zinc-500">{{ __('Variants (e.g. size, finish)') }}</flux:heading>
+                    <ul class="mt-2 space-y-1">
+                        @foreach ($this->editingVariants() as $variant)
+                            <li class="flex items-center justify-between text-sm" wire:key="variant-{{ $variant->id }}">
+                                <span>{{ $variant->name }} @if ($variant->price_delta_cents) ({{ $variant->price_delta_cents >= 0 ? '+' : '' }}${{ number_format($variant->price_delta_cents / 100, 2) }}) @endif</span>
+                                <button type="button" class="text-xs text-zinc-400 underline hover:text-red-600" wire:click="removeVariant({{ $variant->id }})">{{ __('Remove') }}</button>
+                            </li>
+                        @endforeach
+                    </ul>
+                    <div class="mt-2 flex gap-2">
+                        <flux:input size="sm" wire:model="newVariantName" placeholder="{{ __('Variant name') }}" />
+                        <flux:input size="sm" type="number" step="0.01" wire:model="newVariantPrice" placeholder="+/- price" class="w-28" />
+                        <flux:button size="sm" type="button" variant="ghost" wire:click="addVariant">{{ __('Add') }}</flux:button>
+                    </div>
+                </div>
+            @endif
+
+            <div class="flex justify-end gap-2 pt-2">
+                <flux:modal.close>
+                    <flux:button variant="ghost">{{ __('Cancel') }}</flux:button>
+                </flux:modal.close>
+                <flux:button type="submit" variant="primary">{{ __('Save') }}</flux:button>
+            </div>
+        </form>
+    </flux:modal>
+</div>
