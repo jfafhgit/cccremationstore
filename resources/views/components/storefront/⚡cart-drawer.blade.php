@@ -62,10 +62,10 @@ new class extends Component {
     }
 }; ?>
 
-<div>
+<div x-data="{ open: $wire.entangle('open') }" x-effect="document.body.classList.toggle('overflow-hidden', open)" @keydown.escape.window="open = false">
     <button
         type="button"
-        wire:click="$toggle('open')"
+        x-on:click="open = true"
         class="relative flex size-10 items-center justify-center rounded-full border border-brand-200 bg-white text-brand-800 transition hover:bg-brand-50"
         aria-label="{{ __('Open cart') }}"
     >
@@ -77,30 +77,38 @@ new class extends Component {
         @endif
     </button>
 
-    @if ($open)
-        <div class="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true">
-            <div class="absolute inset-0 bg-zinc-900/40" wire:click="$set('open', false)"></div>
+    <div x-show="open" style="display: none" class="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="{{ __('Your selections') }}">
+        <div
+            x-show="open"
+            x-transition.opacity.duration.300ms
+            class="absolute inset-0 bg-zinc-900/40"
+            x-on:click="open = false"
+        ></div>
 
-            <div class="relative flex h-full w-full flex-col bg-white shadow-xl sm:max-w-2xl">
-                <div class="flex items-center justify-between border-b border-zinc-100 px-6 py-5">
+        <div class="pointer-events-none absolute inset-y-0 right-0 flex w-full max-w-full sm:max-w-md">
+            <div
+                x-show="open"
+                x-transition:enter="transform transition ease-out duration-300"
+                x-transition:enter-start="translate-x-full"
+                x-transition:enter-end="translate-x-0"
+                x-transition:leave="transform transition ease-in duration-200"
+                x-transition:leave-start="translate-x-0"
+                x-transition:leave-end="translate-x-full"
+                class="pointer-events-auto flex h-dvh w-full flex-col bg-white shadow-2xl"
+            >
+                <div class="flex shrink-0 items-center justify-between border-b border-zinc-100 px-4 py-4 sm:px-6 sm:py-5">
                     <flux:heading size="lg">{{ __('Your selections') }}</flux:heading>
-                    <flux:button variant="ghost" icon="x-mark" wire:click="$set('open', false)" aria-label="{{ __('Close cart') }}" />
+                    <flux:button variant="ghost" icon="x-mark" x-on:click="open = false" aria-label="{{ __('Close cart') }}" />
                 </div>
 
-                <div class="flex-1 overflow-y-auto px-6 py-5">
+                <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
                     @if ($store && $this->cart()->isEmpty())
                         <p class="text-sm text-zinc-500">{{ __("You haven't selected anything yet.") }}</p>
                     @elseif ($store)
                         <ul class="space-y-4">
                             @foreach ($this->cart()->allLines() as $key => $line)
-                                <li class="flex items-start gap-4 border-b border-zinc-100 pb-4" wire:key="cart-line-{{ $key }}">
-                                    @if ($imageUrl = Product::imageUrlFor($line['image_path'] ?? null))
-                                        <img src="{{ $imageUrl }}" alt="" class="size-20 shrink-0 rounded-lg object-cover">
-                                    @else
-                                        <div class="flex size-20 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-300">
-                                            <flux:icon.photo class="size-6" />
-                                        </div>
-                                    @endif
+                                <li class="flex items-start gap-3 sm:gap-4 border-b border-zinc-100 pb-4" wire:key="cart-line-{{ $key }}">
+                                    <x-product-image :src="Product::imageUrlFor($line['image_path'] ?? null)" :category="$line['category'] ?? 'package'" class="size-16 shrink-0 rounded-lg sm:size-20" />
 
                                     <div class="min-w-0 flex-1">
                                         <p class="font-medium text-zinc-800">{{ $line['name'] }}</p>
@@ -108,11 +116,15 @@ new class extends Component {
                                             <p class="text-xs text-zinc-500">{{ $line['variant_name'] }}</p>
                                         @endif
                                         <p class="mt-1 text-sm text-zinc-500">
-                                            ${{ number_format($line['unit_price_cents'] / 100, 2) }} {{ __('each') }}
+                                            @if ($line['base_price_cents'] ?? 0)
+                                                ${{ number_format($line['base_price_cents'] / 100, 2) }} + ${{ number_format($line['unit_price_cents'] / 100, 2) }} {{ ($line['unit_label'] ?? null) ? __('per :unit', ['unit' => $line['unit_label']]) : __('each') }}
+                                            @else
+                                                ${{ number_format($line['unit_price_cents'] / 100, 2) }} {{ __('each') }}
+                                            @endif
                                         </p>
 
                                         <div class="mt-3 flex items-center justify-between">
-                                            @if ($this->isSlot($key))
+                                            @if ($this->isSlot($key) || (($line['is_required'] ?? false) && ! array_key_exists('base_price_cents', $line)))
                                                 <span class="text-xs text-zinc-400">{{ __('Qty: 1') }}</span>
                                             @else
                                                 <div class="flex items-center gap-2">
@@ -132,51 +144,54 @@ new class extends Component {
                                                 </div>
                                             @endif
 
-                                            <button type="button" wire:click="removeLine('{{ $key }}')" class="text-xs text-zinc-400 underline hover:text-red-600">
-                                                {{ __('Remove') }}
-                                            </button>
+                                            @if ($line['is_required'] ?? false)
+                                                <span class="text-xs font-medium text-brand-700">{{ __('Included') }}</span>
+                                            @else
+                                                <button type="button" wire:click="removeLine('{{ $key }}')" class="text-xs text-zinc-400 underline hover:text-red-600">
+                                                    {{ __('Remove') }}
+                                                </button>
+                                            @endif
                                         </div>
                                     </div>
 
                                     <span class="shrink-0 text-sm font-semibold text-zinc-800">
-                                        ${{ number_format(($line['unit_price_cents'] * $line['quantity']) / 100, 2) }}
+                                        ${{ number_format($this->cart()->lineTotalCents($line) / 100, 2) }}
                                     </span>
                                 </li>
                             @endforeach
                         </ul>
+                        @if ($store && ! $this->cart()->isEmpty())
+                            <div class="mt-6 border-t border-zinc-100 pt-5 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+                            <div class="space-y-1 text-sm">
+                                <div class="flex items-center justify-between text-zinc-600">
+                                    <span>{{ __('Subtotal') }}</span>
+                                    <span>${{ number_format($this->cart()->subtotalCents() / 100, 2) }}</span>
+                                </div>
+                                @if ($this->cart()->taxCents() > 0)
+                                    <div class="flex items-center justify-between text-zinc-600">
+                                        <span>{{ __('Tax') }}</span>
+                                        <span>${{ number_format($this->cart()->taxCents() / 100, 2) }}</span>
+                                    </div>
+                                @endif
+                                <div class="flex items-center justify-between pt-1 text-base font-semibold text-zinc-800">
+                                    <span>{{ __('Total') }}</span>
+                                    <span>${{ number_format($this->cart()->totalCents() / 100, 2) }}</span>
+                                </div>
+                            </div>
+                            <flux:button
+                                variant="primary"
+                                class="mt-4 w-full !bg-brand-700 hover:!bg-brand-800"
+                                href="{{ route('storefront.start', ['store' => $store->slug]) }}"
+                                wire:navigate
+                                x-on:click="open = false"
+                            >
+                                {{ __('Continue') }}
+                            </flux:button>
+                            </div>
+                        @endif
                     @endif
                 </div>
-
-                @if ($store && ! $this->cart()->isEmpty())
-                    <div class="border-t border-zinc-100 px-6 py-5">
-                        <div class="space-y-1 text-sm">
-                            <div class="flex items-center justify-between text-zinc-600">
-                                <span>{{ __('Subtotal') }}</span>
-                                <span>${{ number_format($this->cart()->subtotalCents() / 100, 2) }}</span>
-                            </div>
-                            @if ($this->cart()->taxCents() > 0)
-                                <div class="flex items-center justify-between text-zinc-600">
-                                    <span>{{ __('Tax') }}</span>
-                                    <span>${{ number_format($this->cart()->taxCents() / 100, 2) }}</span>
-                                </div>
-                            @endif
-                            <div class="flex items-center justify-between pt-1 text-base font-semibold text-zinc-800">
-                                <span>{{ __('Total') }}</span>
-                                <span>${{ number_format($this->cart()->totalCents() / 100, 2) }}</span>
-                            </div>
-                        </div>
-                        <flux:button
-                            variant="primary"
-                            class="mt-4 w-full !bg-brand-700 hover:!bg-brand-800"
-                            href="{{ route('storefront.start', ['store' => $store->slug]) }}"
-                            wire:navigate
-                            wire:click="$set('open', false)"
-                        >
-                            {{ __('Continue') }}
-                        </flux:button>
-                    </div>
-                @endif
             </div>
         </div>
-    @endif
+    </div>
 </div>

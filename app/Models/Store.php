@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\StorePath;
 use App\Enums\StoreStatus;
 use Database\Factories\StoreFactory;
 use Illuminate\Database\Eloquent\Attributes\Scope;
@@ -16,6 +17,7 @@ use Illuminate\Support\Carbon;
  * @property string $name
  * @property string $slug
  * @property StoreStatus $status
+ * @property StorePath $checkout_path
  * @property string|null $contact_name
  * @property string|null $contact_email
  * @property string|null $contact_phone
@@ -38,10 +40,15 @@ class Store extends Model
     /** @use HasFactory<StoreFactory> */
     use HasFactory;
 
+    protected $attributes = [
+        'checkout_path' => 'packages',
+    ];
+
     protected $fillable = [
         'name',
         'slug',
         'status',
+        'checkout_path',
         'contact_name',
         'contact_email',
         'contact_phone',
@@ -58,6 +65,7 @@ class Store extends Model
     {
         return [
             'status' => StoreStatus::class,
+            'checkout_path' => StorePath::class,
             'stripe_details_submitted' => 'boolean',
             'stripe_charges_enabled' => 'boolean',
             'stripe_payouts_enabled' => 'boolean',
@@ -95,6 +103,11 @@ class Store extends Model
     protected function active(Builder $query): Builder
     {
         return $query->where('status', StoreStatus::Active);
+    }
+
+    public function isALaCarte(): bool
+    {
+        return $this->checkout_path === StorePath::ALaCarte;
     }
 
     public function isStripeReady(): bool

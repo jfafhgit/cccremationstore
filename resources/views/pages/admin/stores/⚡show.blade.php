@@ -1,11 +1,13 @@
 <?php
 
+use App\Enums\StorePath;
 use App\Enums\StoreStatus;
 use App\Enums\StoreUserRole;
 use App\Models\Store;
 use App\Models\StoreUser;
 use Flux\Flux;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Validate;
 use Livewire\Component;
 
@@ -20,6 +22,8 @@ new class extends Component
     public string $slug = '';
 
     public string $status = '';
+
+    public string $checkoutPath = '';
 
     #[Validate('nullable|string|max:255')]
     public string $contactName = '';
@@ -59,6 +63,7 @@ new class extends Component
         $this->name = $store->name;
         $this->slug = $store->slug;
         $this->status = $store->status->value;
+        $this->checkoutPath = $store->checkout_path->value;
         $this->contactName = $store->contact_name ?? '';
         $this->contactEmail = $store->contact_email ?? '';
         $this->contactPhone = $store->contact_phone ?? '';
@@ -75,6 +80,7 @@ new class extends Component
             'name' => ['required', 'string', 'max:255'],
             'slug' => ['required', 'string', 'max:255', 'alpha_dash', 'unique:stores,slug,'.$this->currentStore->id],
             'status' => ['required', 'in:draft,active,suspended'],
+            'checkoutPath' => ['required', Rule::enum(StorePath::class)],
             'contactName' => ['nullable', 'string', 'max:255'],
             'contactEmail' => ['nullable', 'email', 'max:255'],
             'contactPhone' => ['nullable', 'string', 'max:30'],
@@ -89,6 +95,7 @@ new class extends Component
             'name' => $validated['name'],
             'slug' => $validated['slug'],
             'status' => StoreStatus::from($validated['status']),
+            'checkout_path' => StorePath::from($validated['checkoutPath']),
             'contact_name' => $validated['contactName'] ?: null,
             'contact_email' => $validated['contactEmail'] ?: null,
             'contact_phone' => $validated['contactPhone'] ?: null,
@@ -216,6 +223,15 @@ new class extends Component
                         <flux:description>{{ __('Applied at checkout to products marked taxable. Leave at 0 if this store handles tax separately.') }}</flux:description>
                         <flux:input type="number" step="0.01" min="0" max="100" wire:model="taxRatePercent" />
                         <flux:error name="taxRatePercent" />
+                    </flux:field>
+                    <flux:field class="sm:col-span-2">
+                        <flux:label>{{ __('Storefront path') }}</flux:label>
+                        <flux:radio.group wire:model="checkoutPath" variant="cards" class="max-sm:flex-col">
+                            @foreach (StorePath::cases() as $option)
+                                <flux:radio :value="$option->value" :label="__($option->label())" :description="__($option->description())" />
+                            @endforeach
+                        </flux:radio.group>
+                        <flux:error name="checkoutPath" />
                     </flux:field>
                     <div class="flex justify-end sm:col-span-2">
                         <flux:button type="submit" variant="primary">{{ __('Save') }}</flux:button>

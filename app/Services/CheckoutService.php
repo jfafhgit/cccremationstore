@@ -81,11 +81,13 @@ class CheckoutService
                     'product_variant_id' => $line['variant_id'] ?? null,
                     'category_snapshot' => $line['category'],
                     'is_taxable_snapshot' => $line['is_taxable'] ?? true,
+                    'taxable_unit_cents_snapshot' => $cart->taxableUnitCentsFor($line),
                     'name_snapshot' => $line['name'],
                     'variant_snapshot' => $line['variant_name'] ?? null,
                     'unit_price_cents' => $line['unit_price_cents'],
+                    'base_price_cents_snapshot' => $line['base_price_cents'] ?? 0,
                     'quantity' => $line['quantity'],
-                    'total_price_cents' => $line['unit_price_cents'] * $line['quantity'],
+                    'total_price_cents' => $cart->lineTotalCents($line),
                 ]);
             }
 

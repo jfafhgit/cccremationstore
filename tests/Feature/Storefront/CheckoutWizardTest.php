@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\ProductCategory;
+use App\Enums\StorePath;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\Store;
@@ -130,4 +131,48 @@ test('keepsake quantities in the cart survive a fresh mount of the component', f
     $second = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
 
     expect($second->get('keepsakeQty'))->toBe(["{$this->keepsake->id}-0" => 3]);
+});
+
+test('an a la carte store applies its base package automatically', function () {
+    $this->store->update(['checkout_path' => StorePath::ALaCarte]);
+
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
+
+    $component->call('selectTiming', 'immediate');
+
+    expect($component->get('packageId'))->toBe($this->package->id);
+
+    $component->call('goToPersonalize')->call('goToDetails');
+
+    $component->assertHasNoErrors();
+    expect($component->get('step'))->toBe('details');
+});
+
+test('an a la carte store cannot switch to another package', function () {
+    $this->store->update(['checkout_path' => StorePath::ALaCarte]);
+    $other = Product::factory()->for($this->store)->category(ProductCategory::Package)->create();
+
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
+
+    $component->call('selectTiming', 'immediate')->call('selectPackage', $other->id);
+
+    expect($component->get('packageId'))->toBe($this->package->id);
+});
+
+test('a packages store lets the customer choose any package', function () {
+    $other = Product::factory()->for($this->store)->category(ProductCategory::Package)->create();
+
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
+
+    $component->call('selectTiming', 'immediate')->call('selectPackage', $other->id);
+
+    expect($component->get('packageId'))->toBe($other->id);
+});
+
+test('included items are listed on the package card', function () {
+    $this->package->update(['included_items' => ['Basic container', 'Cremation permit']]);
+
+    Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->assertSeeInOrder(['Basic container', 'Cremation permit']);
 });

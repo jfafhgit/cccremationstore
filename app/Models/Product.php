@@ -19,8 +19,13 @@ use Illuminate\Support\Facades\Storage;
  * @property string $name
  * @property string $slug
  * @property string|null $description
+ * @property array<int, string>|null $included_items
  * @property int $price_cents
  * @property bool $is_taxable
+ * @property bool $is_required
+ * @property int|null $per_unit_price_cents
+ * @property string|null $per_unit_label
+ * @property int|null $taxable_amount_cents
  * @property string|null $image_path
  * @property bool $is_active
  * @property int $sort_order
@@ -40,8 +45,13 @@ class Product extends Model
         'name',
         'slug',
         'description',
+        'included_items',
         'price_cents',
         'is_taxable',
+        'is_required',
+        'taxable_amount_cents',
+        'per_unit_price_cents',
+        'per_unit_label',
         'image_path',
         'is_active',
         'sort_order',
@@ -55,8 +65,12 @@ class Product extends Model
     {
         return [
             'category' => ProductCategory::class,
+            'included_items' => 'array',
             'price_cents' => 'integer',
             'is_taxable' => 'boolean',
+            'is_required' => 'boolean',
+            'taxable_amount_cents' => 'integer',
+            'per_unit_price_cents' => 'integer',
             'is_active' => 'boolean',
             'sort_order' => 'integer',
             'allow_multiple_quantity' => 'boolean',
@@ -105,6 +119,28 @@ class Product extends Model
     public function priceInDollars(): string
     {
         return number_format($this->price_cents / 100, 2);
+    }
+
+    public function hasPerUnitPricing(): bool
+    {
+        return $this->per_unit_price_cents !== null;
+    }
+
+    /**
+     * Human-readable price, e.g. "$250.00 + $15.00 per copy" for per-unit items.
+     */
+    public function priceLabel(): string
+    {
+        if (! $this->hasPerUnitPricing()) {
+            return '$'.$this->priceInDollars();
+        }
+
+        $label = $this->per_unit_label ?: 'each';
+        $unit = number_format($this->per_unit_price_cents / 100, 2);
+
+        return $this->price_cents > 0
+            ? '$'.$this->priceInDollars().' + $'.$unit.' '.($this->per_unit_label ? 'per '.$label : $label)
+            : '$'.$unit.' '.($this->per_unit_label ? 'per '.$label : $label);
     }
 
     /**

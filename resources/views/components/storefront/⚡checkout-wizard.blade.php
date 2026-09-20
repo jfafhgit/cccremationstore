@@ -130,6 +130,17 @@ new class extends Component
         return $this->productsFor(ProductCategory::Keepsake);
     }
 
+    /**
+     * Services and add-ons, including required ones (which show as included).
+     */
+    public function extras(): Collection
+    {
+        return $this->productsFor(ProductCategory::Addon)
+            ->concat($this->productsFor(ProductCategory::Service))
+            ->sortBy('sort_order')
+            ->values();
+    }
+
     private function productsFor(ProductCategory $category): Collection
     {
         $query = $this->storeModel()->products()
@@ -145,15 +156,52 @@ new class extends Component
         return $query->get();
     }
 
+    public function isALaCarte(): bool
+    {
+        return $this->storeModel()->isALaCarte();
+    }
+
+    /**
+     * The single package an à la carte store starts every order with.
+     */
+    public function basePackage(): ?Product
+    {
+        return $this->packages()->first();
+    }
+
+    /**
+     * À la carte stores don't offer a package choice, so the base package is
+     * applied for the customer (and re-applied if it was removed from the cart).
+     */
+    private function ensureBasePackage(): void
+    {
+        if (! $this->isALaCarte() || $this->cart()->hasPackage()) {
+            return;
+        }
+
+        $product = $this->basePackage();
+
+        if ($product) {
+            $this->packageId = $product->id;
+            $this->cart()->selectSlot($product);
+        }
+    }
+
     public function selectTiming(string $timing): void
     {
         $this->timing = $timing;
         $this->cart()->setTiming(OrderTiming::from($timing));
+        $this->ensureBasePackage();
+        $this->cart()->ensureRequiredLines();
         $this->dispatch('cart-updated');
     }
 
     public function selectPackage(int $productId): void
     {
+        if ($this->isALaCarte()) {
+            return;
+        }
+
         $product = $this->packages()->firstWhere('id', $productId);
 
         if (! $product) {
@@ -215,7 +263,7 @@ new class extends Component
 
     public function setKeepsakeQty(int $productId, ?int $variantId, int $qty): void
     {
-        $product = $this->keepsakes()->firstWhere('id', $productId);
+        $product = $this->keepsakes()->merge($this->extras())->firstWhere('id', $productId);
 
         if (! $product) {
             return;
@@ -243,11 +291,18 @@ new class extends Component
 
     public function goToPersonalize(): void
     {
+        $this->ensureBasePackage();
+        $this->cart()->ensureRequiredLines();
+        $this->syncFromCart();
+
         $this->step = 'personalize';
     }
 
     public function goToDetails(): void
     {
+        $this->ensureBasePackage();
+        $this->cart()->ensureRequiredLines();
+
         if (! $this->cart()->hasPackage()) {
             $this->addError('package', __('Please choose a package to continue.'));
 
@@ -389,27 +444,36 @@ new class extends Component
 
             @if ($timing)
                 <div class="mt-8">
-                    <flux:heading size="lg">{{ __('Choose a package') }}</flux:heading>
-                    <div class="mt-4 grid gap-4 sm:grid-cols-2">
-                        @forelse ($this->packages() as $product)
+                    <flux:heading size="lg">{{ $this->isALaCarte() ? __('Your base package') : __('Choose a package') }}</flux:heading>
+                    @if ($this->isALaCarte())
+                        <p class="mt-1 text-sm text-zinc-500">{{ __('Every arrangement starts here. You can add anything else you need on the next step.') }}</p>
+                    @endif
+                    <div @class(['mt-4 grid gap-4', 'sm:grid-cols-2 md:grid-cols-3' => ! $this->isALaCarte()])>
+                        @forelse ($this->isALaCarte() ? collect([$this->basePackage()])->filter() : $this->packages() as $product)
                             <button
                                 type="button"
-                                wire:click="selectPackage({{ $product->id }})"
+                                @if (! $this->isALaCarte()) wire:click="selectPackage({{ $product->id }})" @endif
                                 @class([
                                     'overflow-hidden rounded-xl border text-left transition',
                                     'border-brand-600 bg-brand-50' => $packageId === $product->id,
                                     'border-zinc-200 hover:border-brand-300' => $packageId !== $product->id,
+                                    'cursor-default sm:flex' => $this->isALaCarte(),
                                 ])
                             >
-                                @if ($product->imageUrl())
-                                    <img src="{{ $product->imageUrl() }}" alt="" class="h-32 w-full object-cover">
-                                @endif
-                                <div class="p-4">
-                                    <p class="font-medium text-zinc-800">{{ $product->name }}</p>
+                                <x-product-image :src="$product->imageUrl()" :category="$product->category->value" @class(['w-full', 'h-32' => ! $this->isALaCarte(), 'h-48 sm:h-auto sm:w-2/5' => $this->isALaCarte()]) />
+                                <div @class(['p-4', 'flex-1 sm:p-6' => $this->isALaCarte()])>
+                                    <p @class(['font-medium text-zinc-800', 'font-serif text-xl' => $this->isALaCarte()])>{{ $product->name }}</p>
                                     @if ($product->description)
                                         <p class="mt-1 text-sm text-zinc-500">{{ $product->description }}</p>
                                     @endif
-                                    <p class="mt-2 font-semibold text-brand-700">${{ $product->priceInDollars() }}</p>
+                                    @if ($product->included_items)
+                                        <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-zinc-600 marker:text-brand-600">
+                                            @foreach ($product->included_items as $item)
+                                                <li>{{ $item }}</li>
+                                            @endforeach
+                                        </ul>
+                                    @endif
+                                    <p @class(['mt-2 font-semibold text-brand-700', 'text-xl' => $this->isALaCarte()])>{{ $product->priceLabel() }}</p>
                                 </div>
                             </button>
                         @empty
@@ -445,12 +509,10 @@ new class extends Component
                                 'border-brand-600 bg-brand-50' => $containerId === $product->id,
                                 'border-zinc-200 hover:border-brand-300' => $containerId !== $product->id,
                             ])>
-                                @if ($product->imageUrl())
-                                    <img src="{{ $product->imageUrl() }}" alt="" class="h-24 w-full object-cover">
-                                @endif
+                                <x-product-image :src="$product->imageUrl()" :category="$product->category->value" class="h-24 w-full" />
                                 <div class="p-3">
                                     <p class="text-sm font-medium text-zinc-800">{{ $product->name }}</p>
-                                    <p class="mt-1 text-sm text-brand-700">${{ $product->priceInDollars() }}</p>
+                                    <p class="mt-1 text-sm text-brand-700">{{ $product->priceLabel() }}</p>
                                 </div>
                             </button>
                         @endforeach
@@ -471,12 +533,10 @@ new class extends Component
                                 'border-brand-600 bg-brand-50' => $urnId === $product->id,
                                 'border-zinc-200 hover:border-brand-300' => $urnId !== $product->id,
                             ])>
-                                @if ($product->imageUrl())
-                                    <img src="{{ $product->imageUrl() }}" alt="" class="h-24 w-full object-cover">
-                                @endif
+                                <x-product-image :src="$product->imageUrl()" :category="$product->category->value" class="h-24 w-full" />
                                 <div class="p-3">
                                     <p class="text-sm font-medium text-zinc-800">{{ $product->name }}</p>
-                                    <p class="mt-1 text-sm text-brand-700">${{ $product->priceInDollars() }}</p>
+                                    <p class="mt-1 text-sm text-brand-700">{{ $product->priceLabel() }}</p>
                                 </div>
                             </button>
                         @endforeach
@@ -495,17 +555,55 @@ new class extends Component
                         @foreach ($this->keepsakes() as $product)
                             @php($key = $product->id.'-0')
                             <div class="overflow-hidden rounded-xl border border-zinc-200">
-                                @if ($product->imageUrl())
-                                    <img src="{{ $product->imageUrl() }}" alt="" class="h-24 w-full object-cover">
-                                @endif
+                                <x-product-image :src="$product->imageUrl()" :category="$product->category->value" class="h-24 w-full" />
                                 <div class="p-3">
                                     <p class="text-sm font-medium text-zinc-800">{{ $product->name }}</p>
-                                    <p class="mt-1 text-sm text-brand-700">${{ $product->priceInDollars() }}</p>
+                                    <p class="mt-1 text-sm text-brand-700">{{ $product->priceLabel() }}</p>
                                     <div class="mt-2 flex items-center gap-2">
                                         <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-200 text-sm" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ (int) ($keepsakeQty[$key] ?? 0) - 1 }})">&minus;</button>
                                         <span class="w-4 text-center text-sm">{{ $keepsakeQty[$key] ?? 0 }}</span>
                                         <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-200 text-sm" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ (int) ($keepsakeQty[$key] ?? 0) + 1 }})">+</button>
                                     </div>
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+            @endif
+
+            @if (($extras = $this->extras())->isNotEmpty())
+                <div class="mt-8">
+                    <flux:heading size="lg">{{ __('Services & add-ons') }}</flux:heading>
+                    <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                        @foreach ($extras as $product)
+                            @php($key = $product->id.'-0')
+                            @php($qty = (int) ($keepsakeQty[$key] ?? 0))
+                            <div class="flex gap-3 overflow-hidden rounded-xl border border-zinc-200 p-3" wire:key="extra-{{ $product->id }}">
+                                <x-product-image :src="$product->imageUrl()" :category="$product->category->value" class="size-16 shrink-0 rounded-lg" />
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-sm font-medium text-zinc-800">{{ $product->name }}</p>
+                                    @if ($product->description)
+                                        <p class="text-xs text-zinc-500">{{ $product->description }}</p>
+                                    @endif
+                                    <p class="mt-1 text-sm text-brand-700">{{ $product->priceLabel() }}</p>
+
+                                    @if ($product->is_required && ! $product->hasPerUnitPricing())
+                                        <span class="mt-2 inline-block rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Included') }}</span>
+                                    @else
+                                        @if ($product->is_required)
+                                            <span class="mt-2 inline-block rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Included') }}</span>
+                                        @endif
+                                        @if ($product->hasPerUnitPricing() || ! $product->is_required)
+                                            <div class="mt-2 flex items-center gap-2">
+                                                <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-200 text-sm" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ $qty - 1 }})">&minus;</button>
+                                                <span class="w-4 text-center text-sm">{{ $qty }}</span>
+                                                <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-200 text-sm" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ $qty + 1 }})">+</button>
+                                                @if ($product->hasPerUnitPricing() && $product->per_unit_label)
+                                                    <span class="text-xs text-zinc-400">{{ $product->per_unit_label }}{{ $qty === 1 ? '' : 's' }}</span>
+                                                @endif
+                                            </div>
+                                        @endif
+                                    @endif
                                 </div>
                             </div>
                         @endforeach

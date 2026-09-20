@@ -27,6 +27,46 @@ class Cart
     public function __construct(private readonly Store $store)
     {
         $this->state = session()->get($this->sessionKey(), $this->emptyState());
+        $this->backfillTaxableAmounts();
+    }
+
+    /**
+     * Lines added before per-line taxable amounts existed carry only the
+     * is_taxable flag, which would tax a package's whole price. Recompute
+     * them from the product so an in-flight session cart is taxed correctly.
+     */
+    private function backfillTaxableAmounts(): void
+    {
+        $changed = false;
+
+        foreach ([...self::SLOT_KEYS, ...array_keys($this->state['lines'])] as $key) {
+            $line = in_array($key, self::SLOT_KEYS, true) ? $this->state[$key] : $this->state['lines'][$key];
+
+            if ($line === null || array_key_exists('taxable_unit_cents', $line)) {
+                continue;
+            }
+
+            $product = Product::find($line['product_id']);
+
+            if (! $product) {
+                continue;
+            }
+
+            $variantDeltaCents = $line['unit_price_cents'] - $product->price_cents;
+            $line['taxable_unit_cents'] = $this->taxableUnitCentsForProduct($product, $variantDeltaCents);
+
+            if (in_array($key, self::SLOT_KEYS, true)) {
+                $this->state[$key] = $line;
+            } else {
+                $this->state['lines'][$key] = $line;
+            }
+
+            $changed = true;
+        }
+
+        if ($changed) {
+            $this->persist();
+        }
     }
 
     private function sessionKey(): string
@@ -113,6 +153,11 @@ class Cart
 
     public function updateLineQuantity(string $key, int $quantity): void
     {
+        if ($this->isRequiredLine($key)) {
+            // A required item can't be removed, so its quantity never drops below 1.
+            $quantity = max(1, $quantity);
+        }
+
         if ($quantity <= 0) {
             unset($this->state['lines'][$key]);
         } elseif (isset($this->state['lines'][$key])) {
@@ -124,6 +169,10 @@ class Cart
 
     public function removeLine(string $key): void
     {
+        if ($this->isRequiredLine($key)) {
+            return;
+        }
+
         unset($this->state['lines'][$key]);
         $this->persist();
     }
@@ -147,6 +196,44 @@ class Cart
         $this->removeLine($key);
     }
 
+    public function isRequiredLine(string $key): bool
+    {
+        return (bool) ($this->state['lines'][$key]['is_required'] ?? false);
+    }
+
+    /**
+     * Add every active required product for the current timing that isn't
+     * already in the cart, and refresh the flag on lines already present.
+     * Called by the wizard so required items are pre-selected for the customer.
+     */
+    public function ensureRequiredLines(): void
+    {
+        $query = $this->store->products()->active()->where('is_required', true)
+            ->whereNotIn('category', [
+                ProductCategory::Package->value,
+                ProductCategory::Container->value,
+                ProductCategory::Urn->value,
+            ]);
+
+        if ($this->state['timing']) {
+            $query->availableForTiming($this->state['timing']);
+        }
+
+        foreach ($query->orderBy('sort_order')->get() as $product) {
+            $key = $this->lineKey($product, null);
+
+            if (isset($this->state['lines'][$key])) {
+                $this->state['lines'][$key]['is_required'] = true;
+
+                continue;
+            }
+
+            $this->state['lines'][$key] = $this->lineFor($product, null, 1);
+        }
+
+        $this->persist();
+    }
+
     private function lineKey(Product $product, ?ProductVariant $variant): string
     {
         return $product->id.'-'.($variant?->id ?? '0');
@@ -157,6 +244,32 @@ class Cart
      */
     private function lineFor(Product $product, ?ProductVariant $variant, int $quantity): array
     {
+        $variantDeltaCents = $variant?->price_delta_cents ?? 0;
+
+        if ($product->hasPerUnitPricing()) {
+            $baseCents = $product->price_cents + $variantDeltaCents;
+            $unitCents = $product->per_unit_price_cents;
+
+            return [
+                'product_id' => $product->id,
+                'variant_id' => $variant?->id,
+                'category' => $product->category->value,
+                'name' => $product->name,
+                'variant_name' => $variant?->name,
+                'image_path' => $product->image_path,
+                'is_taxable' => $product->is_taxable,
+                'is_required' => $product->is_required,
+                'base_price_cents' => $baseCents,
+                'taxable_base_cents' => $product->is_taxable ? $baseCents : 0,
+                'taxable_unit_cents' => $product->is_taxable ? $unitCents : 0,
+                'unit_label' => $product->per_unit_label,
+                'unit_price_cents' => $unitCents,
+                'quantity' => $quantity,
+            ];
+        }
+
+        $unitPriceCents = $product->price_cents + $variantDeltaCents;
+
         return [
             'product_id' => $product->id,
             'variant_id' => $variant?->id,
@@ -165,7 +278,9 @@ class Cart
             'variant_name' => $variant?->name,
             'image_path' => $product->image_path,
             'is_taxable' => $product->is_taxable,
-            'unit_price_cents' => $product->price_cents + ($variant?->price_delta_cents ?? 0),
+            'is_required' => $product->is_required,
+            'taxable_unit_cents' => $this->taxableUnitCentsForProduct($product, $variantDeltaCents),
+            'unit_price_cents' => $unitPriceCents,
             'quantity' => $quantity,
         ];
     }
@@ -209,19 +324,57 @@ class Cart
 
     public function subtotalCents(): int
     {
-        return (int) $this->allLines()->sum(fn (array $line) => $line['unit_price_cents'] * $line['quantity']);
+        return (int) $this->allLines()->sum(fn (array $line) => $this->lineTotalCents($line));
+    }
+
+    /**
+     * A line's total: an optional one-time base fee plus unit price x quantity.
+     *
+     * @param  array<string, mixed>  $line
+     */
+    public function lineTotalCents(array $line): int
+    {
+        return ($line['base_price_cents'] ?? 0) + $line['unit_price_cents'] * $line['quantity'];
     }
 
     /**
      * The portion of the subtotal made up of taxable lines. Lines added
-     * before this field existed have no 'is_taxable' key — treated as
-     * taxable, the safer default for an in-flight session cart.
+     * before 'taxable_unit_cents' existed fall back to the 'is_taxable' flag
+     * (itself defaulting to taxable, the safer default for an in-flight
+     * session cart).
      */
     public function taxableSubtotalCents(): int
     {
-        return (int) $this->allLines()
-            ->filter(fn (array $line) => $line['is_taxable'] ?? true)
-            ->sum(fn (array $line) => $line['unit_price_cents'] * $line['quantity']);
+        return (int) $this->allLines()->sum(
+            fn (array $line) => ($line['taxable_base_cents'] ?? 0) + $this->taxableUnitCentsFor($line) * $line['quantity']
+        );
+    }
+
+    /**
+     * A product with an explicit taxable amount only taxes that portion (plus
+     * any variant upcharge); otherwise the is_taxable flag covers the full price.
+     */
+    private function taxableUnitCentsForProduct(Product $product, int $variantDeltaCents): int
+    {
+        $unitPriceCents = $product->price_cents + $variantDeltaCents;
+
+        return max(0, match (true) {
+            ! $product->is_taxable => 0,
+            $product->taxable_amount_cents !== null => min($product->taxable_amount_cents + $variantDeltaCents, $unitPriceCents),
+            default => $unitPriceCents,
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $line
+     */
+    public function taxableUnitCentsFor(array $line): int
+    {
+        if (isset($line['taxable_unit_cents'])) {
+            return $line['taxable_unit_cents'];
+        }
+
+        return ($line['is_taxable'] ?? true) ? $line['unit_price_cents'] : 0;
     }
 
     public function taxCents(): int

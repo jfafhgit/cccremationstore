@@ -99,3 +99,100 @@ test('an order cannot be viewed via a mismatched store/order pair', function () 
 
     Livewire::test('pages::admin.stores.order-detail', ['store' => $storeA->id, 'order' => $orderInStoreB->id]);
 })->throws(ModelNotFoundException::class);
+
+test('an admin can save a package with a taxable amount', function () {
+    $store = Store::factory()->create();
+
+    $component = Livewire::test('pages::admin.stores.products', ['store' => $store])
+        ->set('formName', 'Simple Package')
+        ->set('formCategory', ProductCategory::Package->value)
+        ->set('formPrice', '2000.00')
+        ->set('formTaxableAmount', '300.00')
+        ->call('saveProduct');
+
+    $component->assertHasNoErrors();
+
+    $product = $store->products()->firstWhere('name', 'Simple Package');
+    expect($product->price_cents)->toBe(200000)
+        ->and($product->taxable_amount_cents)->toBe(30000)
+        ->and($product->is_taxable)->toBeTrue();
+});
+
+test('a package taxable amount cannot exceed its price', function () {
+    $store = Store::factory()->create();
+
+    Livewire::test('pages::admin.stores.products', ['store' => $store])
+        ->set('formName', 'Simple Package')
+        ->set('formCategory', ProductCategory::Package->value)
+        ->set('formPrice', '100.00')
+        ->set('formTaxableAmount', '150.00')
+        ->call('saveProduct')
+        ->assertHasErrors('formTaxableAmount');
+});
+
+test('an admin can set a store to a la carte', function () {
+    $store = Store::factory()->create();
+
+    Livewire::test('pages::admin.stores.show', ['store' => $store])
+        ->set('checkoutPath', 'a_la_carte')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($store->fresh()->isALaCarte())->toBeTrue();
+});
+
+test('a package saves its included items one per line', function () {
+    $store = Store::factory()->create();
+
+    Livewire::test('pages::admin.stores.products', ['store' => $store])
+        ->set('formName', 'Simple Package')
+        ->set('formCategory', ProductCategory::Package->value)
+        ->set('formPrice', '1000.00')
+        ->set('formTaxableAmount', '0')
+        ->set('formIncludedItems', "Basic container\n\n  Cremation permit  \nDeath certificates")
+        ->call('saveProduct')
+        ->assertHasNoErrors();
+
+    expect($store->products()->first()->included_items)
+        ->toBe(['Basic container', 'Cremation permit', 'Death certificates']);
+});
+
+test('an admin can save a required per-unit service', function () {
+    $store = Store::factory()->create();
+
+    Livewire::test('pages::admin.stores.products', ['store' => $store])
+        ->set('formName', 'Death certificates')
+        ->set('formCategory', ProductCategory::Service->value)
+        ->set('formPrice', '250.00')
+        ->set('formPerUnitPrice', '15.00')
+        ->set('formPerUnitLabel', 'copy')
+        ->set('formIsRequired', true)
+        ->call('saveProduct')
+        ->assertHasNoErrors();
+
+    $product = $store->products()->first();
+
+    expect($product->price_cents)->toBe(25000)
+        ->and($product->per_unit_price_cents)->toBe(1500)
+        ->and($product->per_unit_label)->toBe('copy')
+        ->and($product->is_required)->toBeTrue();
+});
+
+test('packages cannot be pre-selected or priced per unit', function () {
+    $store = Store::factory()->create();
+
+    Livewire::test('pages::admin.stores.products', ['store' => $store])
+        ->set('formName', 'Simple Package')
+        ->set('formCategory', ProductCategory::Package->value)
+        ->set('formPrice', '1000.00')
+        ->set('formTaxableAmount', '0')
+        ->set('formPerUnitPrice', '15.00')
+        ->set('formIsRequired', true)
+        ->call('saveProduct')
+        ->assertHasNoErrors();
+
+    $product = $store->products()->first();
+
+    expect($product->is_required)->toBeFalse()
+        ->and($product->per_unit_price_cents)->toBeNull();
+});
