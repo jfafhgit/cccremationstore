@@ -85,7 +85,24 @@ class Cart
             'container' => null,
             'urn' => null,
             'lines' => [], // repeatable keepsakes / add-ons / services
+            'pending_order_id' => null,
         ];
+    }
+
+    /**
+     * The order this cart is currently being checked out as, so a page
+     * refresh or a step back reuses (and updates) it rather than creating
+     * a duplicate. Cleared along with the cart once payment goes through.
+     */
+    public function pendingOrderId(): ?int
+    {
+        return $this->state['pending_order_id'] ?? null;
+    }
+
+    public function setPendingOrderId(?int $orderId): void
+    {
+        $this->state['pending_order_id'] = $orderId;
+        $this->persist();
     }
 
     private function persist(): void
@@ -132,10 +149,25 @@ class Cart
     {
         $slot = $this->slotKeyFor($category);
 
-        if ($slot) {
-            $this->state[$slot] = null;
-            $this->persist();
+        if (! $slot || $this->isRequiredSlot($slot)) {
+            return;
         }
+
+        $this->state[$slot] = null;
+        $this->persist();
+    }
+
+    /**
+     * Whether the store has configured this slot as required, meaning the
+     * customer can swap their selection but can't clear it back to none.
+     */
+    private function isRequiredSlot(string $slot): bool
+    {
+        return match ($slot) {
+            'container' => $this->store->requires_container,
+            'urn' => $this->store->requires_urn,
+            default => false,
+        };
     }
 
     public function addLine(Product $product, ?ProductVariant $variant = null, int $quantity = 1): void
@@ -186,7 +218,20 @@ class Cart
      */
     public function removeAny(string $key): void
     {
+        if ($key === 'package') {
+            // Every other line only makes sense in the context of a
+            // package, so removing it invalidates the whole cart rather
+            // than leaving orphaned container/urn/keepsake selections behind.
+            $this->clear();
+
+            return;
+        }
+
         if (in_array($key, self::SLOT_KEYS, true)) {
+            if ($this->isRequiredSlot($key)) {
+                return;
+            }
+
             $this->state[$key] = null;
             $this->persist();
 
@@ -317,6 +362,16 @@ class Cart
         return $this->state['package'] !== null;
     }
 
+    public function hasContainer(): bool
+    {
+        return $this->state['container'] !== null;
+    }
+
+    public function hasUrn(): bool
+    {
+        return $this->state['urn'] !== null;
+    }
+
     public function itemCount(): int
     {
         return (int) $this->allLines()->sum('quantity');
@@ -382,9 +437,23 @@ class Cart
         return (int) round($this->taxableSubtotalCents() * $this->store->tax_rate_bps / 10000);
     }
 
+    /**
+     * An optional surcharge to help the store cover its card processing
+     * costs. Calculated on subtotal + tax (the amount that actually runs
+     * through the card) and, unlike tax, is not itself taxable.
+     */
+    public function processingFeeCents(): int
+    {
+        if (! $this->store->processing_fee_enabled) {
+            return 0;
+        }
+
+        return (int) round(($this->subtotalCents() + $this->taxCents()) * $this->store->processing_fee_bps / 10000);
+    }
+
     public function totalCents(): int
     {
-        return $this->subtotalCents() + $this->taxCents();
+        return $this->subtotalCents() + $this->taxCents() + $this->processingFeeCents();
     }
 
     public function clear(): void

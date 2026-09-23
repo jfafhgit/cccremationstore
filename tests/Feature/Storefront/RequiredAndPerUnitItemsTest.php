@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\OrderTiming;
 use App\Enums\ProductCategory;
 use App\Models\Product;
 use App\Models\Store;
@@ -105,4 +106,80 @@ test('ordinary items can still be removed', function () {
 
 test('the price label describes per-unit pricing', function () {
     expect($this->certificates->priceLabel())->toBe('$250.00 + $15.00 per copy');
+});
+
+test('a required container slot cannot be cleared once selected', function () {
+    $this->store->update(['requires_container' => true]);
+    $container = Product::factory()->for($this->store)->category(ProductCategory::Container)->create();
+
+    $cart = new Cart($this->store);
+    $cart->selectSlot($container);
+
+    $cart->clearSlot(ProductCategory::Container);
+    expect((new Cart($this->store))->hasContainer())->toBeTrue();
+
+    $cart->removeAny('container');
+    expect((new Cart($this->store))->hasContainer())->toBeTrue();
+});
+
+test('an optional container slot can be cleared', function () {
+    $container = Product::factory()->for($this->store)->category(ProductCategory::Container)->create();
+
+    $cart = new Cart($this->store);
+    $cart->selectSlot($container);
+
+    $cart->clearSlot(ProductCategory::Container);
+    expect((new Cart($this->store))->hasContainer())->toBeFalse();
+});
+
+test('creating an order fails when a required container has not been selected', function () {
+    $this->store->update(['requires_container' => true]);
+    Product::factory()->for($this->store)->category(ProductCategory::Container)->create();
+
+    $cart = new Cart($this->store);
+    $cart->addLine($this->certificates, null, 1);
+
+    app(CheckoutService::class)->createOrder($this->store, $cart, [
+        'purchaser_first_name' => 'Sam',
+        'purchaser_last_name' => 'Rivera',
+        'purchaser_email' => 'sam@example.com',
+        'relationship_to_deceased' => 'Adult child',
+        'deceased_first_name' => 'Pat',
+        'deceased_last_name' => 'Rivera',
+    ]);
+})->throws(RuntimeException::class);
+
+test('a required container that the store does not sell does not block an order', function () {
+    $this->store->update(['requires_container' => true]);
+
+    $cart = new Cart($this->store);
+    $cart->addLine($this->certificates, null, 1);
+
+    $order = app(CheckoutService::class)->createOrder($this->store, $cart, [
+        'purchaser_first_name' => 'Sam',
+        'purchaser_last_name' => 'Rivera',
+        'purchaser_email' => 'sam@example.com',
+        'relationship_to_deceased' => 'Adult child',
+        'deceased_first_name' => 'Pat',
+        'deceased_last_name' => 'Rivera',
+    ]);
+
+    expect($order)->not->toBeNull();
+});
+
+test('removing the package clears the entire cart, including timing and other lines', function () {
+    $package = Product::factory()->for($this->store)->category(ProductCategory::Package)->create();
+    $keepsake = Product::factory()->for($this->store)->category(ProductCategory::Keepsake)->create();
+
+    $cart = new Cart($this->store);
+    $cart->setTiming(OrderTiming::from('immediate'));
+    $cart->selectSlot($package);
+    $cart->addLine($keepsake);
+    $cart->ensureRequiredLines();
+
+    $cart->removeAny('package');
+
+    $freshCart = new Cart($this->store);
+    expect($freshCart->isEmpty())->toBeTrue()
+        ->and($freshCart->timing())->toBeNull();
 });

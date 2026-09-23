@@ -32,8 +32,8 @@ class TreasuredMemoriesDemoSeeder extends Seeder
                 'timezone' => 'America/Chicago',
                 'platform_fee_bps' => 500,
                 'tax_rate_bps' => 1025, // 10.25% — Chicago's combined sales tax rate.
+                'requires_container' => true, // required by law for dignified handling.
                 'brand_primary_color' => '#29564b',
-                'general_price_list_url' => null,
             ],
         );
 

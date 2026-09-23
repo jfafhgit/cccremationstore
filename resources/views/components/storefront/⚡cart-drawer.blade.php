@@ -31,10 +31,40 @@ new class extends Component {
         return in_array($key, self::SLOT_KEYS, true);
     }
 
+    /**
+     * @param  array<string, mixed>  $line
+     */
+    public function isRequiredKey(string $key, array $line): bool
+    {
+        return match ($key) {
+            'container' => (bool) $this->store?->requires_container,
+            'urn' => (bool) $this->store?->requires_urn,
+            default => (bool) ($line['is_required'] ?? false),
+        };
+    }
+
     public function removeLine(string $key): void
     {
+        // The package underlies everything else in the cart, so removing it
+        // is really a "start over" — send the customer back to step one
+        // instead of leaving them mid-flow with an orphaned cart.
+        if ($key === 'package') {
+            $this->startOver();
+
+            return;
+        }
+
         $this->cart()->removeAny($key);
         $this->dispatch('cart-updated');
+    }
+
+    public function startOver(): void
+    {
+        $this->cart()->clear();
+        $this->open = false;
+        $this->dispatch('cart-updated');
+
+        $this->redirect(route('storefront.start', ['store' => $this->store->slug]), navigate: true);
     }
 
     public function incrementLine(string $key): void
@@ -144,8 +174,14 @@ new class extends Component {
                                                 </div>
                                             @endif
 
-                                            @if ($line['is_required'] ?? false)
-                                                <span class="text-xs font-medium text-brand-700">{{ __('Included') }}</span>
+                                            @if ($this->isRequiredKey($key, $line))
+                                                <span class="text-xs font-medium text-brand-700">{{ __('Required') }}</span>
+                                            @elseif ($key === 'package')
+                                                <flux:modal.trigger name="confirm-start-over">
+                                                    <button type="button" class="text-xs text-zinc-400 underline hover:text-red-600">
+                                                        {{ __('Remove') }}
+                                                    </button>
+                                                </flux:modal.trigger>
                                             @else
                                                 <button type="button" wire:click="removeLine('{{ $key }}')" class="text-xs text-zinc-400 underline hover:text-red-600">
                                                     {{ __('Remove') }}
@@ -173,6 +209,12 @@ new class extends Component {
                                         <span>${{ number_format($this->cart()->taxCents() / 100, 2) }}</span>
                                     </div>
                                 @endif
+                                @if ($this->cart()->processingFeeCents() > 0)
+                                    <div class="flex items-center justify-between text-zinc-600">
+                                        <span>{{ __('Processing fee') }}</span>
+                                        <span>${{ number_format($this->cart()->processingFeeCents() / 100, 2) }}</span>
+                                    </div>
+                                @endif
                                 <div class="flex items-center justify-between pt-1 text-base font-semibold text-zinc-800">
                                     <span>{{ __('Total') }}</span>
                                     <span>${{ number_format($this->cart()->totalCents() / 100, 2) }}</span>
@@ -181,12 +223,18 @@ new class extends Component {
                             <flux:button
                                 variant="primary"
                                 class="mt-4 w-full !bg-brand-700 hover:!bg-brand-800"
-                                href="{{ route('storefront.start', ['store' => $store->slug]) }}"
-                                wire:navigate
                                 x-on:click="open = false"
                             >
                                 {{ __('Continue') }}
                             </flux:button>
+                            <flux:modal.trigger name="confirm-start-over">
+                                <button
+                                    type="button"
+                                    class="mt-3 w-full text-center text-xs text-zinc-400 underline hover:text-red-600"
+                                >
+                                    {{ __('Clear cart & start over') }}
+                                </button>
+                            </flux:modal.trigger>
                             </div>
                         @endif
                     @endif
@@ -194,4 +242,23 @@ new class extends Component {
             </div>
         </div>
     </div>
+
+    <flux:modal name="confirm-start-over" class="max-w-sm">
+        <div class="space-y-4">
+            <div>
+                <flux:heading size="lg">{{ __('Start over?') }}</flux:heading>
+                <flux:subheading>
+                    {{ __('This clears everything in your cart — package, container, urn, and keepsakes — so you can begin again.') }}
+                </flux:subheading>
+            </div>
+
+            <div class="flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button variant="filled">{{ __('Cancel') }}</flux:button>
+                </flux:modal.close>
+
+                <flux:button variant="danger" wire:click="startOver">{{ __('Start over') }}</flux:button>
+            </div>
+        </div>
+    </flux:modal>
 </div>

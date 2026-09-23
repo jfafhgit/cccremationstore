@@ -62,7 +62,7 @@ new class extends Component
     public ?string $paymentError = null;
 
     /** @var array<int, string> */
-    public array $steps = ['timing', 'personalize', 'details', 'payment'];
+    public array $steps = ['timing', 'containers', 'addons', 'keepsakes', 'details', 'payment'];
 
     public function mount(): void
     {
@@ -143,11 +143,13 @@ new class extends Component
 
     private function productsFor(ProductCategory $category): Collection
     {
-        $query = $this->storeModel()->products()
+        $store = $this->storeModel();
+
+        $query = $store->products()
             ->active()
             ->ofCategory($category)
             ->with('variants')
-            ->orderBy('sort_order');
+            ->orderedFor($store->productSortMode($category));
 
         if ($this->timing) {
             $query->availableForTiming($this->timing);
@@ -272,6 +274,7 @@ new class extends Component
         $variant = $variantId ? $product->variants->firstWhere('id', $variantId) : null;
         $key = $productId.'-'.($variantId ?? '0');
 
+        $previousQty = (int) ($this->keepsakeQty[$key] ?? 0);
         $qty = max(0, $qty);
         $this->keepsakeQty[$key] = $qty;
 
@@ -287,18 +290,53 @@ new class extends Component
         }
 
         $this->dispatch('cart-updated');
+
+        // On the keepsakes step, every selection jumps the customer back to
+        // the top of the keepsakes so they scroll past the full lineup again
+        // to reach "Continue" — deliberate friction so nothing gets missed.
+        if ($product->category === ProductCategory::Keepsake && $qty > $previousQty) {
+            $this->dispatch('keepsake-selected');
+        }
     }
 
-    public function goToPersonalize(): void
+    public function goToContainers(): void
     {
         $this->ensureBasePackage();
         $this->cart()->ensureRequiredLines();
+        $this->preselectIncludedOptions();
         $this->syncFromCart();
 
-        $this->step = 'personalize';
+        $this->step = 'containers';
     }
 
-    public function goToDetails(): void
+    /**
+     * Container and urn options priced at $0.00 are the ones included in the
+     * package, so pre-select the first of each when nothing is chosen yet.
+     */
+    private function preselectIncludedOptions(): void
+    {
+        $cart = $this->cart();
+
+        if (! $cart->state()['container']) {
+            $container = $this->containers()->firstWhere('price_cents', 0);
+
+            if ($container) {
+                $cart->selectSlot($container);
+            }
+        }
+
+        if (! $cart->state()['urn']) {
+            $urn = $this->urns()->firstWhere('price_cents', 0);
+
+            if ($urn) {
+                $cart->selectSlot($urn);
+            }
+        }
+
+        $this->dispatch('cart-updated');
+    }
+
+    public function goToAddons(): void
     {
         $this->ensureBasePackage();
         $this->cart()->ensureRequiredLines();
@@ -309,6 +347,28 @@ new class extends Component
             return;
         }
 
+        if ($this->storeModel()->requires_container && $this->containers()->isNotEmpty() && ! $this->cart()->hasContainer()) {
+            $this->addError('container', __('Please choose a cremation container to continue.'));
+
+            return;
+        }
+
+        if ($this->storeModel()->requires_urn && $this->urns()->isNotEmpty() && ! $this->cart()->hasUrn()) {
+            $this->addError('urn', __('Please choose an urn to continue.'));
+
+            return;
+        }
+
+        $this->step = 'addons';
+    }
+
+    public function goToKeepsakes(): void
+    {
+        $this->step = 'keepsakes';
+    }
+
+    public function goToDetails(): void
+    {
         $this->step = 'details';
     }
 
@@ -340,7 +400,7 @@ new class extends Component
 
         if ($this->cart()->isEmpty()) {
             $this->addError('package', __('Please choose a package to continue.'));
-            $this->step = 'personalize';
+            $this->step = 'timing';
 
             return;
         }
@@ -355,29 +415,37 @@ new class extends Component
 
         $this->paymentError = null;
 
+        $cart = $this->cart();
+
+        $details = [
+            'purchaser_first_name' => $this->purchaserFirstName,
+            'purchaser_last_name' => $this->purchaserLastName,
+            'purchaser_email' => $this->purchaserEmail,
+            'purchaser_phone' => $this->purchaserPhone,
+            'relationship_to_deceased' => $this->relationshipToDeceased,
+            'deceased_first_name' => $this->deceasedFirstName,
+            'deceased_middle_name' => $this->deceasedMiddleName ?: null,
+            'deceased_last_name' => $this->deceasedLastName,
+            'deceased_suffix' => $this->deceasedSuffix ?: null,
+        ];
+
         try {
-            // Reuse the order from a previous attempt on this same visit
-            // (e.g. the payment-intent call failed and they hit "Continue"
-            // again) instead of creating a duplicate order every retry.
-            $order = $this->orderId
-                ? $store->orders()->find($this->orderId)
+            // Reuse the order from an earlier attempt with this cart (a failed
+            // payment-intent call, a step back to change selections, a page
+            // refresh) instead of creating a duplicate every time — but bring
+            // it up to date first, so the charge always matches the cart.
+            $order = $cart->pendingOrderId()
+                ? $store->orders()->find($cart->pendingOrderId())
                 : null;
 
-            if (! $order) {
-                $order = $checkout->createOrder($store, $this->cart(), [
-                    'purchaser_first_name' => $this->purchaserFirstName,
-                    'purchaser_last_name' => $this->purchaserLastName,
-                    'purchaser_email' => $this->purchaserEmail,
-                    'purchaser_phone' => $this->purchaserPhone,
-                    'relationship_to_deceased' => $this->relationshipToDeceased,
-                    'deceased_first_name' => $this->deceasedFirstName,
-                    'deceased_middle_name' => $this->deceasedMiddleName ?: null,
-                    'deceased_last_name' => $this->deceasedLastName,
-                    'deceased_suffix' => $this->deceasedSuffix ?: null,
-                ]);
-
-                $this->orderId = $order->id;
+            if ($order?->isAwaitingPayment()) {
+                $order = $checkout->updatePendingOrder($order, $cart, $details);
+            } else {
+                $order = $checkout->createOrder($store, $cart, $details);
+                $cart->setPendingOrderId($order->id);
             }
+
+            $this->orderId = $order->id;
 
             $this->clientSecret = $checkout->createPaymentIntent($order);
         } catch (ApiErrorException|\RuntimeException $e) {
@@ -406,8 +474,8 @@ new class extends Component
 }; ?>
 
 <div class="mx-auto max-w-3xl px-4 py-10 sm:px-6">
-    <nav class="mb-8 flex items-center justify-center gap-2 text-xs font-medium text-zinc-400" aria-label="{{ __('Checkout steps') }}">
-        @foreach (['Timing & Package', 'Personalize', 'Your Information', 'Payment'] as $index => $label)
+    <nav class="mb-8 flex flex-wrap items-center justify-center gap-2 text-xs font-medium text-zinc-400" aria-label="{{ __('Checkout steps') }}">
+        @foreach (['Timing & Package', 'Container & Urn', 'Add-ons & Services', 'Keepsakes', 'Your Information', 'Payment'] as $index => $label)
             <span class="flex items-center gap-2">
                 <span @class([
                     'flex size-6 items-center justify-center rounded-full text-[11px]',
@@ -446,7 +514,7 @@ new class extends Component
                 <div class="mt-8">
                     <flux:heading size="lg">{{ $this->isALaCarte() ? __('Your base package') : __('Choose a package') }}</flux:heading>
                     @if ($this->isALaCarte())
-                        <p class="mt-1 text-sm text-zinc-500">{{ __('Every arrangement starts here. You can add anything else you need on the next step.') }}</p>
+                        <p class="mt-1 text-sm text-zinc-500">{{ __('Every arrangement starts here. You can add anything else you need in the following steps.') }}</p>
                     @endif
                     <div @class(['mt-4 grid gap-4', 'sm:grid-cols-2 md:grid-cols-3' => ! $this->isALaCarte()])>
                         @forelse ($this->isALaCarte() ? collect([$this->basePackage()])->filter() : $this->packages() as $product)
@@ -484,7 +552,7 @@ new class extends Component
                 </div>
 
                 <div class="mt-8 flex justify-end">
-                    <flux:button variant="primary" class="!bg-brand-700 hover:!bg-brand-800" wire:click="goToPersonalize" :disabled="! $packageId">
+                    <flux:button variant="primary" class="!bg-brand-700 hover:!bg-brand-800" wire:click="goToContainers" :disabled="! $packageId">
                         {{ __('Continue') }}
                     </flux:button>
                 </div>
@@ -492,135 +560,233 @@ new class extends Component
         </div>
     @endif
 
-    {{-- Step 2: Personalize (container / urn / keepsakes) --}}
-    @if ($step === 'personalize')
-        <div class="rounded-2xl border border-brand-100 bg-white p-6 shadow-sm sm:p-8">
-            <flux:heading size="xl" class="font-serif">{{ __('Personalize the service') }}</flux:heading>
-            <flux:subheading class="mt-1">{{ __("These are optional — you can also decide later.") }}</flux:subheading>
+    {{-- Step 2: Cremation container & urn --}}
+    @if ($step === 'containers')
+        <div class="rounded-2xl border border-brand-100 bg-white p-6 shadow-sm sm:p-8" x-data="{ zoom: null }" x-on:keydown.escape.window="zoom = null">
+            <flux:heading size="xl" class="font-serif">{{ __('Cremation container & urn') }}</flux:heading>
+            <flux:subheading class="mt-1">{{ __('Choose what fits — anything marked required must be selected before you continue.') }}</flux:subheading>
 
             @if ($this->containers()->isNotEmpty())
                 <div class="mt-8">
                     <flux:heading size="lg">{{ __('Cremation container') }}</flux:heading>
-                    <p class="mb-3 text-xs text-zinc-500">{{ __('Required by law for dignified care and handling.') }}</p>
+                    <p class="mb-3 text-xs text-zinc-500">
+                        {{ $this->storeModel()->requires_container ? __('Required by law for dignified care and handling.') : __('Optional — you can also decide later.') }}
+                    </p>
                     <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                         @foreach ($this->containers() as $product)
-                            <button type="button" wire:click="selectContainer({{ $product->id }})" @class([
-                                'overflow-hidden rounded-xl border text-left transition',
-                                'border-brand-600 bg-brand-50' => $containerId === $product->id,
-                                'border-zinc-200 hover:border-brand-300' => $containerId !== $product->id,
-                            ])>
-                                <x-product-image :src="$product->imageUrl()" :category="$product->category->value" class="h-24 w-full" />
-                                <div class="p-3">
-                                    <p class="text-sm font-medium text-zinc-800">{{ $product->name }}</p>
-                                    <p class="mt-1 text-sm text-brand-700">{{ $product->priceLabel() }}</p>
-                                </div>
-                            </button>
+                            <div class="relative" wire:key="container-{{ $product->id }}">
+                                <button type="button" wire:click="selectContainer({{ $product->id }})" @class([
+                                    'block h-full w-full overflow-hidden rounded-xl border text-left transition',
+                                    'border-2 border-brand-600 bg-brand-50 ring-2 ring-brand-600/30' => $containerId === $product->id,
+                                    'border border-zinc-200 hover:border-brand-300' => $containerId !== $product->id,
+                                ])>
+                                    <x-product-image :src="$product->imageUrl()" :alt="$product->name" :category="$product->category->value" class="h-24 w-full" />
+                                    @if ($containerId === $product->id)
+                                        <span class="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-brand-700 px-2 py-0.5 text-xs font-semibold text-white shadow">
+                                            <flux:icon.check class="size-3.5" />{{ __('Selected') }}
+                                        </span>
+                                    @endif
+                                    <div class="p-3">
+                                        <p class="text-sm font-medium text-zinc-800">{{ $product->name }}</p>
+                                        @if ($product->description)
+                                            <p class="mt-1 text-xs text-zinc-500">{{ $product->description }}</p>
+                                        @endif
+                                        <p class="mt-1 text-sm text-brand-700">{{ $product->priceLabel() }}</p>
+                                    </div>
+                                </button>
+                                @if ($product->imageUrl())
+                                    <button type="button" class="absolute right-1 top-[4.25rem] flex size-6 items-center justify-center rounded-full bg-white/90 text-zinc-700 shadow hover:bg-white" x-on:click="zoom = { src: @js($product->imageUrl()), name: @js($product->name) }" aria-label="{{ __('View full size image of :name', ['name' => $product->name]) }}">
+                                        <flux:icon.magnifying-glass-plus class="size-4" />
+                                    </button>
+                                @endif
+                            </div>
                         @endforeach
                     </div>
-                    @if ($containerId)
+                    @if ($containerId && ! $this->storeModel()->requires_container)
                         <button type="button" wire:click="clearContainer" class="mt-2 text-xs text-zinc-400 underline hover:text-red-600">{{ __('Clear selection') }}</button>
                     @endif
+                    @error('container') <flux:error class="mt-2">{{ $message }}</flux:error> @enderror
                 </div>
             @endif
 
             @if ($this->urns()->isNotEmpty())
                 <div class="mt-8">
                     <flux:heading size="lg">{{ __('Urn') }}</flux:heading>
+                    @if ($this->storeModel()->requires_urn)
+                        <p class="mb-3 text-xs text-zinc-500">{{ __('An urn selection is required to continue.') }}</p>
+                    @endif
                     <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                         @foreach ($this->urns() as $product)
-                            <button type="button" wire:click="selectUrn({{ $product->id }})" @class([
-                                'overflow-hidden rounded-xl border text-left transition',
-                                'border-brand-600 bg-brand-50' => $urnId === $product->id,
-                                'border-zinc-200 hover:border-brand-300' => $urnId !== $product->id,
-                            ])>
-                                <x-product-image :src="$product->imageUrl()" :category="$product->category->value" class="h-24 w-full" />
-                                <div class="p-3">
-                                    <p class="text-sm font-medium text-zinc-800">{{ $product->name }}</p>
-                                    <p class="mt-1 text-sm text-brand-700">{{ $product->priceLabel() }}</p>
-                                </div>
-                            </button>
+                            <div class="relative" wire:key="urn-{{ $product->id }}">
+                                <button type="button" wire:click="selectUrn({{ $product->id }})" @class([
+                                    'block h-full w-full overflow-hidden rounded-xl border text-left transition',
+                                    'border-2 border-brand-600 bg-brand-50 ring-2 ring-brand-600/30' => $urnId === $product->id,
+                                    'border border-zinc-200 hover:border-brand-300' => $urnId !== $product->id,
+                                ])>
+                                    <x-product-image :src="$product->imageUrl()" :alt="$product->name" :category="$product->category->value" class="h-24 w-full" />
+                                    @if ($urnId === $product->id)
+                                        <span class="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-brand-700 px-2 py-0.5 text-xs font-semibold text-white shadow">
+                                            <flux:icon.check class="size-3.5" />{{ __('Selected') }}
+                                        </span>
+                                    @endif
+                                    <div class="p-3">
+                                        <p class="text-sm font-medium text-zinc-800">{{ $product->name }}</p>
+                                        @if ($product->description)
+                                            <p class="mt-1 text-xs text-zinc-500">{{ $product->description }}</p>
+                                        @endif
+                                        <p class="mt-1 text-sm text-brand-700">{{ $product->priceLabel() }}</p>
+                                    </div>
+                                </button>
+                                @if ($product->imageUrl())
+                                    <button type="button" class="absolute right-1 top-[4.25rem] flex size-6 items-center justify-center rounded-full bg-white/90 text-zinc-700 shadow hover:bg-white" x-on:click="zoom = { src: @js($product->imageUrl()), name: @js($product->name) }" aria-label="{{ __('View full size image of :name', ['name' => $product->name]) }}">
+                                        <flux:icon.magnifying-glass-plus class="size-4" />
+                                    </button>
+                                @endif
+                            </div>
                         @endforeach
                     </div>
-                    @if ($urnId)
+                    @if ($urnId && ! $this->storeModel()->requires_urn)
                         <button type="button" wire:click="clearUrn" class="mt-2 text-xs text-zinc-400 underline hover:text-red-600">{{ __('Clear selection') }}</button>
                     @endif
+                    @error('urn') <flux:error class="mt-2">{{ $message }}</flux:error> @enderror
                 </div>
             @endif
 
-            @if ($this->keepsakes()->isNotEmpty())
-                <div class="mt-8">
-                    <flux:heading size="lg">{{ __('Keepsakes') }}</flux:heading>
-                    <p class="mb-3 text-xs text-zinc-500">{{ __('Add as many as you like.') }}</p>
-                    <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                        @foreach ($this->keepsakes() as $product)
-                            @php($key = $product->id.'-0')
-                            <div class="overflow-hidden rounded-xl border border-zinc-200">
-                                <x-product-image :src="$product->imageUrl()" :category="$product->category->value" class="h-24 w-full" />
-                                <div class="p-3">
-                                    <p class="text-sm font-medium text-zinc-800">{{ $product->name }}</p>
-                                    <p class="mt-1 text-sm text-brand-700">{{ $product->priceLabel() }}</p>
-                                    <div class="mt-2 flex items-center gap-2">
-                                        <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-200 text-sm" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ (int) ($keepsakeQty[$key] ?? 0) - 1 }})">&minus;</button>
-                                        <span class="w-4 text-center text-sm">{{ $keepsakeQty[$key] ?? 0 }}</span>
-                                        <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-200 text-sm" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ (int) ($keepsakeQty[$key] ?? 0) + 1 }})">+</button>
-                                    </div>
-                                </div>
-                            </div>
-                        @endforeach
-                    </div>
-                </div>
+            @if ($this->containers()->isEmpty() && $this->urns()->isEmpty())
+                <p class="mt-6 text-sm text-zinc-500">{{ __('No container or urn options are available for this arrangement — you can continue to the next step.') }}</p>
             @endif
 
-            @if (($extras = $this->extras())->isNotEmpty())
-                <div class="mt-8">
-                    <flux:heading size="lg">{{ __('Services & add-ons') }}</flux:heading>
-                    <div class="mt-3 grid gap-3 sm:grid-cols-2">
-                        @foreach ($extras as $product)
-                            @php($key = $product->id.'-0')
-                            @php($qty = (int) ($keepsakeQty[$key] ?? 0))
-                            <div class="flex gap-3 overflow-hidden rounded-xl border border-zinc-200 p-3" wire:key="extra-{{ $product->id }}">
-                                <x-product-image :src="$product->imageUrl()" :category="$product->category->value" class="size-16 shrink-0 rounded-lg" />
-                                <div class="min-w-0 flex-1">
-                                    <p class="text-sm font-medium text-zinc-800">{{ $product->name }}</p>
-                                    @if ($product->description)
-                                        <p class="text-xs text-zinc-500">{{ $product->description }}</p>
-                                    @endif
-                                    <p class="mt-1 text-sm text-brand-700">{{ $product->priceLabel() }}</p>
-
-                                    @if ($product->is_required && ! $product->hasPerUnitPricing())
-                                        <span class="mt-2 inline-block rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Included') }}</span>
-                                    @else
-                                        @if ($product->is_required)
-                                            <span class="mt-2 inline-block rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Included') }}</span>
-                                        @endif
-                                        @if ($product->hasPerUnitPricing() || ! $product->is_required)
-                                            <div class="mt-2 flex items-center gap-2">
-                                                <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-200 text-sm" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ $qty - 1 }})">&minus;</button>
-                                                <span class="w-4 text-center text-sm">{{ $qty }}</span>
-                                                <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-200 text-sm" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ $qty + 1 }})">+</button>
-                                                @if ($product->hasPerUnitPricing() && $product->per_unit_label)
-                                                    <span class="text-xs text-zinc-400">{{ $product->per_unit_label }}{{ $qty === 1 ? '' : 's' }}</span>
-                                                @endif
-                                            </div>
-                                        @endif
-                                    @endif
-                                </div>
-                            </div>
-                        @endforeach
-                    </div>
-                </div>
-            @endif
+            <div x-show="zoom" style="display: none" x-transition.opacity class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/80 p-4" x-on:click="zoom = null" role="dialog" aria-modal="true">
+                <button type="button" class="absolute right-4 top-4 flex size-10 items-center justify-center rounded-full bg-white text-zinc-800" x-on:click="zoom = null" aria-label="{{ __('Close image') }}">
+                    <flux:icon.x-mark class="size-5" />
+                </button>
+                <img x-bind:src="zoom?.src" x-bind:alt="zoom?.name" class="max-h-full max-w-full rounded-lg object-contain shadow-2xl" x-on:click.stop>
+            </div>
 
             <div class="mt-8 flex items-center justify-between">
                 <flux:button variant="ghost" wire:click="backTo('timing')">{{ __('Back') }}</flux:button>
-                <flux:button variant="primary" class="!bg-brand-700 hover:!bg-brand-800" wire:click="goToDetails">
+                <flux:button variant="primary" class="!bg-brand-700 hover:!bg-brand-800" wire:click="goToAddons">
                     {{ __('Continue') }}
                 </flux:button>
             </div>
         </div>
     @endif
 
-    {{-- Step 3: Minimal purchaser + deceased details --}}
+    {{-- Step 3: Services & add-ons --}}
+    @if ($step === 'addons')
+        <div class="rounded-2xl border border-brand-100 bg-white p-6 shadow-sm sm:p-8">
+            <flux:heading size="xl" class="font-serif">{{ __('Services & add-ons') }}</flux:heading>
+            <flux:subheading class="mt-1">{{ __('Add anything else you need for the service.') }}</flux:subheading>
+
+            <div class="mt-6 grid gap-3 sm:grid-cols-2">
+                @forelse (($extras = $this->extras()) as $product)
+                    @php($key = $product->id.'-0')
+                    @php($qty = (int) ($keepsakeQty[$key] ?? 0))
+                    <div class="flex gap-3 overflow-hidden rounded-xl border border-zinc-200 p-3" wire:key="extra-{{ $product->id }}">
+                        <x-product-image :src="$product->imageUrl()" :category="$product->category->value" class="size-16 shrink-0 rounded-lg" />
+                        <div class="min-w-0 flex-1">
+                            <p class="text-sm font-medium text-zinc-800">{{ $product->name }}</p>
+                            @if ($product->description)
+                                <p class="text-xs text-zinc-500">{{ $product->description }}</p>
+                            @endif
+                            <p class="mt-1 text-sm text-brand-700">{{ $product->priceLabel() }}</p>
+
+                            @if ($product->is_required && ! $product->hasPerUnitPricing())
+                                <span class="mt-2 inline-block rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Required') }}</span>
+                            @else
+                                @if ($product->is_required)
+                                    <span class="mt-2 inline-block rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Required') }}</span>
+                                @endif
+                                @if ($product->hasPerUnitPricing() || ! $product->is_required)
+                                    <div class="mt-2 flex items-center gap-2">
+                                        <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-200 text-sm" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ $qty - 1 }})">&minus;</button>
+                                        <span class="w-4 text-center text-sm">{{ $qty }}</span>
+                                        <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-200 text-sm" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ $qty + 1 }})">+</button>
+                                        @if ($product->hasPerUnitPricing() && $product->per_unit_label)
+                                            <span class="text-xs text-zinc-400">{{ $product->per_unit_label }}{{ $qty === 1 ? '' : 's' }}</span>
+                                        @endif
+                                    </div>
+                                @endif
+                            @endif
+                        </div>
+                    </div>
+                @empty
+                    <p class="text-sm text-zinc-500">{{ __('No services or add-ons are available for this option — you can continue to the next step.') }}</p>
+                @endforelse
+            </div>
+
+            <div class="mt-8 flex items-center justify-between">
+                <flux:button variant="ghost" wire:click="backTo('containers')">{{ __('Back') }}</flux:button>
+                <flux:button variant="primary" class="!bg-brand-700 hover:!bg-brand-800" wire:click="goToKeepsakes">
+                    {{ __('Continue') }}
+                </flux:button>
+            </div>
+        </div>
+    @endif
+
+    {{-- Step 4: Keepsakes --}}
+    @if ($step === 'keepsakes')
+        <div class="rounded-2xl border border-brand-100 bg-white p-6 shadow-sm sm:p-8" x-data="{ zoom: null }" x-on:keydown.escape.window="zoom = null">
+            <flux:heading size="xl" class="font-serif" id="keepsakes-top">{{ __('Keepsakes') }}</flux:heading>
+            <flux:subheading class="mt-1">{{ __('Add as many as you like.') }}</flux:subheading>
+
+            <div class="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                @forelse ($this->keepsakes() as $product)
+                    @php($key = $product->id.'-0')
+                    <div class="overflow-hidden rounded-xl border border-zinc-200">
+                        @if ($product->imageUrl())
+                            <button type="button" class="group relative block w-full" x-on:click="zoom = { src: @js($product->imageUrl()), name: @js($product->name) }" aria-label="{{ __('View full size image of :name', ['name' => $product->name]) }}">
+                                <x-product-image :src="$product->imageUrl()" :alt="$product->name" :category="$product->category->value" class="h-24 w-full" />
+                                <span class="absolute bottom-1 right-1 flex size-6 items-center justify-center rounded-full bg-white/90 text-zinc-700 shadow group-hover:bg-white">
+                                    <flux:icon.magnifying-glass-plus class="size-4" />
+                                </span>
+                            </button>
+                        @else
+                            <x-product-image :category="$product->category->value" class="h-24 w-full" />
+                        @endif
+                        <div class="p-3">
+                            <p class="text-sm font-medium text-zinc-800">{{ $product->name }}</p>
+                            @if ($product->description)
+                                <p class="mt-1 text-xs text-zinc-500">{{ $product->description }}</p>
+                            @endif
+                            <p class="mt-1 text-sm text-brand-700">{{ $product->priceLabel() }}</p>
+                            <div class="mt-2 flex items-center gap-2">
+                                <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-200 text-sm" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ (int) ($keepsakeQty[$key] ?? 0) - 1 }})">&minus;</button>
+                                <span class="w-4 text-center text-sm">{{ $keepsakeQty[$key] ?? 0 }}</span>
+                                <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-200 text-sm" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ (int) ($keepsakeQty[$key] ?? 0) + 1 }})">+</button>
+                            </div>
+                        </div>
+                    </div>
+                @empty
+                    <p class="col-span-full text-sm text-zinc-500">{{ __('No keepsakes are available for this option — you can continue to the next step.') }}</p>
+                @endforelse
+            </div>
+
+            <div x-show="zoom" style="display: none" x-transition.opacity class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/80 p-4" x-on:click="zoom = null" role="dialog" aria-modal="true">
+                <button type="button" class="absolute right-4 top-4 flex size-10 items-center justify-center rounded-full bg-white text-zinc-800" x-on:click="zoom = null" aria-label="{{ __('Close image') }}">
+                    <flux:icon.x-mark class="size-5" />
+                </button>
+                <img x-bind:src="zoom?.src" x-bind:alt="zoom?.name" class="max-h-full max-w-full rounded-lg object-contain shadow-2xl" x-on:click.stop>
+            </div>
+
+            <div class="mt-8 flex items-center justify-between">
+                <flux:button variant="ghost" wire:click="backTo('addons')">{{ __('Back') }}</flux:button>
+                <flux:button variant="primary" class="!bg-brand-700 hover:!bg-brand-800" wire:click="goToDetails">
+                    {{ __('Continue') }}
+                </flux:button>
+            </div>
+        </div>
+
+        @script
+            <script>
+                $wire.on('keepsake-selected', () => {
+                    document.getElementById('keepsakes-top')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                });
+            </script>
+        @endscript
+    @endif
+
+    {{-- Step 5: Minimal purchaser + deceased details --}}
     @if ($step === 'details')
         <div class="rounded-2xl border border-brand-100 bg-white p-6 shadow-sm sm:p-8">
             <flux:heading size="xl" class="font-serif">{{ __('Your information') }}</flux:heading>
@@ -684,7 +850,7 @@ new class extends Component
                 @endif
 
                 <div class="flex items-center justify-between pt-2">
-                    <flux:button variant="ghost" wire:click="backTo('personalize')">{{ __('Back') }}</flux:button>
+                    <flux:button variant="ghost" wire:click="backTo('keepsakes')">{{ __('Back') }}</flux:button>
                     <flux:button type="submit" variant="primary" class="!bg-brand-700 hover:!bg-brand-800">
                         {{ __('Continue to payment') }}
                     </flux:button>
@@ -693,7 +859,7 @@ new class extends Component
         </div>
     @endif
 
-    {{-- Step 4: Payment --}}
+    {{-- Step 6: Payment --}}
     @if ($step === 'payment')
         <div class="rounded-2xl border border-brand-100 bg-white p-6 shadow-sm sm:p-8">
             <flux:heading size="xl" class="font-serif">{{ __('Secure payment') }}</flux:heading>
@@ -708,6 +874,12 @@ new class extends Component
                     <div class="mt-1 flex justify-between text-zinc-600">
                         <span>{{ __('Tax') }}</span>
                         <span>${{ number_format($this->cart()->taxCents() / 100, 2) }}</span>
+                    </div>
+                @endif
+                @if ($this->cart()->processingFeeCents() > 0)
+                    <div class="mt-1 flex justify-between text-zinc-600">
+                        <span>{{ __('Processing fee') }}</span>
+                        <span>${{ number_format($this->cart()->processingFeeCents() / 100, 2) }}</span>
                     </div>
                 @endif
                 <div class="mt-1 flex justify-between border-t border-brand-100 pt-1 font-semibold text-zinc-800">
@@ -728,47 +900,49 @@ new class extends Component
 
             <button type="button" wire:click="backTo('details')" class="mt-4 text-xs text-zinc-400 underline">{{ __('Back') }}</button>
         </div>
-
-        @script
-            <script>
-                $wire.on('stripe-mount', async ({ clientSecret, publishableKey, connectedAccountId, redirectUrl }) => {
-                    if (!window.Stripe || !publishableKey) {
-                        document.getElementById('payment-errors').textContent = 'Payment is not configured for this store yet.';
-                        return;
-                    }
-
-                    const stripe = connectedAccountId
-                        ? window.Stripe(publishableKey, { stripeAccount: connectedAccountId })
-                        : window.Stripe(publishableKey);
-
-                    const elements = stripe.elements({ clientSecret });
-                    const paymentElement = elements.create('payment');
-                    paymentElement.mount('#payment-element');
-
-                    const form = document.getElementById('payment-form');
-                    const button = document.getElementById('pay-button');
-                    const errors = document.getElementById('payment-errors');
-
-                    form.addEventListener('submit', async (event) => {
-                        event.preventDefault();
-                        button.disabled = true;
-                        errors.textContent = '';
-
-                        const { error } = await stripe.confirmPayment({
-                            elements,
-                            confirmParams: { return_url: redirectUrl },
-                            redirect: 'if_required',
-                        });
-
-                        if (error) {
-                            errors.textContent = error.message;
-                            button.disabled = false;
-                        } else {
-                            window.location.href = redirectUrl;
-                        }
-                    });
-                });
-            </script>
-        @endscript
     @endif
+
+    {{-- Registered once for the component rather than inside the payment step,
+         so going back and continuing again can't stack duplicate listeners. --}}
+    @script
+        <script>
+            $wire.on('stripe-mount', async ({ clientSecret, publishableKey, connectedAccountId, redirectUrl }) => {
+                if (!window.Stripe || !publishableKey) {
+                    document.getElementById('payment-errors').textContent = 'Payment is not configured for this store yet.';
+                    return;
+                }
+
+                const stripe = connectedAccountId
+                    ? window.Stripe(publishableKey, { stripeAccount: connectedAccountId })
+                    : window.Stripe(publishableKey);
+
+                const elements = stripe.elements({ clientSecret });
+                const paymentElement = elements.create('payment');
+                paymentElement.mount('#payment-element');
+
+                const form = document.getElementById('payment-form');
+                const button = document.getElementById('pay-button');
+                const errors = document.getElementById('payment-errors');
+
+                form.onsubmit = async (event) => {
+                    event.preventDefault();
+                    button.disabled = true;
+                    errors.textContent = '';
+
+                    const { error } = await stripe.confirmPayment({
+                        elements,
+                        confirmParams: { return_url: redirectUrl },
+                        redirect: 'if_required',
+                    });
+
+                    if (error) {
+                        errors.textContent = error.message;
+                        button.disabled = false;
+                    } else {
+                        window.location.href = redirectUrl;
+                    }
+                };
+            });
+        </script>
+    @endscript
 </div>

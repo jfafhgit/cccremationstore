@@ -37,6 +37,7 @@ use Illuminate\Support\Str;
  * @property string $currency
  * @property int $subtotal_cents
  * @property int $tax_cents
+ * @property int $processing_fee_cents
  * @property int $platform_fee_cents
  * @property int $total_cents
  * @property string|null $stripe_payment_intent_id
@@ -66,6 +67,7 @@ class Order extends Model
         'currency',
         'subtotal_cents',
         'tax_cents',
+        'processing_fee_cents',
         'platform_fee_cents',
         'total_cents',
         'stripe_payment_intent_id',
@@ -98,6 +100,7 @@ class Order extends Model
             'timing' => OrderTiming::class,
             'subtotal_cents' => 'integer',
             'tax_cents' => 'integer',
+            'processing_fee_cents' => 'integer',
             'platform_fee_cents' => 'integer',
             'total_cents' => 'integer',
             'paid_at' => 'datetime',
@@ -134,6 +137,11 @@ class Order extends Model
         return $query->whereNotNull('paid_at');
     }
 
+    public function isAwaitingPayment(): bool
+    {
+        return $this->status === OrderStatus::PendingPayment && $this->paid_at === null;
+    }
+
     public function purchaserName(): string
     {
         return trim("{$this->purchaser_first_name} {$this->purchaser_last_name}");
@@ -152,6 +160,11 @@ class Order extends Model
     public function taxInDollars(): string
     {
         return number_format($this->tax_cents / 100, 2);
+    }
+
+    public function processingFeeInDollars(): string
+    {
+        return number_format($this->processing_fee_cents / 100, 2);
     }
 
     public function totalInDollars(): string

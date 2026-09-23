@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\ProductCategory;
+use App\Enums\ProductSortMode;
 use Database\Factories\ProductFactory;
 use Illuminate\Database\Eloquent\Attributes\Scope;
 use Illuminate\Database\Eloquent\Builder;
@@ -114,6 +115,17 @@ class Product extends Model
         return $timing === 'pre_need'
             ? $query->where('available_for_pre_need', true)
             : $query->where('available_for_immediate', true);
+    }
+
+    #[Scope]
+    protected function orderedFor(Builder $query, ProductSortMode $mode): Builder
+    {
+        return match ($mode) {
+            ProductSortMode::Name => $query->orderBy('name'),
+            ProductSortMode::Price => $query->orderBy('price_cents'),
+            ProductSortMode::Created => $query->orderBy('created_at')->orderBy('id'),
+            ProductSortMode::Custom => $query->orderBy('sort_order'),
+        };
     }
 
     public function priceInDollars(): string

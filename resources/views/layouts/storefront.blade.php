@@ -49,9 +49,9 @@
 
             <footer class="border-t border-brand-100 bg-white py-6 text-center text-xs text-zinc-500">
                 <p>&copy; {{ now()->year }} {{ $store?->name ?? config('app.name') }}. {{ __('All arrangements handled with care.') }}</p>
-                @if ($store?->general_price_list_url)
+                @if ($store?->generalPriceListUrl())
                     <p class="mt-1">
-                        <a href="{{ $store->general_price_list_url }}" target="_blank" class="underline hover:text-brand-700">{{ __('View our General Price List') }}</a>
+                        <a href="{{ $store->generalPriceListUrl() }}" target="_blank" rel="noopener" class="underline hover:text-brand-700">{{ __('View our General Price List') }}</a>
                     </p>
                 @endif
                 <p class="mt-1 text-zinc-400">{{ __('Powered by') }} {{ config('app.name') }}</p>

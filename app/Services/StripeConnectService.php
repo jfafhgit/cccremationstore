@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Store;
 use Stripe\Account;
 use Stripe\AccountLink;
+use Stripe\Exception\InvalidRequestException;
 use Stripe\StripeClient;
 
 /**
@@ -59,7 +60,7 @@ class StripeConnectService
             ],
         ]);
 
-        $store->update(['stripe_account_id' => $account->id]);
+        $store->forceFill(['stripe_account_id' => $account->id])->save();
 
         return $store->fresh();
     }
@@ -86,6 +87,39 @@ class StripeConnectService
     }
 
     /**
+     * Unlink a connected account whose onboarding was never finished — e.g.
+     * one created with the wrong email, which Stripe then won't let the
+     * merchant change — so the next "Connect Stripe" starts over with a new
+     * account using the store's current contact email. Re-checks with Stripe
+     * first and refuses once details have been submitted, since that account
+     * may already be the merchant's real one.
+     */
+    public function resetUnfinishedAccount(Store $store): Store
+    {
+        try {
+            $store = $this->syncAccountStatus($store);
+        } catch (InvalidRequestException $e) {
+            // Already deleted from the Stripe dashboard — nothing to protect.
+            if ($e->getStripeCode() !== 'resource_missing') {
+                throw $e;
+            }
+        }
+
+        if ($store->stripe_details_submitted) {
+            throw new \RuntimeException('This Stripe account has already been onboarded and cannot be reset.');
+        }
+
+        $store->forceFill([
+            'stripe_account_id' => null,
+            'stripe_details_submitted' => false,
+            'stripe_charges_enabled' => false,
+            'stripe_payouts_enabled' => false,
+        ])->save();
+
+        return $store->fresh();
+    }
+
+    /**
      * Refresh the store's cached Stripe account status. Call this after the
      * merchant returns from onboarding, and from the account.updated webhook.
      */
@@ -97,11 +131,11 @@ class StripeConnectService
             return $store;
         }
 
-        $store->update([
+        $store->forceFill([
             'stripe_details_submitted' => (bool) $account->details_submitted,
             'stripe_charges_enabled' => (bool) $account->charges_enabled,
             'stripe_payouts_enabled' => (bool) $account->payouts_enabled,
-        ]);
+        ])->save();
 
         return $store->fresh();
     }

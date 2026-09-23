@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\ProductCategory;
+use App\Enums\ProductSortMode;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Store;
@@ -79,15 +80,103 @@ new class extends Component
 
     public string $newVariantPrice = '0.00';
 
+    /** @var array<string, string> the selected ProductSortMode value per category, for the "Sort by" selects. */
+    public array $sortModeChoice = [];
+
     public function mount(Store $store): void
     {
         $this->currentStore = $store;
         $this->formCategory = ProductCategory::Package->value;
+
+        foreach (ProductCategory::cases() as $category) {
+            $this->sortModeChoice[$category->value] = $store->productSortMode($category)->value;
+        }
     }
 
+    /**
+     * Fires when a "Sort by" select changes; $key is the category value
+     * (the part of "sortModeChoice.<category>" after the property name).
+     */
+    public function updatedSortModeChoice(string $value, string $key): void
+    {
+        $this->setSortMode($key, $value);
+    }
+
+    /**
+     * @return Collection<string, Collection<int, Product>>
+     */
     public function products(): Collection
     {
-        return $this->currentStore->products()->with('variants')->orderBy('category')->orderBy('sort_order')->get()->groupBy('category');
+        return collect(ProductCategory::cases())->mapWithKeys(function (ProductCategory $category) {
+            return [
+                $category->value => $this->currentStore->products()
+                    ->with('variants')
+                    ->ofCategory($category)
+                    ->orderedFor($this->currentStore->productSortMode($category))
+                    ->get(),
+            ];
+        });
+    }
+
+    /**
+     * Switch how one category is ordered. Moving into "custom" snapshots
+     * whatever order was just being shown into sort_order, so drag-and-drop
+     * starts from a sensible arrangement instead of a stale leftover order.
+     */
+    public function setSortMode(string $categoryValue, string $mode): void
+    {
+        $category = ProductCategory::from($categoryValue);
+        $newMode = ProductSortMode::from($mode);
+        $previousMode = $this->currentStore->productSortMode($category);
+
+        if ($newMode === ProductSortMode::Custom && $previousMode !== ProductSortMode::Custom) {
+            $this->currentStore->products()
+                ->ofCategory($category)
+                ->orderedFor($previousMode)
+                ->pluck('id')
+                ->each(fn (int $id, int $index) => Product::whereKey($id)->update(['sort_order' => $index]));
+        }
+
+        $settings = $this->currentStore->settings ?? [];
+        $settings['product_sort'][$category->value] = $newMode->value;
+        $this->currentStore->update(['settings' => $settings]);
+    }
+
+    /**
+     * Drag-and-drop reorder within one category (custom mode only): move
+     * the dragged product to just before the one it was dropped on, then
+     * renumber the whole category sequentially.
+     */
+    public function reorderProduct(string $categoryValue, int $draggedId, int $targetId): void
+    {
+        if ($draggedId === $targetId) {
+            return;
+        }
+
+        $category = ProductCategory::from($categoryValue);
+
+        $dragged = $this->currentStore->products()->ofCategory($category)->whereKey($draggedId)->exists();
+
+        if (! $dragged) {
+            return;
+        }
+
+        $ids = $this->currentStore->products()
+            ->ofCategory($category)
+            ->orderBy('sort_order')
+            ->pluck('id')
+            ->reject(fn (int $id) => $id === $draggedId)
+            ->values();
+
+        $targetIndex = $ids->search($targetId);
+
+        if ($targetIndex === false) {
+            return;
+        }
+
+        $ids->splice($targetIndex, 0, [$draggedId]);
+
+        $ids->each(fn (int $id, int $index) => Product::whereKey($id)->update(['sort_order' => $index]));
     }
 
     public function newProduct(?string $category = null): void
@@ -274,10 +363,18 @@ new class extends Component
 
     @foreach (ProductCategory::cases() as $category)
         @php($categoryProducts = $this->products()->get($category->value, collect()))
+        @php($isCustomSort = $currentStore->productSortMode($category) === ProductSortMode::Custom)
         <div class="mt-8">
-            <div class="flex items-center justify-between">
+            <div class="flex flex-wrap items-center justify-between gap-2">
                 <flux:heading size="lg">{{ $category->label() }}s</flux:heading>
-                <flux:button size="sm" variant="ghost" wire:click="newProduct('{{ $category->value }}')">{{ __('Add') }}</flux:button>
+                <div class="flex items-center gap-2">
+                    <flux:select size="sm" wire:model.live="sortModeChoice.{{ $category->value }}" class="w-44">
+                        @foreach (ProductSortMode::cases() as $mode)
+                            <option value="{{ $mode->value }}">{{ __('Sort: :label', ['label' => $mode->label()]) }}</option>
+                        @endforeach
+                    </flux:select>
+                    <flux:button size="sm" variant="ghost" wire:click="newProduct('{{ $category->value }}')">{{ __('Add') }}</flux:button>
+                </div>
             </div>
 
             @if ($category === ProductCategory::Package)
@@ -291,47 +388,56 @@ new class extends Component
                 </p>
             @endif
 
+            @if ($isCustomSort)
+                <p class="mt-1 text-xs text-zinc-400">{{ __('Drag a card to reorder — this is what customers see on the storefront.') }}</p>
+            @endif
+
             @if ($categoryProducts->isEmpty())
                 <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{{ __('Nothing here yet.') }}</p>
             @else
-                <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div class="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5" @if ($isCustomSort) x-data="{ dragId: null }" @endif>
                     @foreach ($categoryProducts as $product)
-                        <div wire:key="product-{{ $product->id }}" @class([
-                            'overflow-hidden rounded-xl border',
-                            'border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800' => $product->is_active,
-                            'border-dashed border-zinc-200 bg-zinc-50 opacity-60 dark:border-zinc-700 dark:bg-zinc-800/40' => ! $product->is_active,
-                        ])>
-                            <x-product-image :src="$product->imageUrl()" :category="$product->category->value" class="h-32 w-full" />
-                            <div class="p-4">
-                                <div class="flex items-start justify-between gap-2">
-                                    <p class="font-medium text-zinc-800 dark:text-zinc-100">{{ $product->name }}</p>
-                                    <flux:badge size="sm" :color="$product->is_active ? 'green' : 'zinc'">{{ $product->is_active ? __('Active') : __('Hidden') }}</flux:badge>
+                        <div
+                            wire:key="product-{{ $product->id }}"
+                            @if ($isCustomSort)
+                                draggable="true"
+                                x-on:dragstart="dragId = {{ $product->id }}"
+                                x-on:dragover.prevent
+                                x-on:drop.prevent="dragId !== null && dragId !== {{ $product->id }} && $wire.reorderProduct('{{ $category->value }}', dragId, {{ $product->id }})"
+                            @endif
+                            @class([
+                                'overflow-hidden rounded-lg border',
+                                'cursor-move' => $isCustomSort,
+                                'border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800' => $product->is_active,
+                                'border-dashed border-zinc-200 bg-zinc-50 opacity-60 dark:border-zinc-700 dark:bg-zinc-800/40' => ! $product->is_active,
+                            ])
+                        >
+                            <x-product-image :src="$product->imageUrl()" :category="$product->category->value" class="h-16 w-full" />
+                            <div class="p-2">
+                                <div class="flex items-start justify-between gap-1">
+                                    <p class="truncate text-xs font-medium text-zinc-800 dark:text-zinc-100">{{ $product->name }}</p>
+                                    @if ($isCustomSort)
+                                        <span class="shrink-0 text-zinc-300 dark:text-zinc-600" title="{{ __('Drag to reorder') }}">⠿</span>
+                                    @endif
                                 </div>
-                                <div class="mt-1 flex items-center gap-2">
-                                    <p class="text-sm font-semibold text-brand-700 dark:text-brand-300">{{ $product->priceLabel() }}</p>
+                                <div class="mt-0.5 flex flex-wrap items-center gap-1">
+                                    <p class="text-xs font-semibold text-brand-700 dark:text-brand-300">{{ $product->priceLabel() }}</p>
+                                    <flux:badge size="sm" :color="$product->is_active ? 'green' : 'zinc'">{{ $product->is_active ? __('Active') : __('Hidden') }}</flux:badge>
                                     @if ($product->is_required)
                                         <flux:badge size="sm" color="blue">{{ __('Pre-selected') }}</flux:badge>
                                     @endif
-                                    @if ($product->taxable_amount_cents !== null)
-                                        <flux:badge size="sm" color="zinc">{{ __('Taxable: $:amount', ['amount' => number_format($product->taxable_amount_cents / 100, 2)]) }}</flux:badge>
-                                    @elseunless ($product->is_taxable)
-                                        <flux:badge size="sm" color="zinc">{{ __('Non-taxable') }}</flux:badge>
-                                    @endif
                                 </div>
-                                @if ($product->description)
-                                    <p class="mt-1 line-clamp-2 text-xs text-zinc-500 dark:text-zinc-400">{{ $product->description }}</p>
-                                @endif
                                 @if ($product->variants->isNotEmpty())
-                                    <p class="mt-2 text-xs text-zinc-400">{{ __(':count variant options', ['count' => $product->variants->count()]) }}</p>
+                                    <p class="mt-1 text-[11px] text-zinc-400">{{ __(':count variants', ['count' => $product->variants->count()]) }}</p>
                                 @endif
-                                <div class="mt-3 flex gap-2">
-                                    <flux:button size="sm" variant="ghost" wire:click="editProduct({{ $product->id }})">{{ __('Edit') }}</flux:button>
-                                    <flux:button size="sm" variant="ghost" wire:click="toggleActive({{ $product->id }})">
+                                <div class="mt-2 flex flex-wrap gap-x-2 gap-y-1">
+                                    <button type="button" class="text-xs text-zinc-500 underline hover:text-brand-700 dark:text-zinc-400" wire:click="editProduct({{ $product->id }})">{{ __('Edit') }}</button>
+                                    <button type="button" class="text-xs text-zinc-500 underline hover:text-brand-700 dark:text-zinc-400" wire:click="toggleActive({{ $product->id }})">
                                         {{ $product->is_active ? __('Hide') : __('Unhide') }}
-                                    </flux:button>
-                                    <flux:button size="sm" variant="ghost" wire:click="deleteProduct({{ $product->id }})" wire:confirm="{{ __('Delete this product?') }}">
+                                    </button>
+                                    <button type="button" class="text-xs text-zinc-500 underline hover:text-red-600 dark:text-zinc-400" wire:click="deleteProduct({{ $product->id }})" wire:confirm="{{ __('Delete this product?') }}">
                                         {{ __('Delete') }}
-                                    </flux:button>
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -415,7 +521,7 @@ new class extends Component
                         <img src="{{ \App\Models\Product::imageUrlFor($existingImagePath) }}" alt="" class="size-16 rounded-lg object-cover">
                     @endif
                     <div class="flex-1">
-                        <input type="file" wire:model="formImage" accept="image/*" class="block w-full text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-zinc-200 dark:text-zinc-300 dark:file:bg-zinc-700" />
+                        <input type="file" wire:model="formImage" accept="image/*" class="block w-full text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-zinc-800 hover:file:bg-zinc-200 hover:file:text-zinc-900 dark:text-zinc-300 dark:file:bg-zinc-700 dark:file:text-zinc-100 dark:hover:file:bg-zinc-600 dark:hover:file:text-white" />
                         <span wire:loading wire:target="formImage" class="text-xs text-zinc-400">{{ __('Uploading…') }}</span>
                         @if ($existingImagePath && ! $formImage)
                             <button type="button" wire:click="removeExistingImage" class="mt-1 block text-xs text-zinc-400 underline hover:text-red-600">{{ __('Remove image') }}</button>

@@ -5,6 +5,7 @@ use App\Enums\StorePath;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\Store;
+use App\Services\Cart;
 use Livewire\Livewire;
 
 beforeEach(function () {
@@ -32,7 +33,7 @@ function fillMinimalDetails($component): void
         ->set('purchaserPhone', '555-0100');
 }
 
-test('the wizard walks timing, personalize, and details in order', function () {
+test('the wizard walks through every step in order', function () {
     $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
 
     expect($component->get('step'))->toBe('timing');
@@ -40,25 +41,31 @@ test('the wizard walks timing, personalize, and details in order', function () {
     $component->call('selectTiming', 'immediate');
     $component->call('selectPackage', $this->package->id);
 
-    // The timing step's "Continue" must land on personalize, not skip
+    // The timing step's "Continue" must land on containers, not skip
     // straight to details — this was a real bug caught during manual
     // verification (the button called goToDetails() directly).
-    $component->call('goToPersonalize');
-    expect($component->get('step'))->toBe('personalize');
+    $component->call('goToContainers');
+    expect($component->get('step'))->toBe('containers');
+
+    $component->call('goToAddons');
+    expect($component->get('step'))->toBe('addons');
+
+    $component->call('goToKeepsakes');
+    expect($component->get('step'))->toBe('keepsakes');
 
     $component->call('goToDetails');
     expect($component->get('step'))->toBe('details');
 });
 
-test('a package must be selected before moving to details', function () {
+test('a package must be selected before continuing past the container step', function () {
     $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
 
     $component->call('selectTiming', 'immediate');
-    $component->call('goToPersonalize');
-    $component->call('goToDetails');
+    $component->call('goToContainers');
+    $component->call('goToAddons');
 
     $component->assertHasErrors('package');
-    expect($component->get('step'))->toBe('personalize');
+    expect($component->get('step'))->toBe('containers');
 });
 
 test('submitting details creates an order with the cart contents', function () {
@@ -67,7 +74,9 @@ test('submitting details creates an order with the cart contents', function () {
     $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
     $component->call('selectTiming', 'immediate');
     $component->call('selectPackage', $this->package->id);
-    $component->call('goToPersonalize');
+    $component->call('goToContainers');
+    $component->call('goToAddons');
+    $component->call('goToKeepsakes');
     $component->call('setKeepsakeQty', $this->keepsake->id, null, 2);
     $component->call('goToDetails');
     fillMinimalDetails($component);
@@ -92,7 +101,9 @@ test('a failed payment attempt shows a friendly error and keeps the order for re
     $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
     $component->call('selectTiming', 'immediate');
     $component->call('selectPackage', $this->package->id);
-    $component->call('goToPersonalize');
+    $component->call('goToContainers');
+    $component->call('goToAddons');
+    $component->call('goToKeepsakes');
     $component->call('goToDetails');
     fillMinimalDetails($component);
     $component->call('submitDetails');
@@ -115,7 +126,9 @@ test('a store with no Stripe account shows a friendly message instead of attempt
     $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
     $component->call('selectTiming', 'immediate');
     $component->call('selectPackage', $package->id);
-    $component->call('goToPersonalize');
+    $component->call('goToContainers');
+    $component->call('goToAddons');
+    $component->call('goToKeepsakes');
     $component->call('goToDetails');
     fillMinimalDetails($component);
     $component->call('submitDetails');
@@ -142,7 +155,7 @@ test('an a la carte store applies its base package automatically', function () {
 
     expect($component->get('packageId'))->toBe($this->package->id);
 
-    $component->call('goToPersonalize')->call('goToDetails');
+    $component->call('goToContainers')->call('goToAddons')->call('goToKeepsakes')->call('goToDetails');
 
     $component->assertHasNoErrors();
     expect($component->get('step'))->toBe('details');
@@ -167,6 +180,119 @@ test('a packages store lets the customer choose any package', function () {
     $component->call('selectTiming', 'immediate')->call('selectPackage', $other->id);
 
     expect($component->get('packageId'))->toBe($other->id);
+});
+
+test('a required container must be selected before continuing past the container step', function () {
+    $this->store->update(['requires_container' => true]);
+    Product::factory()->for($this->store)->category(ProductCategory::Container)->create();
+
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
+    $component->call('selectTiming', 'immediate');
+    $component->call('selectPackage', $this->package->id);
+    $component->call('goToContainers');
+    $component->call('goToAddons');
+
+    $component->assertHasErrors('container');
+    expect($component->get('step'))->toBe('containers');
+});
+
+test('selecting a required container allows the wizard to proceed', function () {
+    $this->store->update(['requires_container' => true]);
+    $container = Product::factory()->for($this->store)->category(ProductCategory::Container)->create();
+
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
+    $component->call('selectTiming', 'immediate');
+    $component->call('selectPackage', $this->package->id);
+    $component->call('goToContainers');
+    $component->call('selectContainer', $container->id);
+    $component->call('goToAddons');
+
+    $component->assertHasNoErrors();
+    expect($component->get('step'))->toBe('addons');
+});
+
+test('a required container that the store does not sell does not block the wizard', function () {
+    $this->store->update(['requires_container' => true]);
+
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
+    $component->call('selectTiming', 'immediate');
+    $component->call('selectPackage', $this->package->id);
+    $component->call('goToContainers');
+    $component->call('goToAddons');
+
+    $component->assertHasNoErrors();
+    expect($component->get('step'))->toBe('addons');
+});
+
+test('removing the package from the cart drawer clears the cart and returns to the start', function () {
+    $container = Product::factory()->for($this->store)->category(ProductCategory::Container)->create();
+
+    Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $this->package->id)
+        ->call('goToContainers')
+        ->call('selectContainer', $container->id)
+        ->call('setKeepsakeQty', $this->keepsake->id, null, 2);
+
+    Livewire::test('storefront.cart-drawer', ['store' => $this->store])
+        ->call('removeLine', 'package')
+        ->assertRedirect(route('storefront.start', ['store' => $this->store->slug]));
+
+    $cart = new Cart($this->store);
+    expect($cart->isEmpty())->toBeTrue()
+        ->and($cart->timing())->toBeNull();
+});
+
+test('the addons step and the keepsakes step show only their own products', function () {
+    $addon = Product::factory()->for($this->store)->category(ProductCategory::Addon)->create(['name' => 'Certified copies']);
+
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
+    $component->call('selectTiming', 'immediate');
+    $component->call('selectPackage', $this->package->id);
+    $component->call('goToContainers');
+    $component->call('goToAddons');
+
+    $component->assertSee('Certified copies')->assertDontSee($this->keepsake->name);
+
+    $component->call('goToKeepsakes');
+
+    $component->assertSee($this->keepsake->name)->assertDontSee('Certified copies');
+});
+
+test('selecting a keepsake dispatches an event to scroll back to the top of the list', function () {
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
+
+    $component->call('setKeepsakeQty', $this->keepsake->id, null, 1);
+
+    $component->assertDispatched('keepsake-selected');
+});
+
+test('increasing a keepsake quantity again also dispatches the scroll event', function () {
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
+
+    $component->call('setKeepsakeQty', $this->keepsake->id, null, 1);
+    $component->call('setKeepsakeQty', $this->keepsake->id, null, 2);
+
+    $component->assertDispatched('keepsake-selected');
+});
+
+test('decreasing a keepsake quantity does not dispatch the scroll event', function () {
+    $first = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
+    $first->call('setKeepsakeQty', $this->keepsake->id, null, 2);
+
+    $second = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
+    $second->call('setKeepsakeQty', $this->keepsake->id, null, 1);
+
+    $second->assertNotDispatched('keepsake-selected');
+});
+
+test('selecting a service or add-on does not dispatch the keepsakes scroll event', function () {
+    $addon = Product::factory()->for($this->store)->category(ProductCategory::Addon)->create();
+
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
+    $component->call('setKeepsakeQty', $addon->id, null, 1);
+
+    $component->assertNotDispatched('keepsake-selected');
 });
 
 test('included items are listed on the package card', function () {

@@ -83,6 +83,12 @@ new #[Layout('layouts::portal')] class extends Component
                     <span>${{ $currentOrder->taxInDollars() }}</span>
                 </div>
             @endif
+            @if ($currentOrder->processing_fee_cents > 0)
+                <div class="flex items-center justify-between text-sm text-zinc-500 dark:text-zinc-400">
+                    <span>{{ __('Processing fee') }}</span>
+                    <span>${{ $currentOrder->processingFeeInDollars() }}</span>
+                </div>
+            @endif
             <div class="flex items-center justify-between pt-1 font-semibold">
                 <span>{{ __('Total') }}</span>
                 <span>${{ $currentOrder->totalInDollars() }}</span>

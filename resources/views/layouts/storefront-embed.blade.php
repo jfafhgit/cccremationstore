@@ -29,6 +29,12 @@
     <body class="min-h-screen bg-transparent text-zinc-900 antialiased">
         {{ $slot }}
 
+        @if ($store?->generalPriceListUrl())
+            <p class="pb-4 text-center text-xs text-zinc-500">
+                <a href="{{ $store->generalPriceListUrl() }}" target="_blank" rel="noopener" class="underline hover:text-brand-700">{{ __('View our General Price List') }}</a>
+            </p>
+        @endif
+
         @fluxScripts
 
         {{-- Tells the parent page (via embed.js) how tall we are, so it can

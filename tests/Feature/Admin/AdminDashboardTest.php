@@ -6,6 +6,8 @@ use App\Models\Product;
 use App\Models\Store;
 use App\Models\User;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 
 beforeEach(function () {
@@ -14,6 +16,9 @@ beforeEach(function () {
 });
 
 test('guests cannot reach the admin area', function () {
+    // beforeEach signs in an admin; drop that session to act as a guest.
+    auth()->forgetGuards();
+
     $this->get('/admin/stores')->assertRedirect('/login');
 });
 
@@ -141,6 +146,20 @@ test('an admin can set a store to a la carte', function () {
     expect($store->fresh()->isALaCarte())->toBeTrue();
 });
 
+test('an admin can enable a processing fee', function () {
+    $store = Store::factory()->create();
+
+    Livewire::test('pages::admin.stores.show', ['store' => $store])
+        ->set('processingFeeEnabled', true)
+        ->set('processingFeePercent', '3.50')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($store->fresh())
+        ->processing_fee_enabled->toBeTrue()
+        ->processing_fee_bps->toBe(350);
+});
+
 test('a package saves its included items one per line', function () {
     $store = Store::factory()->create();
 
@@ -195,4 +214,49 @@ test('packages cannot be pre-selected or priced per unit', function () {
 
     expect($product->is_required)->toBeFalse()
         ->and($product->per_unit_price_cents)->toBeNull();
+});
+
+test('an admin can upload a general price list PDF and replace it', function () {
+    Storage::fake('public');
+    $store = Store::factory()->create();
+
+    Livewire::test('pages::admin.stores.show', ['store' => $store])
+        ->set('generalPriceListFile', UploadedFile::fake()->create('gpl.pdf', 100, 'application/pdf'))
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $firstPath = $store->fresh()->general_price_list_path;
+    Storage::disk('public')->assertExists($firstPath);
+
+    Livewire::test('pages::admin.stores.show', ['store' => $store->fresh()])
+        ->set('generalPriceListFile', UploadedFile::fake()->create('new.pdf', 100, 'application/pdf'))
+        ->call('save');
+
+    Storage::disk('public')->assertMissing($firstPath);
+    Storage::disk('public')->assertExists($store->fresh()->general_price_list_path);
+});
+
+test('the general price list must be a PDF', function () {
+    Storage::fake('public');
+    $store = Store::factory()->create();
+
+    Livewire::test('pages::admin.stores.show', ['store' => $store])
+        ->set('generalPriceListFile', UploadedFile::fake()->image('gpl.png'))
+        ->call('save')
+        ->assertHasErrors('generalPriceListFile');
+
+    expect($store->fresh()->general_price_list_path)->toBeNull();
+});
+
+test('an admin can remove the general price list', function () {
+    Storage::fake('public');
+    Storage::disk('public')->put('price-lists/old.pdf', 'pdf');
+    $store = Store::factory()->create(['general_price_list_path' => 'price-lists/old.pdf']);
+
+    Livewire::test('pages::admin.stores.show', ['store' => $store])
+        ->set('removeGeneralPriceList', true)
+        ->call('save');
+
+    expect($store->fresh()->general_price_list_path)->toBeNull();
+    Storage::disk('public')->assertMissing('price-lists/old.pdf');
 });

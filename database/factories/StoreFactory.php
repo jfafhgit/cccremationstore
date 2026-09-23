@@ -34,6 +34,16 @@ class StoreFactory extends Factory
         return $this->state(['status' => StoreStatus::Draft]);
     }
 
+    public function requiresContainer(): static
+    {
+        return $this->state(['requires_container' => true]);
+    }
+
+    public function requiresUrn(): static
+    {
+        return $this->state(['requires_urn' => true]);
+    }
+
     public function stripeConnected(): static
     {
         return $this->state([

@@ -6,13 +6,21 @@ use App\Enums\StoreUserRole;
 use App\Models\Store;
 use App\Models\StoreUser;
 use Flux\Flux;
+use Illuminate\Http\UploadedFile;
+use App\Services\StripeConnectService;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Validate;
 use Livewire\Component;
+use Livewire\WithFileUploads;
+use Stripe\Exception\ApiErrorException;
 
 new class extends Component
 {
+    use WithFileUploads;
+
     public Store $currentStore;
 
     #[Validate('required|string|max:255')]
@@ -24,6 +32,10 @@ new class extends Component
     public string $status = '';
 
     public string $checkoutPath = '';
+
+    public bool $requiresContainer = false;
+
+    public bool $requiresUrn = false;
 
     #[Validate('nullable|string|max:255')]
     public string $contactName = '';
@@ -40,14 +52,22 @@ new class extends Component
     #[Validate('nullable|string|max:7')]
     public string $brandPrimaryColor = '';
 
-    #[Validate('nullable|url|max:255')]
-    public string $generalPriceListUrl = '';
+    /** A newly-chosen General Price List PDF waiting to be saved. */
+    public ?UploadedFile $generalPriceListFile = null;
+
+    public bool $removeGeneralPriceList = false;
 
     #[Validate('required|integer|min:0|max:10000')]
     public int $platformFeeBps = 500;
 
     #[Validate('required|numeric|min:0|max:100')]
     public string $taxRatePercent = '0.00';
+
+    #[Validate('boolean')]
+    public bool $processingFeeEnabled = false;
+
+    #[Validate('required|numeric|min:0|max:100')]
+    public string $processingFeePercent = '3.50';
 
     public bool $showStaffForm = false;
 
@@ -64,14 +84,17 @@ new class extends Component
         $this->slug = $store->slug;
         $this->status = $store->status->value;
         $this->checkoutPath = $store->checkout_path->value;
+        $this->requiresContainer = $store->requires_container;
+        $this->requiresUrn = $store->requires_urn;
         $this->contactName = $store->contact_name ?? '';
         $this->contactEmail = $store->contact_email ?? '';
         $this->contactPhone = $store->contact_phone ?? '';
         $this->timezone = $store->timezone;
         $this->brandPrimaryColor = $store->brand_primary_color ?? '';
-        $this->generalPriceListUrl = $store->general_price_list_url ?? '';
         $this->platformFeeBps = $store->platform_fee_bps;
         $this->taxRatePercent = number_format($store->tax_rate_bps / 100, 2, '.', '');
+        $this->processingFeeEnabled = $store->processing_fee_enabled;
+        $this->processingFeePercent = number_format($store->processing_fee_bps / 100, 2, '.', '');
     }
 
     public function save(): void
@@ -81,14 +104,18 @@ new class extends Component
             'slug' => ['required', 'string', 'max:255', 'alpha_dash', 'unique:stores,slug,'.$this->currentStore->id],
             'status' => ['required', 'in:draft,active,suspended'],
             'checkoutPath' => ['required', Rule::enum(StorePath::class)],
+            'requiresContainer' => ['boolean'],
+            'requiresUrn' => ['boolean'],
             'contactName' => ['nullable', 'string', 'max:255'],
             'contactEmail' => ['nullable', 'email', 'max:255'],
             'contactPhone' => ['nullable', 'string', 'max:30'],
             'timezone' => ['required', 'string', 'max:255'],
             'brandPrimaryColor' => ['nullable', 'string', 'max:7'],
-            'generalPriceListUrl' => ['nullable', 'url', 'max:255'],
+            'generalPriceListFile' => ['nullable', 'file', 'mimes:pdf', 'mimetypes:application/pdf', 'max:10240'],
             'platformFeeBps' => ['required', 'integer', 'min:0', 'max:10000'],
             'taxRatePercent' => ['required', 'numeric', 'min:0', 'max:100'],
+            'processingFeeEnabled' => ['boolean'],
+            'processingFeePercent' => ['required', 'numeric', 'min:0', 'max:100'],
         ]);
 
         $this->currentStore->update([
@@ -96,19 +123,49 @@ new class extends Component
             'slug' => $validated['slug'],
             'status' => StoreStatus::from($validated['status']),
             'checkout_path' => StorePath::from($validated['checkoutPath']),
+            'requires_container' => $validated['requiresContainer'],
+            'requires_urn' => $validated['requiresUrn'],
             'contact_name' => $validated['contactName'] ?: null,
             'contact_email' => $validated['contactEmail'] ?: null,
             'contact_phone' => $validated['contactPhone'] ?: null,
             'timezone' => $validated['timezone'],
             'brand_primary_color' => $validated['brandPrimaryColor'] ?: null,
-            'general_price_list_url' => $validated['generalPriceListUrl'] ?: null,
             'platform_fee_bps' => $validated['platformFeeBps'],
             'tax_rate_bps' => (int) round(((float) $validated['taxRatePercent']) * 100),
+            'processing_fee_enabled' => $validated['processingFeeEnabled'],
+            'processing_fee_bps' => (int) round(((float) $validated['processingFeePercent']) * 100),
         ]);
+
+        $this->saveGeneralPriceList();
 
         $this->currentStore->refresh();
 
         Flux::toast(variant: 'success', text: __('Store updated.'));
+    }
+
+    /**
+     * Store a newly-uploaded General Price List (replacing any previous one),
+     * or delete the current one if the admin marked it for removal.
+     */
+    private function saveGeneralPriceList(): void
+    {
+        $previousPath = $this->currentStore->general_price_list_path;
+
+        if ($this->generalPriceListFile) {
+            $this->currentStore->update([
+                'general_price_list_path' => $this->generalPriceListFile->store('price-lists', 'public'),
+            ]);
+        } elseif ($this->removeGeneralPriceList) {
+            $this->currentStore->update(['general_price_list_path' => null]);
+        } else {
+            return;
+        }
+
+        if ($previousPath) {
+            Storage::disk('public')->delete($previousPath);
+        }
+
+        $this->reset(['generalPriceListFile', 'removeGeneralPriceList']);
     }
 
     public function createStaffUser(): void
@@ -142,6 +199,28 @@ new class extends Component
     {
         $this->currentStore->staff()->whereKey($storeUserId)->delete();
         $this->currentStore->refresh();
+    }
+
+    public function resetStripeConnection(StripeConnectService $stripeConnect): void
+    {
+        try {
+            $this->currentStore = $stripeConnect->resetUnfinishedAccount($this->currentStore);
+        } catch (ApiErrorException|\RuntimeException $e) {
+            Log::warning('Could not reset Stripe connection.', [
+                'store_id' => $this->currentStore->id,
+                'message' => $e->getMessage(),
+            ]);
+
+            $this->currentStore->refresh();
+
+            Flux::toast(variant: 'danger', text: $this->currentStore->stripe_details_submitted
+                ? __('This Stripe account has already been set up, so it can no longer be reset.')
+                : __('Could not reach Stripe just now. Please try again in a moment.'));
+
+            return;
+        }
+
+        Flux::toast(variant: 'success', text: __('Stripe connection reset. Connect Stripe again to start over with :email.', ['email' => $this->currentStore->contact_email]));
     }
 }; ?>
 
@@ -207,10 +286,21 @@ new class extends Component
                         <flux:error name="brandPrimaryColor" />
                     </flux:field>
                     <flux:field class="sm:col-span-2">
-                        <flux:label>{{ __('General Price List URL') }}</flux:label>
-                        <flux:description>{{ __('Linked in the storefront footer, per FTC Funeral Rule requirements.') }}</flux:description>
-                        <flux:input type="url" wire:model="generalPriceListUrl" />
-                        <flux:error name="generalPriceListUrl" />
+                        <flux:label>{{ __('General Price List (PDF)') }}</flux:label>
+                        <flux:description>{{ __('Linked on every storefront page, per FTC Funeral Rule requirements. PDF only, up to 10 MB.') }}</flux:description>
+                        @if ($currentStore->general_price_list_path && ! $removeGeneralPriceList)
+                            <div class="flex items-center gap-3 text-sm">
+                                <a href="{{ $currentStore->generalPriceListUrl() }}" target="_blank" rel="noopener" class="text-brand-700 underline dark:text-brand-300">{{ __('View current price list') }}</a>
+                                <button type="button" wire:click="$set('removeGeneralPriceList', true)" class="text-xs text-zinc-400 underline hover:text-red-600">{{ __('Remove') }}</button>
+                            </div>
+                        @elseif ($removeGeneralPriceList)
+                            <p class="text-sm text-zinc-500">
+                                {{ __('The current price list will be removed when you save.') }}
+                                <button type="button" wire:click="$set('removeGeneralPriceList', false)" class="underline">{{ __('Undo') }}</button>
+                            </p>
+                        @endif
+                        <input type="file" wire:model="generalPriceListFile" accept="application/pdf,.pdf" class="block w-full text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-zinc-800 hover:file:bg-zinc-200 hover:file:text-zinc-900 dark:text-zinc-300 dark:file:bg-zinc-700 dark:file:text-zinc-100 dark:hover:file:bg-zinc-600 dark:hover:file:text-white" />
+                        <flux:error name="generalPriceListFile" />
                     </flux:field>
                     <flux:field>
                         <flux:label>{{ __('Platform fee (basis points)') }}</flux:label>
@@ -225,6 +315,17 @@ new class extends Component
                         <flux:error name="taxRatePercent" />
                     </flux:field>
                     <flux:field class="sm:col-span-2">
+                        <flux:label>{{ __('Processing fee') }}</flux:label>
+                        <flux:description>{{ __('An extra fee added to the total at checkout to help cover card processing costs. Not itself taxed.') }}</flux:description>
+                        <flux:checkbox wire:model.live="processingFeeEnabled" :label="__('Charge a processing fee')" />
+                        @if ($processingFeeEnabled)
+                            <div class="mt-2 max-w-40">
+                                <flux:input type="number" step="0.01" min="0" max="100" wire:model="processingFeePercent" placeholder="3.50" />
+                                <flux:error name="processingFeePercent" />
+                            </div>
+                        @endif
+                    </flux:field>
+                    <flux:field class="sm:col-span-2">
                         <flux:label>{{ __('Storefront path') }}</flux:label>
                         <flux:radio.group wire:model="checkoutPath" variant="cards" class="max-sm:flex-col">
                             @foreach (StorePath::cases() as $option)
@@ -232,6 +333,14 @@ new class extends Component
                             @endforeach
                         </flux:radio.group>
                         <flux:error name="checkoutPath" />
+                    </flux:field>
+                    <flux:field class="sm:col-span-2">
+                        <flux:label>{{ __('Required selections at checkout') }}</flux:label>
+                        <flux:description>{{ __('Customers must choose one before completing their order. Only takes effect if the store offers products in that category.') }}</flux:description>
+                        <div class="mt-1 space-y-2">
+                            <flux:checkbox wire:model="requiresContainer" :label="__('Require a cremation container selection')" />
+                            <flux:checkbox wire:model="requiresUrn" :label="__('Require an urn selection')" />
+                        </div>
                     </flux:field>
                     <div class="flex justify-end sm:col-span-2">
                         <flux:button type="submit" variant="primary">{{ __('Save') }}</flux:button>
@@ -259,6 +368,19 @@ new class extends Component
                 >
                     {{ $currentStore->stripe_account_id ? __('Continue onboarding') : __('Connect Stripe') }}
                 </flux:button>
+
+                @if ($currentStore->stripe_account_id && ! $currentStore->stripe_details_submitted)
+                    <flux:text class="mt-4 text-xs">{{ __('Wrong email on the Stripe form? Start over to create a new Stripe account using this store\'s current contact email.') }}</flux:text>
+                    <flux:button
+                        size="sm"
+                        variant="ghost"
+                        class="mt-2 w-full"
+                        wire:click="resetStripeConnection"
+                        wire:confirm="{{ __('Start Stripe onboarding over? The unfinished Stripe account will be unlinked from this store, and a new one will be created with :email the next time you connect.', ['email' => $currentStore->contact_email]) }}"
+                    >
+                        {{ __('Start over') }}
+                    </flux:button>
+                @endif
             </div>
 
             <div class="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-800">
