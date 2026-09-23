@@ -473,7 +473,7 @@ new class extends Component
     }
 }; ?>
 
-<div class="mx-auto max-w-3xl px-4 py-10 sm:px-6">
+<div class="mx-auto max-w-5xl px-4 py-10 sm:px-6">
     <nav class="mb-8 flex flex-wrap items-center justify-center gap-2 text-xs font-medium text-zinc-400" aria-label="{{ __('Checkout steps') }}">
         @foreach (['Timing & Package', 'Container & Urn', 'Add-ons & Services', 'Keepsakes', 'Your Information', 'Payment'] as $index => $label)
             <span class="flex items-center gap-2">
@@ -492,22 +492,22 @@ new class extends Component
 
     {{-- Step 1: Timing & Package --}}
     @if ($step === 'timing')
-        <div class="rounded-2xl border border-brand-100 bg-white p-6 shadow-sm sm:p-8">
+        <div>
             <flux:heading size="xl" class="font-serif">{{ __('A few details to get started') }}</flux:heading>
             <flux:subheading class="mt-1">{{ __('This helps us show you appropriate options.') }}</flux:subheading>
 
-            <div class="mt-6 space-y-3">
+            <div class="mt-6 grid gap-3 sm:grid-cols-2">
                 @foreach (OrderTiming::cases() as $option)
                     <label @class([
                         'flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition',
                         'border-brand-600 bg-brand-50' => $timing === $option->value,
-                        'border-zinc-200 hover:border-brand-300' => $timing !== $option->value,
+                        'border-zinc-200 bg-white hover:border-brand-300' => $timing !== $option->value,
                     ])>
                         <input type="radio" name="timing" value="{{ $option->value }}" wire:model="timing" wire:click="selectTiming('{{ $option->value }}')" class="mt-1 accent-[var(--color-brand-700)]" />
                         <span class="text-sm text-zinc-700">{{ $option->label() }}</span>
                     </label>
                 @endforeach
-                @error('timing') <flux:error>{{ $message }}</flux:error> @enderror
+                @error('timing') <flux:error class="sm:col-span-2">{{ $message }}</flux:error> @enderror
             </div>
 
             @if ($timing)
@@ -521,15 +521,17 @@ new class extends Component
                             <button
                                 type="button"
                                 @if (! $this->isALaCarte()) wire:click="selectPackage({{ $product->id }})" @endif
+                                {{-- flex-col + justify-start: a <button> otherwise vertically
+                                     centers its content when the grid stretches it to row height. --}}
                                 @class([
-                                    'overflow-hidden rounded-xl border text-left transition',
+                                    'flex flex-col justify-start overflow-hidden rounded-xl border text-left shadow-sm transition',
                                     'border-brand-600 bg-brand-50' => $packageId === $product->id,
-                                    'border-zinc-200 hover:border-brand-300' => $packageId !== $product->id,
-                                    'cursor-default sm:flex' => $this->isALaCarte(),
+                                    'border-zinc-200 bg-white hover:border-brand-300' => $packageId !== $product->id,
+                                    'cursor-default sm:flex-row' => $this->isALaCarte(),
                                 ])
                             >
-                                <x-product-image :src="$product->imageUrl()" :category="$product->category->value" @class(['w-full', 'h-32' => ! $this->isALaCarte(), 'h-48 sm:h-auto sm:w-2/5' => $this->isALaCarte()]) />
-                                <div @class(['p-4', 'flex-1 sm:p-6' => $this->isALaCarte()])>
+                                <x-product-image :src="$product->imageUrl()" :category="$product->category->value" @class(['w-full shrink-0', 'h-44' => ! $this->isALaCarte(), 'h-48 sm:h-auto sm:w-2/5' => $this->isALaCarte()]) />
+                                <div @class(['flex flex-1 flex-col p-5', 'sm:p-6' => $this->isALaCarte()])>
                                     <p @class(['font-medium text-zinc-800', 'font-serif text-xl' => $this->isALaCarte()])>{{ $product->name }}</p>
                                     @if ($product->description)
                                         <p class="mt-1 text-sm text-zinc-500">{{ $product->description }}</p>
@@ -541,7 +543,8 @@ new class extends Component
                                             @endforeach
                                         </ul>
                                     @endif
-                                    <p @class(['mt-2 font-semibold text-brand-700', 'text-xl' => $this->isALaCarte()])>{{ $product->priceLabel() }}</p>
+                                    {{-- mt-auto keeps prices aligned along the bottom of each row. --}}
+                                    <p @class(['mt-auto pt-4 font-semibold text-brand-700', 'text-xl' => $this->isALaCarte()])>{{ $product->priceLabel() }}</p>
                                 </div>
                             </button>
                         @empty
@@ -788,7 +791,7 @@ new class extends Component
 
     {{-- Step 5: Minimal purchaser + deceased details --}}
     @if ($step === 'details')
-        <div class="rounded-2xl border border-brand-100 bg-white p-6 shadow-sm sm:p-8">
+        <div class="mx-auto max-w-3xl rounded-2xl border border-brand-100 bg-white p-6 shadow-sm sm:p-8">
             <flux:heading size="xl" class="font-serif">{{ __('Your information') }}</flux:heading>
             <flux:subheading class="mt-1">{{ __("Just the essentials for now — we'll ask for more after your payment is secured.") }}</flux:subheading>
 
@@ -861,7 +864,7 @@ new class extends Component
 
     {{-- Step 6: Payment --}}
     @if ($step === 'payment')
-        <div class="rounded-2xl border border-brand-100 bg-white p-6 shadow-sm sm:p-8">
+        <div class="mx-auto max-w-3xl rounded-2xl border border-brand-100 bg-white p-6 shadow-sm sm:p-8">
             <flux:heading size="xl" class="font-serif">{{ __('Secure payment') }}</flux:heading>
             <flux:subheading class="mt-1">{{ __('Your card details are handled directly and securely by Stripe.') }}</flux:subheading>
 

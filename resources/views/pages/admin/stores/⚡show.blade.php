@@ -57,6 +57,11 @@ new class extends Component
 
     public bool $removeGeneralPriceList = false;
 
+    /** A newly-chosen logo image waiting to be saved. */
+    public ?UploadedFile $brandLogoFile = null;
+
+    public bool $removeBrandLogo = false;
+
     #[Validate('required|integer|min:0|max:10000')]
     public int $platformFeeBps = 500;
 
@@ -112,6 +117,8 @@ new class extends Component
             'timezone' => ['required', 'string', 'max:255'],
             'brandPrimaryColor' => ['nullable', 'string', 'max:7'],
             'generalPriceListFile' => ['nullable', 'file', 'mimes:pdf', 'mimetypes:application/pdf', 'max:10240'],
+            // Raster formats only: an SVG served from our own domain can carry script.
+            'brandLogoFile' => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp', 'max:2048'],
             'platformFeeBps' => ['required', 'integer', 'min:0', 'max:10000'],
             'taxRatePercent' => ['required', 'numeric', 'min:0', 'max:100'],
             'processingFeeEnabled' => ['boolean'],
@@ -137,6 +144,7 @@ new class extends Component
         ]);
 
         $this->saveGeneralPriceList();
+        $this->saveBrandLogo();
 
         $this->currentStore->refresh();
 
@@ -149,14 +157,30 @@ new class extends Component
      */
     private function saveGeneralPriceList(): void
     {
-        $previousPath = $this->currentStore->general_price_list_path;
+        $this->replaceStoredFile('general_price_list_path', $this->generalPriceListFile, $this->removeGeneralPriceList, 'price-lists');
 
-        if ($this->generalPriceListFile) {
-            $this->currentStore->update([
-                'general_price_list_path' => $this->generalPriceListFile->store('price-lists', 'public'),
-            ]);
-        } elseif ($this->removeGeneralPriceList) {
-            $this->currentStore->update(['general_price_list_path' => null]);
+        $this->reset(['generalPriceListFile', 'removeGeneralPriceList']);
+    }
+
+    /**
+     * Store a newly-uploaded logo (replacing any previous one), or delete the
+     * current one if the admin marked it for removal.
+     */
+    private function saveBrandLogo(): void
+    {
+        $this->replaceStoredFile('brand_logo_path', $this->brandLogoFile, $this->removeBrandLogo, 'logos');
+
+        $this->reset(['brandLogoFile', 'removeBrandLogo']);
+    }
+
+    private function replaceStoredFile(string $column, ?UploadedFile $upload, bool $remove, string $directory): void
+    {
+        $previousPath = $this->currentStore->{$column};
+
+        if ($upload) {
+            $this->currentStore->update([$column => $upload->store($directory, 'public')]);
+        } elseif ($remove) {
+            $this->currentStore->update([$column => null]);
         } else {
             return;
         }
@@ -164,8 +188,6 @@ new class extends Component
         if ($previousPath) {
             Storage::disk('public')->delete($previousPath);
         }
-
-        $this->reset(['generalPriceListFile', 'removeGeneralPriceList']);
     }
 
     public function createStaffUser(): void
@@ -284,6 +306,23 @@ new class extends Component
                         <flux:label>{{ __('Brand color') }}</flux:label>
                         <flux:input type="text" wire:model="brandPrimaryColor" placeholder="#29564b" />
                         <flux:error name="brandPrimaryColor" />
+                    </flux:field>
+                    <flux:field class="sm:col-span-2">
+                        <flux:label>{{ __('Logo') }}</flux:label>
+                        <flux:description>{{ __('Shown in the storefront header in place of the store name. PNG, JPG or WebP, up to 2 MB; a wide logo on a transparent background works best.') }}</flux:description>
+                        @if ($currentStore->brand_logo_path && ! $removeBrandLogo)
+                            <div class="flex items-center gap-4">
+                                <img src="{{ $currentStore->brandLogoUrl() }}" alt="{{ __('Current logo') }}" class="h-12 max-w-48 rounded border border-zinc-200 bg-white object-contain p-1 dark:border-zinc-600" />
+                                <button type="button" wire:click="$set('removeBrandLogo', true)" class="text-xs text-zinc-400 underline hover:text-red-600">{{ __('Remove') }}</button>
+                            </div>
+                        @elseif ($removeBrandLogo)
+                            <p class="text-sm text-zinc-500">
+                                {{ __('The current logo will be removed when you save.') }}
+                                <button type="button" wire:click="$set('removeBrandLogo', false)" class="underline">{{ __('Undo') }}</button>
+                            </p>
+                        @endif
+                        <input type="file" wire:model="brandLogoFile" accept="image/png,image/jpeg,image/webp" class="block w-full text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-zinc-800 hover:file:bg-zinc-200 hover:file:text-zinc-900 dark:text-zinc-300 dark:file:bg-zinc-700 dark:file:text-zinc-100 dark:hover:file:bg-zinc-600 dark:hover:file:text-white" />
+                        <flux:error name="brandLogoFile" />
                     </flux:field>
                     <flux:field class="sm:col-span-2">
                         <flux:label>{{ __('General Price List (PDF)') }}</flux:label>

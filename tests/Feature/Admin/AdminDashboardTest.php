@@ -5,7 +5,6 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\Store;
 use App\Models\User;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
@@ -90,20 +89,48 @@ test('an admin can create, edit, and remove products for a store', function () {
 test('a product cannot be edited through the wrong store\'s page', function () {
     $storeA = Store::factory()->create();
     $storeB = Store::factory()->create();
-    $productInStoreB = Product::factory()->for($storeB)->create();
+    $productInStoreB = Product::factory()->for($storeB)->create(['name' => 'Store B Heirloom Urn']);
 
-    // findOrFail() scoped to storeA's products must reject storeB's product.
-    $component = Livewire::test('pages::admin.stores.products', ['store' => $storeA->id]);
-    $component->call('editProduct', $productInStoreB->id);
-})->throws(ModelNotFoundException::class);
+    // Livewire's test harness renders ModelNotFoundException as a 404
+    // response rather than rethrowing it, so assert on that response.
+    Livewire::test('pages::admin.stores.products', ['store' => $storeA->id])
+        ->call('editProduct', $productInStoreB->id)
+        ->assertNotFound()
+        ->assertDontSee('Store B Heirloom Urn');
+});
+
+test('a tampered product id cannot save over another store\'s product', function () {
+    $storeA = Store::factory()->create();
+    $storeB = Store::factory()->create();
+    $productInStoreB = Product::factory()->for($storeB)->create(['name' => 'Original', 'price_cents' => 5000]);
+
+    Livewire::test('pages::admin.stores.products', ['store' => $storeA->id])
+        ->call('newProduct', ProductCategory::Urn->value)
+        ->set('formName', 'Overwritten')
+        ->set('formPrice', '1.00')
+        ->set('editingProductId', $productInStoreB->id)
+        ->call('saveProduct')
+        ->assertNotFound();
+
+    expect($productInStoreB->fresh())
+        ->name->toBe('Original')
+        ->price_cents->toBe(5000);
+});
 
 test('an order cannot be viewed via a mismatched store/order pair', function () {
     $storeA = Store::factory()->create();
     $storeB = Store::factory()->create();
-    $orderInStoreB = Order::factory()->create(['store_id' => $storeB->id]);
+    $orderInStoreB = Order::factory()->create([
+        'store_id' => $storeB->id,
+        'deceased_first_name' => 'Rosalind',
+        'purchaser_email' => 'store-b-family@example.com',
+    ]);
 
-    Livewire::test('pages::admin.stores.order-detail', ['store' => $storeA->id, 'order' => $orderInStoreB->id]);
-})->throws(ModelNotFoundException::class);
+    Livewire::test('pages::admin.stores.order-detail', ['store' => $storeA->id, 'order' => $orderInStoreB->id])
+        ->assertNotFound()
+        ->assertDontSee('Rosalind')
+        ->assertDontSee('store-b-family@example.com');
+});
 
 test('an admin can save a package with a taxable amount', function () {
     $store = Store::factory()->create();
@@ -259,4 +286,52 @@ test('an admin can remove the general price list', function () {
 
     expect($store->fresh()->general_price_list_path)->toBeNull();
     Storage::disk('public')->assertMissing('price-lists/old.pdf');
+});
+
+test('an admin can upload a logo and replace it', function () {
+    Storage::fake('public');
+    $store = Store::factory()->create();
+
+    Livewire::test('pages::admin.stores.show', ['store' => $store])
+        ->set('brandLogoFile', UploadedFile::fake()->image('logo.png', 600, 150))
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $firstPath = $store->fresh()->brand_logo_path;
+    Storage::disk('public')->assertExists($firstPath);
+
+    Livewire::test('pages::admin.stores.show', ['store' => $store->fresh()])
+        ->set('brandLogoFile', UploadedFile::fake()->image('new.webp'))
+        ->call('save');
+
+    Storage::disk('public')->assertMissing($firstPath);
+    Storage::disk('public')->assertExists($store->fresh()->brand_logo_path);
+});
+
+test('the logo must be a raster image', function (string $filename, string $mimeType) {
+    Storage::fake('public');
+    $store = Store::factory()->create();
+
+    Livewire::test('pages::admin.stores.show', ['store' => $store])
+        ->set('brandLogoFile', UploadedFile::fake()->create($filename, 10, $mimeType))
+        ->call('save')
+        ->assertHasErrors('brandLogoFile');
+
+    expect($store->fresh()->brand_logo_path)->toBeNull();
+})->with([
+    'svg' => ['logo.svg', 'image/svg+xml'],
+    'pdf' => ['logo.pdf', 'application/pdf'],
+]);
+
+test('an admin can remove the logo', function () {
+    Storage::fake('public');
+    Storage::disk('public')->put('logos/old.png', 'png');
+    $store = Store::factory()->create(['brand_logo_path' => 'logos/old.png']);
+
+    Livewire::test('pages::admin.stores.show', ['store' => $store])
+        ->set('removeBrandLogo', true)
+        ->call('save');
+
+    expect($store->fresh()->brand_logo_path)->toBeNull();
+    Storage::disk('public')->assertMissing('logos/old.png');
 });

@@ -21,14 +21,19 @@
         <div class="flex min-h-screen flex-col">
             <header class="border-b border-brand-100 bg-white">
                 <div class="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
-                    <a href="{{ route('storefront.start', ['store' => $store?->slug]) }}" wire:navigate class="flex items-center gap-3">
-                        <span class="flex size-10 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">
-                            {{ $store ? Illuminate\Support\Str::of($store->name)->substr(0, 1) : 'TM' }}
-                        </span>
-                        <span class="flex flex-col leading-tight">
-                            <span class="font-serif text-lg font-medium text-brand-900">{{ $store?->name ?? config('app.name') }}</span>
-                            <span class="text-xs text-zinc-500">{{ __('Cremation & memorial planning') }}</span>
-                        </span>
+                    <a href="{{ route('storefront.start', ['store' => $store?->slug]) }}" wire:navigate class="flex min-w-0 items-center gap-3">
+                        @if ($store?->brandLogoUrl())
+                            {{-- Most funeral home logos already include their name, so the logo stands alone. --}}
+                            <img src="{{ $store->brandLogoUrl() }}" alt="{{ $store->name }}" class="h-10 w-auto max-w-[12rem] object-contain object-left sm:h-12 sm:max-w-[16rem]" />
+                        @else
+                            <span class="flex size-10 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">
+                                {{ $store ? Illuminate\Support\Str::of($store->name)->substr(0, 1) : 'TM' }}
+                            </span>
+                            <span class="flex flex-col leading-tight">
+                                <span class="font-serif text-lg font-medium text-brand-900">{{ $store?->name ?? config('app.name') }}</span>
+                                <span class="text-xs text-zinc-500">{{ __('Cremation & memorial planning') }}</span>
+                            </span>
+                        @endif
                     </a>
 
                     <div class="flex items-center gap-4">

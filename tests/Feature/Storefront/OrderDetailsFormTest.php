@@ -2,7 +2,6 @@
 
 use App\Models\Order;
 use App\Models\Store;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Livewire\Livewire;
 
 test('a purchaser can submit the longer intake form after payment', function () {
@@ -35,7 +34,17 @@ test('an order belonging to a different store cannot be opened', function () {
     $storeB = Store::factory()->create();
     actingAsTenant($storeA);
 
-    $orderFromOtherStore = Order::factory()->create(['store_id' => $storeB->id]);
+    $orderFromOtherStore = Order::factory()->create([
+        'store_id' => $storeB->id,
+        'purchaser_first_name' => 'Evangeline',
+        'deceased_first_name' => 'Rosalind',
+    ]);
 
-    Livewire::test('pages::storefront.order-details', ['order' => $orderFromOtherStore->id]);
-})->throws(ModelNotFoundException::class);
+    // Livewire's test harness renders ModelNotFoundException as a 404
+    // response rather than rethrowing it, so assert on that response.
+    Livewire::test('pages::storefront.order-details', ['order' => $orderFromOtherStore->id])
+        ->assertNotFound()
+        ->assertDontSee('Evangeline')
+        ->assertDontSee('Rosalind')
+        ->assertDontSee($orderFromOtherStore->order_number);
+});

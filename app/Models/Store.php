@@ -134,6 +134,16 @@ class Store extends Model
             : null;
     }
 
+    /**
+     * Public URL of the funeral home's uploaded logo, if the store has one.
+     */
+    public function brandLogoUrl(): ?string
+    {
+        return $this->brand_logo_path
+            ? Storage::disk('public')->url($this->brand_logo_path)
+            : null;
+    }
+
     public function isALaCarte(): bool
     {
         return $this->checkout_path === StorePath::ALaCarte;

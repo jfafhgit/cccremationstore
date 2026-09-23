@@ -302,3 +302,12 @@ test('included items are listed on the package card', function () {
         ->call('selectTiming', 'immediate')
         ->assertSeeInOrder(['Basic container', 'Cremation permit']);
 });
+
+test('the storefront header shows the store logo when one is uploaded', function () {
+    $this->store->update(['brand_logo_path' => 'logos/example.png']);
+
+    $this->get(route('storefront.start'))
+        ->assertOk()
+        ->assertSee($this->store->brandLogoUrl(), escape: false)
+        ->assertSee('alt="'.e($this->store->name).'"', escape: false);
+});
