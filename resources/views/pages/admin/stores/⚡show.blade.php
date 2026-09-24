@@ -9,6 +9,7 @@ use App\Models\StoreUser;
 use Flux\Flux;
 use Illuminate\Http\UploadedFile;
 use App\Services\PlatformBillingService;
+use App\Services\StoreDuplicator;
 use App\Services\StripeConnectService;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -91,6 +92,10 @@ new class extends Component
     public string $staffEmail = '';
 
     public string $staffRole = 'staff';
+
+    public string $duplicateName = '';
+
+    public string $duplicateSlug = '';
 
     public function mount(Store $store): void
     {
@@ -283,6 +288,30 @@ new class extends Component
         Flux::toast(variant: 'success', heading: __('Staff login created.'), text: __('An invitation to choose a password was emailed to :email.', ['email' => $storeUser->email]));
     }
 
+    public function updatedDuplicateName(): void
+    {
+        if (! $this->duplicateSlug) {
+            $this->duplicateSlug = str($this->duplicateName)->slug();
+        }
+    }
+
+    public function duplicateStore(StoreDuplicator $duplicator): void
+    {
+        $validated = $this->validate([
+            'duplicateName' => ['required', 'string', 'max:255'],
+            'duplicateSlug' => ['required', 'string', 'max:255', 'alpha_dash', 'unique:stores,slug'],
+        ], attributes: [
+            'duplicateName' => __('name'),
+            'duplicateSlug' => __('subdomain'),
+        ]);
+
+        $duplicate = $duplicator->duplicate($this->currentStore, $validated['duplicateName'], $validated['duplicateSlug']);
+
+        Flux::toast(variant: 'success', text: __('Store duplicated with :count products. It starts as a draft.', ['count' => $duplicate->products()->count()]));
+
+        $this->redirect(route('admin.stores.show', $duplicate), navigate: true);
+    }
+
     /**
      * Email a new invitation link, which also cancels any link sent before it.
      */
@@ -360,8 +389,45 @@ new class extends Component
             <flux:button :href="route('admin.stores.products', $currentStore)" wire:navigate variant="ghost">{{ __('Products') }}</flux:button>
             <flux:button :href="route('admin.stores.orders', $currentStore)" wire:navigate variant="ghost">{{ __('Orders') }}</flux:button>
             <flux:button href="https://{{ $currentStore->slug }}.{{ config('app.root_domain') }}" target="_blank" variant="ghost">{{ __('View store') }}</flux:button>
+            <flux:modal.trigger name="duplicate-store">
+                <flux:button variant="ghost" icon="document-duplicate">{{ __('Duplicate') }}</flux:button>
+            </flux:modal.trigger>
         </div>
     </div>
+
+    <flux:modal name="duplicate-store" class="md:w-md">
+        <form wire:submit="duplicateStore" class="space-y-5">
+            <div>
+                <flux:heading size="lg">{{ __('Duplicate :store', ['store' => $currentStore->name]) }}</flux:heading>
+                <flux:text class="mt-2">
+                    {{ __('Creates a new draft store with a copy of every product (including variants and images) and this store\'s checkout, tax, and fee settings. Contacts, branding, the price list, Stripe, billing, staff logins, and orders are not copied.') }}
+                </flux:text>
+            </div>
+
+            <flux:field>
+                <flux:label>{{ __('New funeral home name') }}</flux:label>
+                <flux:input wire:model.blur="duplicateName" required />
+                <flux:error name="duplicateName" />
+            </flux:field>
+
+            <flux:field>
+                <flux:label>{{ __('Subdomain') }}</flux:label>
+                <flux:input wire:model="duplicateSlug" required>
+                    <x-slot name="iconTrailing">
+                        <span class="text-xs text-zinc-400">.{{ config('app.root_domain') }}</span>
+                    </x-slot>
+                </flux:input>
+                <flux:error name="duplicateSlug" />
+            </flux:field>
+
+            <div class="flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button variant="ghost">{{ __('Cancel') }}</flux:button>
+                </flux:modal.close>
+                <flux:button type="submit" variant="primary">{{ __('Duplicate store') }}</flux:button>
+            </div>
+        </form>
+    </flux:modal>
 
     <div class="mt-6 grid gap-6 lg:grid-cols-3">
         <div class="lg:col-span-2">
