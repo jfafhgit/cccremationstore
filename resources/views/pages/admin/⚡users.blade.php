@@ -44,6 +44,16 @@ new #[Title('Admin users')] class extends Component
         Flux::toast(variant: 'success', text: __('Invitation sent.'));
     }
 
+    public function resendInvitation(int $userId): void
+    {
+        Gate::authorize('manage-admins');
+
+        $invitedUser = User::approved()->whereNull('workos_id')->findOrFail($userId);
+        $invitedUser->notify(new AdminInvitationNotification(auth()->user()));
+
+        Flux::toast(variant: 'success', text: __('Invitation sent to :email.', ['email' => $invitedUser->email]));
+    }
+
     public function approve(int $userId): void
     {
         Gate::authorize('manage-admins');
@@ -162,11 +172,16 @@ new #[Title('Admin users')] class extends Component
                                 <flux:badge size="sm" color="green">{{ __('Active') }}</flux:badge>
                             @endif
                         </td>
-                        <td class="px-4 py-3 text-right">
+                        <td class="px-4 py-3">
                             @unless ($admin->is_super_admin)
-                                <flux:button size="sm" variant="ghost" wire:click="remove({{ $admin->id }})" wire:confirm="{{ $admin->hasPendingInvitation() ? __('Cancel this invitation?') : __('Remove this admin\'s access?') }}">
-                                    {{ $admin->hasPendingInvitation() ? __('Cancel invitation') : __('Remove access') }}
-                                </flux:button>
+                                <div class="flex justify-end gap-2">
+                                    @if ($admin->hasPendingInvitation())
+                                        <flux:button size="sm" variant="ghost" wire:click="resendInvitation({{ $admin->id }})">{{ __('Resend invitation') }}</flux:button>
+                                    @endif
+                                    <flux:button size="sm" variant="ghost" wire:click="remove({{ $admin->id }})" wire:confirm="{{ $admin->hasPendingInvitation() ? __('Cancel this invitation?') : __('Remove this admin\'s access?') }}">
+                                        {{ $admin->hasPendingInvitation() ? __('Cancel invitation') : __('Remove access') }}
+                                    </flux:button>
+                                </div>
                             @endunless
                         </td>
                     </tr>

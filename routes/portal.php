@@ -9,6 +9,10 @@ Route::prefix('portal')->name('portal.')->group(function (): void {
         Route::livewire('login', 'pages::portal.login')->name('login');
     });
 
+    // Link from a staff invitation email. The page checks the token itself so
+    // an expired or already-used link gets a friendly explanation, not a 404.
+    Route::livewire('invitation/{storeUser}/{token}', 'pages::portal.accept-invitation')->name('invitation');
+
     Route::middleware('auth:store')->group(function (): void {
         Route::redirect('/', '/portal/orders');
         Route::livewire('orders', 'pages::portal.orders')->name('orders');

@@ -109,6 +109,15 @@ describe('managing admins', function () {
         ['Taken@altmeyer.com', 'That email already has an account or a pending request.'],
     ]);
 
+    test('a super admin can resend an admin invitation', function () {
+        Notification::fake();
+        $invited = User::factory()->invited()->create();
+
+        Livewire::test('pages::admin.users')->call('resendInvitation', $invited->id);
+
+        Notification::assertSentTo($invited, AdminInvitationNotification::class);
+    });
+
     test('a super admin can approve an access request', function () {
         $requester = User::factory()->awaitingApproval()->create();
 

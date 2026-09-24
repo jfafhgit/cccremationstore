@@ -27,7 +27,21 @@ class StoreUserFactory extends Factory
             'password' => static::$password ??= Hash::make('password'),
             'role' => StoreUserRole::Owner,
             'remember_token' => Str::random(10),
+            'invitation_accepted_at' => now(),
         ];
+    }
+
+    /**
+     * Invited by email but has not chosen a password yet.
+     */
+    public function invited(string $token = 'invitation-token'): static
+    {
+        return $this->state([
+            'password' => Hash::make(Str::random(40)),
+            'invitation_token' => hash('sha256', $token),
+            'invited_at' => now(),
+            'invitation_accepted_at' => null,
+        ]);
     }
 
     public function staff(): static

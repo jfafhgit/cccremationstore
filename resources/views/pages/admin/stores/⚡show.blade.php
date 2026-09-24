@@ -13,6 +13,7 @@ use App\Services\StripeConnectService;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Validate;
 use Livewire\Component;
@@ -166,6 +167,10 @@ new class extends Component
             'processing_fee_bps' => (int) round(((float) $validated['processingFeePercent']) * 100),
         ]);
 
+        if ($this->currentStore->wasChanged('status') && $this->canInviteStaff()) {
+            $this->sendHeldBackInvitations();
+        }
+
         $this->saveGeneralPriceList();
         $this->saveBrandLogo();
 
@@ -251,24 +256,70 @@ new class extends Component
             'staffRole' => ['required', Rule::enum(StoreUserRole::class)],
         ]);
 
-        $temporaryPassword = str()->password(16);
-
-        StoreUser::create([
+        // Nobody knows this password; the staff member chooses their own
+        // from the invitation email.
+        $storeUser = StoreUser::create([
             'store_id' => $this->currentStore->id,
             'name' => $validated['staffName'],
             'email' => $validated['staffEmail'],
-            'password' => Hash::make($temporaryPassword),
+            'password' => Hash::make(Str::random(40)),
             'role' => StoreUserRole::from($validated['staffRole']),
         ]);
 
         $this->reset(['staffName', 'staffEmail', 'staffRole', 'showStaffForm']);
         $this->currentStore->refresh();
 
-        Flux::toast(
-            variant: 'success',
-            heading: __('Staff account created.'),
-            text: __('Temporary password: :password — share this with them securely; they should change it after logging in.', ['password' => $temporaryPassword]),
-        );
+        if (! $this->canInviteStaff()) {
+            Flux::toast(
+                heading: __('Staff login created.'),
+                text: __('Their invitation email will go out automatically when this store goes live.'),
+            );
+
+            return;
+        }
+
+        $storeUser->sendInvitation(auth()->user());
+
+        Flux::toast(variant: 'success', heading: __('Staff login created.'), text: __('An invitation to choose a password was emailed to :email.', ['email' => $storeUser->email]));
+    }
+
+    /**
+     * Email a new invitation link, which also cancels any link sent before it.
+     */
+    public function sendStaffInvitation(int $storeUserId): void
+    {
+        $storeUser = $this->currentStore->staff()->whereNull('invitation_accepted_at')->findOrFail($storeUserId);
+
+        if (! $this->canInviteStaff()) {
+            Flux::toast(variant: 'danger', text: __('Invitations can only be sent once the store is live.'));
+
+            return;
+        }
+
+        $storeUser->sendInvitation(auth()->user());
+        $this->currentStore->refresh();
+
+        Flux::toast(variant: 'success', text: __('Invitation sent to :email.', ['email' => $storeUser->email]));
+    }
+
+    /**
+     * Staff added while the store was a draft have never been emailed.
+     */
+    protected function sendHeldBackInvitations(): void
+    {
+        $this->currentStore->staff()
+            ->whereNull('invited_at')
+            ->whereNull('invitation_accepted_at')
+            ->each(fn (StoreUser $storeUser) => $storeUser->sendInvitation(auth()->user()));
+    }
+
+    /**
+     * Invitation links open on the store's own subdomain, which only serves
+     * active stores, so a link sent earlier could not be used.
+     */
+    protected function canInviteStaff(): bool
+    {
+        return $this->currentStore->status === StoreStatus::Active;
     }
 
     public function removeStaffUser(int $storeUserId): void
@@ -555,10 +606,22 @@ new class extends Component
                             <div>
                                 <p class="font-medium text-zinc-800 dark:text-zinc-100">{{ $staff->name }}</p>
                                 <p class="text-xs text-zinc-400">{{ $staff->email }} &middot; {{ $staff->role->value }}</p>
+                                @unless ($staff->hasAcceptedInvitation())
+                                    <p class="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                                        {{ $staff->invited_at ? __('Invited :date — has not chosen a password yet', ['date' => $staff->invited_at->format('M j')]) : __('Invitation not sent yet') }}
+                                    </p>
+                                @endunless
                             </div>
-                            <flux:button size="sm" variant="ghost" wire:click="removeStaffUser({{ $staff->id }})" wire:confirm="{{ __('Remove this staff login?') }}">
-                                {{ __('Remove') }}
-                            </flux:button>
+                            <div class="flex shrink-0 gap-1">
+                                @unless ($staff->hasAcceptedInvitation())
+                                    <flux:button size="sm" variant="ghost" wire:click="sendStaffInvitation({{ $staff->id }})">
+                                        {{ $staff->invited_at ? __('Resend invitation') : __('Send invitation') }}
+                                    </flux:button>
+                                @endunless
+                                <flux:button size="sm" variant="ghost" wire:click="removeStaffUser({{ $staff->id }})" wire:confirm="{{ __('Remove this staff login?') }}">
+                                    {{ __('Remove') }}
+                                </flux:button>
+                            </div>
                         </li>
                     @empty
                         <p class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('No staff logins yet.') }}</p>

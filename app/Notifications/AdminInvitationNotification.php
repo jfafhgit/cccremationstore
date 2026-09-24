@@ -9,7 +9,9 @@ use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 /**
- * Sent to someone a super admin has invited into the admin area.
+ * Sent to someone a super admin has invited into the platform admin area.
+ * Admins sign in with Google through WorkOS, so there is no password to
+ * choose: signing in with this email address claims the invitation.
  */
 class AdminInvitationNotification extends Notification implements ShouldQueue
 {
@@ -27,11 +29,15 @@ class AdminInvitationNotification extends Notification implements ShouldQueue
 
     public function toMail(object $notifiable): MailMessage
     {
+        $appName = config('app.name');
+
         return (new MailMessage)
-            ->subject('You have been invited — Planning by Treasured Memories')
-            ->greeting('You have been invited to the admin area.')
-            ->line("{$this->invitedBy->name} invited you to help manage Planning by Treasured Memories.")
-            ->line('Sign in with the Google account for this email address to get started.')
-            ->action('Sign in', route('login'));
+            ->subject("You're invited to the {$appName} admin area")
+            ->greeting('Hi there,')
+            ->line("{$this->invitedBy->name} has invited you to help manage {$appName}.")
+            ->line('As an admin, you can set up funeral home stores, their products, and their staff logins.')
+            ->action('Sign in with Google', route('login'))
+            ->line("Sign in with the Google account for {$notifiable->email}. Your access is already approved.")
+            ->line("If you weren't expecting this, you can ignore this email.");
     }
 }
