@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\PlatformFeeModel;
 use App\Enums\ProductCategory;
 use App\Enums\ProductSortMode;
 use App\Enums\StorePath;
@@ -35,6 +36,12 @@ use Illuminate\Support\Facades\Storage;
  * @property bool $stripe_charges_enabled
  * @property bool $stripe_payouts_enabled
  * @property int $platform_fee_bps
+ * @property PlatformFeeModel $platform_fee_model
+ * @property int $platform_fee_flat_cents
+ * @property int $subscription_monthly_cents
+ * @property string|null $stripe_customer_id
+ * @property string|null $stripe_subscription_id
+ * @property string|null $subscription_status
  * @property int $tax_rate_bps
  * @property bool $processing_fee_enabled
  * @property int $processing_fee_bps
@@ -53,6 +60,9 @@ class Store extends Model
         'requires_urn' => false,
         'processing_fee_enabled' => false,
         'processing_fee_bps' => 350,
+        'platform_fee_model' => 'percentage',
+        'platform_fee_flat_cents' => 0,
+        'subscription_monthly_cents' => 0,
     ];
 
     protected $fillable = [
@@ -70,6 +80,9 @@ class Store extends Model
         'brand_logo_path',
         'general_price_list_path',
         'platform_fee_bps',
+        'platform_fee_model',
+        'platform_fee_flat_cents',
+        'subscription_monthly_cents',
         'tax_rate_bps',
         'processing_fee_enabled',
         'processing_fee_bps',
@@ -87,6 +100,9 @@ class Store extends Model
             'stripe_charges_enabled' => 'boolean',
             'stripe_payouts_enabled' => 'boolean',
             'platform_fee_bps' => 'integer',
+            'platform_fee_model' => PlatformFeeModel::class,
+            'platform_fee_flat_cents' => 'integer',
+            'subscription_monthly_cents' => 'integer',
             'tax_rate_bps' => 'integer',
             'processing_fee_enabled' => 'boolean',
             'processing_fee_bps' => 'integer',
@@ -154,9 +170,41 @@ class Store extends Model
         return $this->stripe_account_id !== null && $this->stripe_charges_enabled;
     }
 
+    /**
+     * The platform's cut of an order, based on the store's own revenue (the
+     * subtotal) only — never on sales tax or the processing fee. A flat fee
+     * is capped at the subtotal so it can never exceed what the store earns.
+     */
     public function platformFeeCentsFor(int $subtotalCents): int
     {
-        return (int) round($subtotalCents * $this->platform_fee_bps / 10000);
+        return match ($this->platform_fee_model) {
+            PlatformFeeModel::Percentage => (int) round($subtotalCents * $this->platform_fee_bps / 10000),
+            PlatformFeeModel::FlatPerOrder => min($this->platform_fee_flat_cents, $subtotalCents),
+            PlatformFeeModel::Subscription, PlatformFeeModel::None => 0,
+        };
+    }
+
+    /**
+     * Whether the store has a platform subscription Stripe is still billing
+     * (including one that is past due), as opposed to none or a canceled one.
+     */
+    public function hasLiveSubscription(): bool
+    {
+        return $this->stripe_subscription_id !== null
+            && in_array($this->subscription_status, ['active', 'trialing', 'past_due', 'unpaid'], true);
+    }
+
+    public function isSubscriptionPastDue(): bool
+    {
+        return in_array($this->subscription_status, ['past_due', 'unpaid'], true);
+    }
+
+    /**
+     * On the subscription model but not (or no longer) being billed.
+     */
+    public function needsSubscriptionSetup(): bool
+    {
+        return $this->platform_fee_model === PlatformFeeModel::Subscription && ! $this->hasLiveSubscription();
     }
 
     public function taxRatePercent(): float

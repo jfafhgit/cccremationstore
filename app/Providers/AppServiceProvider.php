@@ -3,9 +3,11 @@
 namespace App\Providers;
 
 use App\Http\Middleware\IdentifyStore;
+use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
@@ -28,6 +30,19 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         $this->configureLivewireUpdateRoute();
+        $this->configureAdminGates();
+    }
+
+    /**
+     * Signing in through WorkOS only proves identity. Reaching the admin
+     * area requires approval, and managing who else gets in is reserved for
+     * super admins. Both are enforced with "can:" route middleware, which
+     * Livewire re-applies to every component request made from those pages.
+     */
+    protected function configureAdminGates(): void
+    {
+        Gate::define('access-admin', fn (User $user): bool => $user->isApproved());
+        Gate::define('manage-admins', fn (User $user): bool => $user->isApproved() && $user->is_super_admin);
     }
 
     /**

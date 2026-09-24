@@ -5,42 +5,47 @@ namespace App\Http\Controllers;
 use App\Models\Order;
 use App\Models\Store;
 use App\Services\CheckoutService;
+use App\Services\PlatformBillingService;
 use App\Services\StripeConnectService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
 use Stripe\Account;
 use Stripe\Charge;
+use Stripe\Checkout\Session as CheckoutSession;
 use Stripe\Event;
 use Stripe\Exception\SignatureVerificationException;
 use Stripe\PaymentIntent;
+use Stripe\Subscription;
 use Stripe\Webhook;
 
 /**
- * Receives Stripe Connect platform webhooks. Configure this single URL
- * (route('stripe.webhook')) in the Stripe Dashboard under Connect webhooks,
- * subscribed to at least: payment_intent.succeeded,
- * payment_intent.payment_failed, charge.refunded, account.updated.
+ * Receives Stripe webhooks at a single URL (route('stripe.webhook')). In the
+ * Stripe Dashboard, point two endpoints here:
+ *  - "Connected accounts" (STRIPE_WEBHOOK_SECRET): payment_intent.succeeded,
+ *    payment_intent.payment_failed, charge.refunded, account.updated.
+ *  - "Your account" (STRIPE_PLATFORM_WEBHOOK_SECRET): checkout.session.completed,
+ *    customer.subscription.created, customer.subscription.updated,
+ *    customer.subscription.deleted.
  */
 class StripeWebhookController extends Controller
 {
-    public function __invoke(Request $request, CheckoutService $checkout, StripeConnectService $stripeConnect): Response
+    public function __invoke(Request $request, CheckoutService $checkout, StripeConnectService $stripeConnect, PlatformBillingService $billing): Response
     {
-        $secret = config('services.stripe.webhook_secret');
+        $secrets = array_values(array_filter([
+            config('services.stripe.webhook_secret'),
+            config('services.stripe.platform_webhook_secret'),
+        ]));
 
-        if (! $secret && ! app()->environment('local', 'testing')) {
+        if (! $secrets && ! app()->environment('local', 'testing')) {
             Log::error('Rejected a Stripe webhook: STRIPE_WEBHOOK_SECRET is not configured.');
 
             return response('Webhook secret not configured', 500);
         }
 
-        try {
-            $event = $secret
-                ? Webhook::constructEvent($request->getContent(), $request->header('Stripe-Signature', ''), $secret)
-                : Event::constructFrom(json_decode($request->getContent(), true));
-        } catch (SignatureVerificationException|\UnexpectedValueException $e) {
-            Log::warning('Stripe webhook signature verification failed.', ['message' => $e->getMessage()]);
+        $event = $this->constructEvent($request, $secrets);
 
+        if (! $event) {
             return response('Invalid signature', 400);
         }
 
@@ -49,10 +54,84 @@ class StripeWebhookController extends Controller
             'payment_intent.payment_failed' => $this->handlePaymentIntentEvent($event, $checkout),
             'charge.refunded' => $this->handleChargeRefunded($event, $checkout),
             'account.updated' => $this->handleAccountUpdated($event, $stripeConnect),
+            'checkout.session.completed' => $this->handleCheckoutCompleted($event, $billing),
+            'customer.subscription.created',
+            'customer.subscription.updated',
+            'customer.subscription.deleted' => $this->handleSubscriptionEvent($event, $billing),
             default => null,
         };
 
         return response('ok');
+    }
+
+    /**
+     * Verify the payload against whichever endpoint's secret signed it.
+     *
+     * @param  array<int, string>  $secrets
+     */
+    private function constructEvent(Request $request, array $secrets): ?Event
+    {
+        try {
+            if (! $secrets) {
+                return Event::constructFrom(json_decode($request->getContent(), true));
+            }
+
+            foreach ($secrets as $secret) {
+                try {
+                    return Webhook::constructEvent($request->getContent(), $request->header('Stripe-Signature', ''), $secret);
+                } catch (SignatureVerificationException) {
+                    continue;
+                }
+            }
+        } catch (\UnexpectedValueException $e) {
+            Log::warning('Stripe webhook payload could not be parsed.', ['message' => $e->getMessage()]);
+
+            return null;
+        }
+
+        Log::warning('Stripe webhook signature verification failed.');
+
+        return null;
+    }
+
+    private function handleCheckoutCompleted(Event $event, PlatformBillingService $billing): void
+    {
+        /** @var CheckoutSession $session */
+        $session = $event->data->object;
+
+        // Only the platform's own subscription checkouts — never a connected
+        // account's own Checkout sessions.
+        if ($event->account !== null || $session->mode !== 'subscription') {
+            return;
+        }
+
+        if ($store = Store::find($session->metadata['store_id'] ?? null)) {
+            $billing->completeCheckout($store, $session->id);
+        }
+    }
+
+    private function handleSubscriptionEvent(Event $event, PlatformBillingService $billing): void
+    {
+        /** @var Subscription $subscription */
+        $subscription = $event->data->object;
+
+        // A connected account's own subscriptions are none of our business.
+        if ($event->account !== null) {
+            return;
+        }
+
+        $store = Store::where('stripe_subscription_id', $subscription->id)->first();
+
+        // The subscription can be reported before the checkout completion
+        // that links it to the store has been processed.
+        if (! $store && ($storeId = $subscription->metadata['store_id'] ?? null)) {
+            $store = Store::whereKey($storeId)->whereNull('stripe_subscription_id')->first();
+            $store?->forceFill(['stripe_subscription_id' => $subscription->id])->save();
+        }
+
+        if ($store) {
+            $billing->syncSubscription($store);
+        }
     }
 
     private function handlePaymentIntentEvent(Event $event, CheckoutService $checkout): void

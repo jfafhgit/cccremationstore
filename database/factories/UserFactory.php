@@ -25,7 +25,36 @@ class UserFactory extends Factory
             'workos_id' => 'fake-'.Str::random(10),
             'remember_token' => Str::random(10),
             'avatar' => '',
+            'approved_at' => now(),
+            'is_super_admin' => false,
         ];
+    }
+
+    /**
+     * Someone who signed in through WorkOS but has not been approved yet.
+     */
+    public function awaitingApproval(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'approved_at' => null,
+        ]);
+    }
+
+    /**
+     * Invited by a super admin but has not signed in yet.
+     */
+    public function invited(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'workos_id' => null,
+        ]);
+    }
+
+    public function superAdmin(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'is_super_admin' => true,
+        ]);
     }
 
     /**

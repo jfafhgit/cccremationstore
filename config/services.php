@@ -44,6 +44,10 @@ return [
     'platform' => [
         // Where "new store lead" and other platform-level notifications go.
         'admin_email' => env('ADMIN_NOTIFICATION_EMAIL'),
+
+        // The one account that is always approved as a super admin on sign-in,
+        // so the platform owner can never be locked out of approving others.
+        'super_admin_email' => env('SUPER_ADMIN_EMAIL'),
     ],
 
     'stripe' => [
@@ -53,7 +57,13 @@ return [
         // account.
         'key' => env('STRIPE_PUBLISHABLE_KEY'),
         'secret' => env('STRIPE_SECRET_KEY'),
+        // Signing secret of the "connected accounts" webhook endpoint (store payments).
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
+        // Signing secret of the "your account" webhook endpoint (platform
+        // subscription billing). Stripe gives each endpoint its own secret; the
+        // Stripe CLI's `listen` uses a single secret for both, so leave this
+        // unset locally.
+        'platform_webhook_secret' => env('STRIPE_PLATFORM_WEBHOOK_SECRET'),
         'connect_client_id' => env('STRIPE_CONNECT_CLIENT_ID'),
     ],
 

@@ -524,13 +524,19 @@ new class extends Component
                                 {{-- flex-col + justify-start: a <button> otherwise vertically
                                      centers its content when the grid stretches it to row height. --}}
                                 @class([
-                                    'flex flex-col justify-start overflow-hidden rounded-xl border text-left shadow-sm transition',
+                                    'relative flex flex-col justify-start overflow-hidden rounded-xl border text-left shadow-sm transition',
                                     'border-brand-600 bg-brand-50' => $packageId === $product->id,
                                     'border-zinc-200 bg-white hover:border-brand-300' => $packageId !== $product->id,
                                     'cursor-default sm:flex-row' => $this->isALaCarte(),
                                 ])
                             >
                                 <x-product-image :src="$product->imageUrl()" :category="$product->category->value" @class(['w-full shrink-0', 'h-44' => ! $this->isALaCarte(), 'h-48 sm:h-auto sm:w-2/5' => $this->isALaCarte()]) />
+                                {{-- À la carte stores have only the one base package, so "Selected" would say nothing. --}}
+                                @if (! $this->isALaCarte() && $packageId === $product->id)
+                                    <span class="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-brand-700 px-2 py-0.5 text-xs font-semibold text-white shadow">
+                                        <flux:icon.check class="size-3.5" />{{ __('Selected') }}
+                                    </span>
+                                @endif
                                 <div @class(['flex flex-1 flex-col p-5', 'sm:p-6' => $this->isALaCarte()])>
                                     <p @class(['font-medium text-zinc-800', 'font-serif text-xl' => $this->isALaCarte()])>{{ $product->name }}</p>
                                     @if ($product->description)

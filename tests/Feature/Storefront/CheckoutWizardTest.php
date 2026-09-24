@@ -311,3 +311,20 @@ test('the storefront header shows the store logo when one is uploaded', function
         ->assertSee($this->store->brandLogoUrl(), escape: false)
         ->assertSee('alt="'.e($this->store->name).'"', escape: false);
 });
+
+test('the chosen package is marked selected in a packages store', function () {
+    Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->assertDontSee('Selected')
+        ->call('selectPackage', $this->package->id)
+        ->assertSee('Selected');
+});
+
+test('an a la carte store does not mark its base package as selected', function () {
+    $this->store->update(['checkout_path' => StorePath::ALaCarte]);
+
+    Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->assertSet('packageId', $this->package->id)
+        ->assertDontSee('Selected');
+});

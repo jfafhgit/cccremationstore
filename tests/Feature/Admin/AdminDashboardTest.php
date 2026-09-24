@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\ProductCategory;
+use App\Enums\StoreUserRole;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\Store;
@@ -334,4 +335,17 @@ test('an admin can remove the logo', function () {
 
     expect($store->fresh()->brand_logo_path)->toBeNull();
     Storage::disk('public')->assertMissing('logos/old.png');
+});
+
+test('an admin can create an owner login, who can manage billing', function () {
+    $store = Store::factory()->create();
+
+    Livewire::test('pages::admin.stores.show', ['store' => $store])
+        ->set('staffName', 'Morgan Lee')
+        ->set('staffEmail', 'morgan@example.com')
+        ->set('staffRole', StoreUserRole::Owner->value)
+        ->call('createStaffUser')
+        ->assertHasNoErrors();
+
+    expect($store->staff()->where('email', 'morgan@example.com')->first()->isOwner())->toBeTrue();
 });

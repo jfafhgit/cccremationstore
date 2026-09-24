@@ -18,6 +18,11 @@
                     <flux:sidebar.item icon="inbox" :href="route('admin.leads')" :current="request()->routeIs('admin.leads')" wire:navigate>
                         {{ __('Leads') }}
                     </flux:sidebar.item>
+                    @can('manage-admins')
+                        <flux:sidebar.item icon="users" :href="route('admin.users')" :current="request()->routeIs('admin.users')" wire:navigate>
+                            {{ __('Admin users') }}
+                        </flux:sidebar.item>
+                    @endcan
                 </flux:sidebar.group>
             </flux:sidebar.nav>
 

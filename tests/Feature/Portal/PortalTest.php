@@ -3,9 +3,9 @@
 use App\Models\Order;
 use App\Models\Store;
 use App\Models\StoreUser;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Session;
 use Livewire\Livewire;
 
 beforeEach(function () {
@@ -19,6 +19,8 @@ beforeEach(function () {
 });
 
 test('staff can log in with the right credentials', function () {
+    $sessionIdBeforeLogin = Session::getId();
+
     $component = Livewire::test('pages::portal.login');
     $component->set('email', 'owner@example.com');
     $component->set('password', 'correct-password');
@@ -27,6 +29,7 @@ test('staff can log in with the right credentials', function () {
     $component->assertHasNoErrors();
     expect(Auth::guard('store')->check())->toBeTrue();
     expect(Auth::guard('store')->id())->toBe($this->staff->id);
+    expect(Session::getId())->not->toBe($sessionIdBeforeLogin);
 });
 
 test('the same credentials do not work for a different store', function () {
@@ -94,7 +97,16 @@ test('an order from a different store cannot be viewed in the portal', function 
     Auth::guard('store')->login($this->staff);
 
     $otherStore = Store::factory()->create();
-    $orderFromOtherStore = Order::factory()->create(['store_id' => $otherStore->id]);
+    $orderFromOtherStore = Order::factory()->create([
+        'store_id' => $otherStore->id,
+        'deceased_first_name' => 'Rosalind',
+        'purchaser_email' => 'other-family@example.com',
+    ]);
 
-    Livewire::test('pages::portal.order-detail', ['order' => $orderFromOtherStore->id]);
-})->throws(ModelNotFoundException::class);
+    // Livewire's test harness renders ModelNotFoundException as a 404
+    // response rather than rethrowing it, so assert on that response.
+    Livewire::test('pages::portal.order-detail', ['order' => $orderFromOtherStore->id])
+        ->assertNotFound()
+        ->assertDontSee('Rosalind')
+        ->assertDontSee('other-family@example.com');
+});

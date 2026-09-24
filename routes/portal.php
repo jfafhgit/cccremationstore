@@ -20,6 +20,9 @@ Route::prefix('portal')->name('portal.')->group(function (): void {
         // area only. Staff should never see other funeral homes' inquiries.
         Route::livewire('leads', 'pages::portal.leads')->name('leads');
 
+        // The funeral home's own subscription to the platform (owners only).
+        Route::livewire('billing', 'pages::portal.billing')->name('billing');
+
         Route::post('logout', function (Request $request) {
             Auth::guard('store')->logout();
             $request->session()->invalidate();

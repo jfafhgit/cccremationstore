@@ -134,6 +134,9 @@ new class extends Component
                             <flux:badge :color="match ($store->status) { StoreStatus::Active => 'green', StoreStatus::Draft => 'zinc', StoreStatus::Suspended => 'red' }" size="sm">
                                 {{ ucfirst($store->status->value) }}
                             </flux:badge>
+                            @if ($store->isSubscriptionPastDue())
+                                <flux:badge color="red" size="sm">{{ __('Billing past due') }}</flux:badge>
+                            @endif
                         </td>
                         <td class="px-4 py-3">
                             @if ($store->isStripeReady())

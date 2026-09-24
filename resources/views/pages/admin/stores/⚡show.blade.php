@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\PlatformFeeModel;
 use App\Enums\StorePath;
 use App\Enums\StoreStatus;
 use App\Enums\StoreUserRole;
@@ -7,6 +8,7 @@ use App\Models\Store;
 use App\Models\StoreUser;
 use Flux\Flux;
 use Illuminate\Http\UploadedFile;
+use App\Services\PlatformBillingService;
 use App\Services\StripeConnectService;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -62,8 +64,13 @@ new class extends Component
 
     public bool $removeBrandLogo = false;
 
-    #[Validate('required|integer|min:0|max:10000')]
-    public int $platformFeeBps = 500;
+    public string $platformFeeModel = 'percentage';
+
+    public string $platformFeePercent = '5.00';
+
+    public string $platformFeeFlat = '0.00';
+
+    public string $subscriptionMonthly = '';
 
     #[Validate('required|numeric|min:0|max:100')]
     public string $taxRatePercent = '0.00';
@@ -82,6 +89,8 @@ new class extends Component
     #[Validate('required|email|max:255')]
     public string $staffEmail = '';
 
+    public string $staffRole = 'staff';
+
     public function mount(Store $store): void
     {
         $this->currentStore = $store;
@@ -96,13 +105,18 @@ new class extends Component
         $this->contactPhone = $store->contact_phone ?? '';
         $this->timezone = $store->timezone;
         $this->brandPrimaryColor = $store->brand_primary_color ?? '';
-        $this->platformFeeBps = $store->platform_fee_bps;
+        $this->platformFeeModel = $store->platform_fee_model->value;
+        $this->platformFeePercent = number_format($store->platform_fee_bps / 100, 2, '.', '');
+        $this->platformFeeFlat = number_format($store->platform_fee_flat_cents / 100, 2, '.', '');
+        $this->subscriptionMonthly = $store->subscription_monthly_cents > 0
+            ? number_format($store->subscription_monthly_cents / 100, 2, '.', '')
+            : '';
         $this->taxRatePercent = number_format($store->tax_rate_bps / 100, 2, '.', '');
         $this->processingFeeEnabled = $store->processing_fee_enabled;
         $this->processingFeePercent = number_format($store->processing_fee_bps / 100, 2, '.', '');
     }
 
-    public function save(): void
+    public function save(PlatformBillingService $billing): void
     {
         $validated = $this->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -119,7 +133,10 @@ new class extends Component
             'generalPriceListFile' => ['nullable', 'file', 'mimes:pdf', 'mimetypes:application/pdf', 'max:10240'],
             // Raster formats only: an SVG served from our own domain can carry script.
             'brandLogoFile' => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp', 'max:2048'],
-            'platformFeeBps' => ['required', 'integer', 'min:0', 'max:10000'],
+            'platformFeeModel' => ['required', Rule::enum(PlatformFeeModel::class)],
+            'platformFeePercent' => ['required', 'numeric', 'min:0', 'max:100'],
+            'platformFeeFlat' => ['required', 'numeric', 'min:0', 'max:10000'],
+            'subscriptionMonthly' => [Rule::requiredIf($this->platformFeeModel === PlatformFeeModel::Subscription->value), 'nullable', 'numeric', 'min:1', 'max:100000'],
             'taxRatePercent' => ['required', 'numeric', 'min:0', 'max:100'],
             'processingFeeEnabled' => ['boolean'],
             'processingFeePercent' => ['required', 'numeric', 'min:0', 'max:100'],
@@ -137,7 +154,13 @@ new class extends Component
             'contact_phone' => $validated['contactPhone'] ?: null,
             'timezone' => $validated['timezone'],
             'brand_primary_color' => $validated['brandPrimaryColor'] ?: null,
-            'platform_fee_bps' => $validated['platformFeeBps'],
+            'platform_fee_model' => PlatformFeeModel::from($validated['platformFeeModel']),
+            'platform_fee_bps' => (int) round(((float) $validated['platformFeePercent']) * 100),
+            'platform_fee_flat_cents' => (int) round(((float) $validated['platformFeeFlat']) * 100),
+            // Only the subscription model shows this field; keep the last amount otherwise.
+            'subscription_monthly_cents' => filled($validated['subscriptionMonthly'])
+                ? (int) round(((float) $validated['subscriptionMonthly']) * 100)
+                : $this->currentStore->subscription_monthly_cents,
             'tax_rate_bps' => (int) round(((float) $validated['taxRatePercent']) * 100),
             'processing_fee_enabled' => $validated['processingFeeEnabled'],
             'processing_fee_bps' => (int) round(((float) $validated['processingFeePercent']) * 100),
@@ -148,7 +171,37 @@ new class extends Component
 
         $this->currentStore->refresh();
 
+        if (! $this->syncSubscriptionTerms($billing)) {
+            return;
+        }
+
         Flux::toast(variant: 'success', text: __('Store updated.'));
+    }
+
+    /**
+     * Push a changed monthly amount or fee model to the store's live
+     * subscription. The store's own settings are already saved either way.
+     */
+    private function syncSubscriptionTerms(PlatformBillingService $billing): bool
+    {
+        if (! $this->currentStore->hasLiveSubscription()) {
+            return true;
+        }
+
+        try {
+            $this->currentStore = $billing->applyStoreTerms($this->currentStore);
+        } catch (ApiErrorException|\RuntimeException $e) {
+            Log::error('Could not update the store subscription in Stripe.', [
+                'store_id' => $this->currentStore->id,
+                'message' => $e->getMessage(),
+            ]);
+
+            Flux::toast(variant: 'warning', text: __('Store saved, but its Stripe subscription could not be updated. Please save again in a moment.'));
+
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -195,6 +248,7 @@ new class extends Component
         $validated = $this->validate([
             'staffName' => ['required', 'string', 'max:255'],
             'staffEmail' => ['required', 'email', 'max:255', 'unique:store_users,email'],
+            'staffRole' => ['required', Rule::enum(StoreUserRole::class)],
         ]);
 
         $temporaryPassword = str()->password(16);
@@ -204,10 +258,10 @@ new class extends Component
             'name' => $validated['staffName'],
             'email' => $validated['staffEmail'],
             'password' => Hash::make($temporaryPassword),
-            'role' => StoreUserRole::Staff,
+            'role' => StoreUserRole::from($validated['staffRole']),
         ]);
 
-        $this->reset(['staffName', 'staffEmail', 'showStaffForm']);
+        $this->reset(['staffName', 'staffEmail', 'staffRole', 'showStaffForm']);
         $this->currentStore->refresh();
 
         Flux::toast(
@@ -341,12 +395,52 @@ new class extends Component
                         <input type="file" wire:model="generalPriceListFile" accept="application/pdf,.pdf" class="block w-full text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-zinc-800 hover:file:bg-zinc-200 hover:file:text-zinc-900 dark:text-zinc-300 dark:file:bg-zinc-700 dark:file:text-zinc-100 dark:hover:file:bg-zinc-600 dark:hover:file:text-white" />
                         <flux:error name="generalPriceListFile" />
                     </flux:field>
-                    <flux:field>
-                        <flux:label>{{ __('Platform fee (basis points)') }}</flux:label>
-                        <flux:description>{{ __('500 = 5% of each order, deducted via the Stripe application fee.') }}</flux:description>
-                        <flux:input type="number" wire:model="platformFeeBps" min="0" max="10000" />
-                        <flux:error name="platformFeeBps" />
+                    <flux:field class="sm:col-span-2">
+                        <flux:label>{{ __('Platform fee') }}</flux:label>
+                        <flux:description>{{ __('Per-order fees are collected automatically via the Stripe application fee and are never charged on sales tax or the processing fee.') }}</flux:description>
+                        <flux:radio.group wire:model.live="platformFeeModel" variant="cards" class="grid! gap-3 sm:grid-cols-2">
+                            @foreach (PlatformFeeModel::cases() as $option)
+                                <flux:radio :value="$option->value" :label="__($option->label())" :description="__($option->description())" />
+                            @endforeach
+                        </flux:radio.group>
+                        <flux:error name="platformFeeModel" />
                     </flux:field>
+                    @if ($platformFeeModel === PlatformFeeModel::Subscription->value)
+                        <flux:field>
+                            <flux:label>{{ __('Monthly amount ($)') }}</flux:label>
+                            <flux:description>{{ __('Changes to an active subscription apply from the next bill.') }}</flux:description>
+                            <flux:input type="number" step="0.01" min="1" max="100000" wire:model="subscriptionMonthly" />
+                            <flux:error name="subscriptionMonthly" />
+                        </flux:field>
+                        <div class="text-sm">
+                            <p class="font-medium text-zinc-800 dark:text-zinc-100">{{ __('Billing status') }}</p>
+                            @if ($currentStore->isSubscriptionPastDue())
+                                <flux:badge color="red" class="mt-2">{{ __('Past due') }}</flux:badge>
+                                <p class="mt-1 text-zinc-500">{{ __('Stripe is retrying the payment. The store keeps selling in the meantime.') }}</p>
+                            @elseif ($currentStore->hasLiveSubscription())
+                                <flux:badge color="green" class="mt-2">{{ __('Active') }}</flux:badge>
+                            @else
+                                <flux:badge color="amber" class="mt-2">{{ __('Not set up') }}</flux:badge>
+                                <p class="mt-1 text-zinc-500">{{ __('The store owner starts billing from Billing in their staff portal.') }}</p>
+                            @endif
+                        </div>
+                    @elseif ($platformFeeModel === PlatformFeeModel::None->value)
+                        {{-- Nothing to configure. --}}
+                    @elseif ($platformFeeModel === PlatformFeeModel::FlatPerOrder->value)
+                        <flux:field>
+                            <flux:label>{{ __('Fee per order ($)') }}</flux:label>
+                            <flux:description>{{ __('Capped at the order subtotal, so it can never exceed what the store earns.') }}</flux:description>
+                            <flux:input type="number" step="0.01" min="0" max="10000" wire:model="platformFeeFlat" />
+                            <flux:error name="platformFeeFlat" />
+                        </flux:field>
+                    @else
+                        <flux:field>
+                            <flux:label>{{ __('Fee percentage (%)') }}</flux:label>
+                            <flux:description>{{ __('Of the order subtotal, before sales tax and the processing fee.') }}</flux:description>
+                            <flux:input type="number" step="0.01" min="0" max="100" wire:model="platformFeePercent" />
+                            <flux:error name="platformFeePercent" />
+                        </flux:field>
+                    @endif
                     <flux:field>
                         <flux:label>{{ __('Sales tax rate (%)') }}</flux:label>
                         <flux:description>{{ __('Applied at checkout to products marked taxable. Leave at 0 if this store handles tax separately.') }}</flux:description>
@@ -439,6 +533,14 @@ new class extends Component
                             <flux:label>{{ __('Email') }}</flux:label>
                             <flux:input type="email" wire:model="staffEmail" />
                             <flux:error name="staffEmail" />
+                        </flux:field>
+                        <flux:field>
+                            <flux:label>{{ __('Role') }}</flux:label>
+                            <flux:select wire:model="staffRole">
+                                <option value="{{ StoreUserRole::Staff->value }}">{{ __('Staff — orders only') }}</option>
+                                <option value="{{ StoreUserRole::Owner->value }}">{{ __('Owner — orders and billing') }}</option>
+                            </flux:select>
+                            <flux:error name="staffRole" />
                         </flux:field>
                         <div class="flex justify-end gap-2">
                             <flux:button size="sm" variant="ghost" wire:click="$set('showStaffForm', false)">{{ __('Cancel') }}</flux:button>

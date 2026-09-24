@@ -24,6 +24,14 @@
                         <nav class="flex items-center gap-4 text-sm">
                             <flux:link :href="route('portal.orders')" wire:navigate>{{ __('Orders') }}</flux:link>
                             <flux:link :href="route('portal.leads')" wire:navigate>{{ __('Incomplete orders') }}</flux:link>
+                            @if ($store?->platform_fee_model === \App\Enums\PlatformFeeModel::Subscription || $store?->stripe_customer_id)
+                                <flux:link :href="route('portal.billing')" wire:navigate>
+                                    {{ __('Billing') }}
+                                    @if ($store->isSubscriptionPastDue() || $store->needsSubscriptionSetup())
+                                        <span class="ml-1 inline-block size-2 rounded-full bg-red-500" aria-label="{{ __('Needs attention') }}"></span>
+                                    @endif
+                                </flux:link>
+                            @endif
                             <span class="text-zinc-300 dark:text-zinc-700">|</span>
                             <span class="text-zinc-500 dark:text-zinc-400">{{ auth('store')->user()->name }}</span>
                             <form method="POST" action="{{ route('portal.logout') }}">

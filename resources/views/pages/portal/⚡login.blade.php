@@ -3,6 +3,7 @@
 use App\Models\Store;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Validate;
@@ -51,7 +52,7 @@ new #[Layout('layouts::portal')] class extends Component
         }
 
         RateLimiter::clear($throttleKey);
-        request()->session()->regenerate();
+        Session::regenerate();
 
         $this->redirect(route('portal.orders'), navigate: true);
     }
