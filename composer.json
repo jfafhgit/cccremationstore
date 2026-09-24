@@ -10,6 +10,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.3",
+        "aws/aws-sdk-php": "^3.397",
         "laravel/framework": "^13.17",
         "laravel/tinker": "^3.0",
         "laravel/workos": "^0.6.0",
@@ -22,6 +23,7 @@
         "fakerphp/faker": "^1.24",
         "larastan/larastan": "^3.9",
         "laravel/boost": "^2.2",
+        "laravel/cloud-cli": "^0.6.1",
         "laravel/pail": "^1.2.5",
         "laravel/pao": "^1.0.6",
         "laravel/pint": "^1.27",
