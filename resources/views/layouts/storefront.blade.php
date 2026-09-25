@@ -7,15 +7,7 @@
 
         <script src="https://js.stripe.com/v3/"></script>
 
-        @if ($store = \App\Models\Store::current())
-            @if ($store->brand_primary_color)
-                <style>
-                    :root {
-                        --store-accent: {{ $store->brand_primary_color }};
-                    }
-                </style>
-            @endif
-        @endif
+        @include('partials.store-brand-colors', ['store' => $store = \App\Models\Store::current()])
     </head>
     <body class="min-h-screen bg-brand-50/40 text-zinc-900 antialiased">
         <div class="flex min-h-screen flex-col">
@@ -26,7 +18,7 @@
                             {{-- Most funeral home logos already include their name, so the logo stands alone. --}}
                             <img src="{{ $store->brandLogoUrl() }}" alt="{{ $store->name }}" class="h-10 w-auto max-w-[12rem] object-contain object-left sm:h-12 sm:max-w-[16rem]" />
                         @else
-                            <span class="flex size-10 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">
+                            <span class="flex size-10 items-center justify-center rounded-full bg-store text-sm font-semibold text-store-foreground">
                                 {{ $store ? Illuminate\Support\Str::of($store->name)->substr(0, 1) : 'TM' }}
                             </span>
                             <span class="flex flex-col leading-tight">

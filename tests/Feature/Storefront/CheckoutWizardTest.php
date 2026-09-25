@@ -259,42 +259,6 @@ test('the addons step and the keepsakes step show only their own products', func
     $component->assertSee($this->keepsake->name)->assertDontSee('Certified copies');
 });
 
-test('selecting a keepsake dispatches an event to scroll back to the top of the list', function () {
-    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
-
-    $component->call('setKeepsakeQty', $this->keepsake->id, null, 1);
-
-    $component->assertDispatched('keepsake-selected');
-});
-
-test('increasing a keepsake quantity again also dispatches the scroll event', function () {
-    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
-
-    $component->call('setKeepsakeQty', $this->keepsake->id, null, 1);
-    $component->call('setKeepsakeQty', $this->keepsake->id, null, 2);
-
-    $component->assertDispatched('keepsake-selected');
-});
-
-test('decreasing a keepsake quantity does not dispatch the scroll event', function () {
-    $first = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
-    $first->call('setKeepsakeQty', $this->keepsake->id, null, 2);
-
-    $second = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
-    $second->call('setKeepsakeQty', $this->keepsake->id, null, 1);
-
-    $second->assertNotDispatched('keepsake-selected');
-});
-
-test('selecting a service or add-on does not dispatch the keepsakes scroll event', function () {
-    $addon = Product::factory()->for($this->store)->category(ProductCategory::Addon)->create();
-
-    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page']);
-    $component->call('setKeepsakeQty', $addon->id, null, 1);
-
-    $component->assertNotDispatched('keepsake-selected');
-});
-
 test('included items are listed on the package card', function () {
     $this->package->update(['included_items' => ['Basic container', 'Cremation permit']]);
 

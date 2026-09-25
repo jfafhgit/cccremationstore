@@ -7,15 +7,7 @@
 
         <script src="https://js.stripe.com/v3/"></script>
 
-        @if ($store = \App\Models\Store::current())
-            @if ($store->brand_primary_color)
-                <style>
-                    :root {
-                        --store-accent: {{ $store->brand_primary_color }};
-                    }
-                </style>
-            @endif
-        @endif
+        @include('partials.store-brand-colors', ['store' => $store = \App\Models\Store::current()])
 
         {{-- No header/footer chrome here on purpose: this page is loaded
              inside another site's page (via an auto-resizing iframe), so

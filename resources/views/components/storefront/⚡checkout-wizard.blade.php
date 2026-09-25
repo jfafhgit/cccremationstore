@@ -274,7 +274,6 @@ new class extends Component
         $variant = $variantId ? $product->variants->firstWhere('id', $variantId) : null;
         $key = $productId.'-'.($variantId ?? '0');
 
-        $previousQty = (int) ($this->keepsakeQty[$key] ?? 0);
         $qty = max(0, $qty);
         $this->keepsakeQty[$key] = $qty;
 
@@ -290,13 +289,6 @@ new class extends Component
         }
 
         $this->dispatch('cart-updated');
-
-        // On the keepsakes step, every selection jumps the customer back to
-        // the top of the keepsakes so they scroll past the full lineup again
-        // to reach "Continue" — deliberate friction so nothing gets missed.
-        if ($product->category === ProductCategory::Keepsake && $qty > $previousQty) {
-            $this->dispatch('keepsake-selected');
-        }
     }
 
     public function goToContainers(): void
@@ -479,7 +471,7 @@ new class extends Component
             <span class="flex items-center gap-2">
                 <span @class([
                     'flex size-6 items-center justify-center rounded-full text-[11px]',
-                    'bg-brand-700 text-white' => $index <= $this->stepIndex(),
+                    'bg-store text-store-foreground' => $index <= $this->stepIndex(),
                     'bg-zinc-100 text-zinc-400' => $index > $this->stepIndex(),
                 ])>{{ $index + 1 }}</span>
                 <span class="hidden sm:inline {{ $index === $this->stepIndex() ? 'text-brand-800' : '' }}">{{ __($label) }}</span>
@@ -530,10 +522,10 @@ new class extends Component
                                     'cursor-default sm:flex-row' => $this->isALaCarte(),
                                 ])
                             >
-                                <x-product-image :src="$product->imageUrl()" :category="$product->category->value" @class(['w-full shrink-0', 'h-44' => ! $this->isALaCarte(), 'h-48 sm:h-auto sm:w-2/5' => $this->isALaCarte()]) />
+                                <x-product-image :src="$product->imageUrl()" :category="$product->category->value" @class(['w-full shrink-0', 'aspect-[4/3]' => ! $this->isALaCarte(), 'aspect-[4/3] sm:aspect-auto sm:w-2/5' => $this->isALaCarte()]) />
                                 {{-- À la carte stores have only the one base package, so "Selected" would say nothing. --}}
                                 @if (! $this->isALaCarte() && $packageId === $product->id)
-                                    <span class="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-brand-700 px-2 py-0.5 text-xs font-semibold text-white shadow">
+                                    <span class="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-store px-2 py-0.5 text-xs font-semibold text-store-foreground shadow">
                                         <flux:icon.check class="size-3.5" />{{ __('Selected') }}
                                     </span>
                                 @endif
@@ -561,7 +553,7 @@ new class extends Component
                 </div>
 
                 <div class="mt-8 flex justify-end">
-                    <flux:button variant="primary" class="!bg-brand-700 hover:!bg-brand-800" wire:click="goToContainers" :disabled="! $packageId">
+                    <flux:button variant="primary" class="!bg-store hover:!bg-store-hover !text-store-foreground" wire:click="goToContainers" :disabled="! $packageId">
                         {{ __('Continue') }}
                     </flux:button>
                 </div>
@@ -589,9 +581,9 @@ new class extends Component
                                     'border-2 border-brand-600 bg-brand-50 ring-2 ring-brand-600/30' => $containerId === $product->id,
                                     'border border-zinc-200 hover:border-brand-300' => $containerId !== $product->id,
                                 ])>
-                                    <x-product-image :src="$product->imageUrl()" :alt="$product->name" :category="$product->category->value" class="h-24 w-full" />
+                                    <x-product-image :src="$product->imageUrl()" :alt="$product->name" :category="$product->category->value" class="aspect-square w-full" />
                                     @if ($containerId === $product->id)
-                                        <span class="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-brand-700 px-2 py-0.5 text-xs font-semibold text-white shadow">
+                                        <span class="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-store px-2 py-0.5 text-xs font-semibold text-store-foreground shadow">
                                             <flux:icon.check class="size-3.5" />{{ __('Selected') }}
                                         </span>
                                     @endif
@@ -604,7 +596,7 @@ new class extends Component
                                     </div>
                                 </button>
                                 @if ($product->imageUrl())
-                                    <button type="button" class="absolute right-1 top-[4.25rem] flex size-6 items-center justify-center rounded-full bg-white/90 text-zinc-700 shadow hover:bg-white" x-on:click="zoom = { src: @js($product->imageUrl()), name: @js($product->name) }" aria-label="{{ __('View full size image of :name', ['name' => $product->name]) }}">
+                                    <button type="button" class="absolute right-2 top-2 flex size-6 items-center justify-center rounded-full bg-white/90 text-zinc-700 shadow hover:bg-white" x-on:click="zoom = { src: @js($product->imageUrl()), name: @js($product->name) }" aria-label="{{ __('View full size image of :name', ['name' => $product->name]) }}">
                                         <flux:icon.magnifying-glass-plus class="size-4" />
                                     </button>
                                 @endif
@@ -632,9 +624,9 @@ new class extends Component
                                     'border-2 border-brand-600 bg-brand-50 ring-2 ring-brand-600/30' => $urnId === $product->id,
                                     'border border-zinc-200 hover:border-brand-300' => $urnId !== $product->id,
                                 ])>
-                                    <x-product-image :src="$product->imageUrl()" :alt="$product->name" :category="$product->category->value" class="h-24 w-full" />
+                                    <x-product-image :src="$product->imageUrl()" :alt="$product->name" :category="$product->category->value" class="aspect-square w-full" />
                                     @if ($urnId === $product->id)
-                                        <span class="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-brand-700 px-2 py-0.5 text-xs font-semibold text-white shadow">
+                                        <span class="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-store px-2 py-0.5 text-xs font-semibold text-store-foreground shadow">
                                             <flux:icon.check class="size-3.5" />{{ __('Selected') }}
                                         </span>
                                     @endif
@@ -647,7 +639,7 @@ new class extends Component
                                     </div>
                                 </button>
                                 @if ($product->imageUrl())
-                                    <button type="button" class="absolute right-1 top-[4.25rem] flex size-6 items-center justify-center rounded-full bg-white/90 text-zinc-700 shadow hover:bg-white" x-on:click="zoom = { src: @js($product->imageUrl()), name: @js($product->name) }" aria-label="{{ __('View full size image of :name', ['name' => $product->name]) }}">
+                                    <button type="button" class="absolute right-2 top-2 flex size-6 items-center justify-center rounded-full bg-white/90 text-zinc-700 shadow hover:bg-white" x-on:click="zoom = { src: @js($product->imageUrl()), name: @js($product->name) }" aria-label="{{ __('View full size image of :name', ['name' => $product->name]) }}">
                                         <flux:icon.magnifying-glass-plus class="size-4" />
                                     </button>
                                 @endif
@@ -674,7 +666,7 @@ new class extends Component
 
             <div class="mt-8 flex items-center justify-between">
                 <flux:button variant="ghost" wire:click="backTo('timing')">{{ __('Back') }}</flux:button>
-                <flux:button variant="primary" class="!bg-brand-700 hover:!bg-brand-800" wire:click="goToAddons">
+                <flux:button variant="primary" class="!bg-store hover:!bg-store-hover !text-store-foreground" wire:click="goToAddons">
                     {{ __('Continue') }}
                 </flux:button>
             </div>
@@ -726,7 +718,7 @@ new class extends Component
 
             <div class="mt-8 flex items-center justify-between">
                 <flux:button variant="ghost" wire:click="backTo('containers')">{{ __('Back') }}</flux:button>
-                <flux:button variant="primary" class="!bg-brand-700 hover:!bg-brand-800" wire:click="goToKeepsakes">
+                <flux:button variant="primary" class="!bg-store hover:!bg-store-hover !text-store-foreground" wire:click="goToKeepsakes">
                     {{ __('Continue') }}
                 </flux:button>
             </div>
@@ -736,7 +728,7 @@ new class extends Component
     {{-- Step 4: Keepsakes --}}
     @if ($step === 'keepsakes')
         <div class="rounded-2xl border border-brand-100 bg-white p-6 shadow-sm sm:p-8" x-data="{ zoom: null }" x-on:keydown.escape.window="zoom = null">
-            <flux:heading size="xl" class="font-serif" id="keepsakes-top">{{ __('Keepsakes') }}</flux:heading>
+            <flux:heading size="xl" class="font-serif">{{ __('Keepsakes') }}</flux:heading>
             <flux:subheading class="mt-1">{{ __('Add as many as you like.') }}</flux:subheading>
 
             <div class="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -745,13 +737,13 @@ new class extends Component
                     <div class="overflow-hidden rounded-xl border border-zinc-200">
                         @if ($product->imageUrl())
                             <button type="button" class="group relative block w-full" x-on:click="zoom = { src: @js($product->imageUrl()), name: @js($product->name) }" aria-label="{{ __('View full size image of :name', ['name' => $product->name]) }}">
-                                <x-product-image :src="$product->imageUrl()" :alt="$product->name" :category="$product->category->value" class="h-24 w-full" />
+                                <x-product-image :src="$product->imageUrl()" :alt="$product->name" :category="$product->category->value" class="aspect-square w-full" />
                                 <span class="absolute bottom-1 right-1 flex size-6 items-center justify-center rounded-full bg-white/90 text-zinc-700 shadow group-hover:bg-white">
                                     <flux:icon.magnifying-glass-plus class="size-4" />
                                 </span>
                             </button>
                         @else
-                            <x-product-image :category="$product->category->value" class="h-24 w-full" />
+                            <x-product-image :category="$product->category->value" class="aspect-square w-full" />
                         @endif
                         <div class="p-3">
                             <p class="text-sm font-medium text-zinc-800">{{ $product->name }}</p>
@@ -780,19 +772,11 @@ new class extends Component
 
             <div class="mt-8 flex items-center justify-between">
                 <flux:button variant="ghost" wire:click="backTo('addons')">{{ __('Back') }}</flux:button>
-                <flux:button variant="primary" class="!bg-brand-700 hover:!bg-brand-800" wire:click="goToDetails">
+                <flux:button variant="primary" class="!bg-store hover:!bg-store-hover !text-store-foreground" wire:click="goToDetails">
                     {{ __('Continue') }}
                 </flux:button>
             </div>
         </div>
-
-        @script
-            <script>
-                $wire.on('keepsake-selected', () => {
-                    document.getElementById('keepsakes-top')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                });
-            </script>
-        @endscript
     @endif
 
     {{-- Step 5: Minimal purchaser + deceased details --}}
@@ -860,7 +844,7 @@ new class extends Component
 
                 <div class="flex items-center justify-between pt-2">
                     <flux:button variant="ghost" wire:click="backTo('keepsakes')">{{ __('Back') }}</flux:button>
-                    <flux:button type="submit" variant="primary" class="!bg-brand-700 hover:!bg-brand-800">
+                    <flux:button type="submit" variant="primary" class="!bg-store hover:!bg-store-hover !text-store-foreground">
                         {{ __('Continue to payment') }}
                     </flux:button>
                 </div>
@@ -901,7 +885,7 @@ new class extends Component
                 <form id="payment-form">
                     <div id="payment-element"></div>
                     <p id="payment-errors" class="mt-3 text-sm text-red-600"></p>
-                    <button id="pay-button" type="submit" class="mt-4 w-full rounded-lg bg-brand-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-800 disabled:opacity-50">
+                    <button id="pay-button" type="submit" class="mt-4 w-full rounded-lg bg-store px-4 py-3 text-sm font-semibold text-store-foreground transition hover:bg-store-hover disabled:opacity-50">
                         {{ __('Pay now') }}
                     </button>
                 </form>

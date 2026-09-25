@@ -43,6 +43,15 @@
     --color-accent-foreground: var(--color-white);
 }
 
+/* A funeral home's own brand color on its storefront. The storefront layouts
+   set --store-accent (and a legible --store-accent-foreground) from the
+   store's settings; without one these fall back to the platform teal. */
+@theme inline {
+    --color-store: var(--store-accent, var(--color-brand-700));
+    --color-store-hover: color-mix(in oklab, var(--store-accent, var(--color-brand-700)) 85%, black);
+    --color-store-foreground: var(--store-accent-foreground, var(--color-white));
+}
+
 @layer theme {
     .dark {
         --color-accent: var(--color-brand-400);

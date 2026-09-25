@@ -154,7 +154,7 @@ new #[Layout('layouts::storefront')] class extends Component
             <flux:subheading class="mt-1">
                 {{ __('We couldn\'t confirm a payment for order :number. If you just paid, you\'ll receive a confirmation email shortly. Otherwise, you can return to checkout to complete your order — your selections have been saved.', ['number' => $currentOrder->order_number]) }}
             </flux:subheading>
-            <flux:button :href="route('storefront.start')" variant="primary" class="mt-6 !bg-brand-700 hover:!bg-brand-800">{{ __('Return to checkout') }}</flux:button>
+            <flux:button :href="route('storefront.start')" variant="primary" class="mt-6 !bg-store hover:!bg-store-hover !text-store-foreground">{{ __('Return to checkout') }}</flux:button>
         @else
             <flux:heading size="xl" class="font-serif">{{ __('Thank you, :name.', ['name' => $currentOrder->purchaser_first_name ?: 'friend']) }}</flux:heading>
             <flux:subheading class="mt-1">
@@ -241,7 +241,7 @@ new #[Layout('layouts::storefront')] class extends Component
                     </div>
 
                     <div class="flex items-center justify-end border-t border-zinc-100 pt-6">
-                        <flux:button type="submit" variant="primary" class="!bg-brand-700 hover:!bg-brand-800">
+                        <flux:button type="submit" variant="primary" class="!bg-store hover:!bg-store-hover !text-store-foreground">
                             {{ __('Save details') }}
                         </flux:button>
                     </div>

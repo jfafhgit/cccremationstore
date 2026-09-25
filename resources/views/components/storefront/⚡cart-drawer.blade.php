@@ -101,7 +101,7 @@ new class extends Component {
     >
         <flux:icon.shopping-bag class="size-5" />
         @if ($store && $this->cart()->itemCount() > 0)
-            <span class="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-brand-700 text-[10px] font-semibold text-white">
+            <span class="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-store text-[10px] font-semibold text-store-foreground">
                 {{ $this->cart()->itemCount() }}
             </span>
         @endif
@@ -222,7 +222,7 @@ new class extends Component {
                             </div>
                             <flux:button
                                 variant="primary"
-                                class="mt-4 w-full !bg-brand-700 hover:!bg-brand-800"
+                                class="mt-4 w-full !bg-store hover:!bg-store-hover !text-store-foreground"
                                 x-on:click="open = false"
                             >
                                 {{ __('Continue') }}

@@ -7,6 +7,7 @@ use App\Enums\ProductCategory;
 use App\Enums\ProductSortMode;
 use App\Enums\StorePath;
 use App\Enums\StoreStatus;
+use App\Services\BrandPalette;
 use Database\Factories\StoreFactory;
 use Illuminate\Database\Eloquent\Attributes\Scope;
 use Illuminate\Database\Eloquent\Builder;
@@ -53,6 +54,8 @@ class Store extends Model
 {
     /** @use HasFactory<StoreFactory> */
     use HasFactory;
+
+    public const BRAND_COLOR_PATTERN = '/^#[0-9a-fA-F]{6}$/';
 
     protected $attributes = [
         'checkout_path' => 'packages',
@@ -158,6 +161,44 @@ class Store extends Model
         return $this->brand_logo_path
             ? Storage::disk('public')->url($this->brand_logo_path)
             : null;
+    }
+
+    /**
+     * The funeral home's brand color as "#rrggbb", or null when none (or an
+     * unusable value) is set. It is written into a <style> tag, so anything
+     * that is not a plain hex color is ignored.
+     */
+    public function brandColor(): ?string
+    {
+        $color = $this->brand_primary_color;
+
+        return is_string($color) && preg_match(self::BRAND_COLOR_PATTERN, $color)
+            ? strtolower($color)
+            : null;
+    }
+
+    /**
+     * White or near-black, whichever reads better on the brand color, so a
+     * light brand color still gets legible button text.
+     */
+    public function brandForegroundColor(): string
+    {
+        $color = $this->brandColor();
+
+        return $color === null ? '#ffffff' : BrandPalette::foregroundFor($color);
+    }
+
+    /**
+     * The storefront's brand shades (50–950) generated from the brand color,
+     * or null to keep the platform palette.
+     *
+     * @return array<int, string>|null
+     */
+    public function brandPalette(): ?array
+    {
+        $color = $this->brandColor();
+
+        return $color === null ? null : BrandPalette::fromColor($color);
     }
 
     public function isALaCarte(): bool

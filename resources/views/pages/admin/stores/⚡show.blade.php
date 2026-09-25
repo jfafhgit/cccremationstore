@@ -124,6 +124,9 @@ new class extends Component
 
     public function save(PlatformBillingService $billing): void
     {
+        // Accept "29564b" as well as "#29564b".
+        $this->brandPrimaryColor = preg_replace('/^([0-9a-fA-F]{6})$/', '#$1', trim($this->brandPrimaryColor));
+
         $validated = $this->validate([
             'name' => ['required', 'string', 'max:255'],
             'slug' => ['required', 'string', 'max:255', 'alpha_dash', 'unique:stores,slug,'.$this->currentStore->id],
@@ -135,7 +138,7 @@ new class extends Component
             'contactEmail' => ['nullable', 'email', 'max:255'],
             'contactPhone' => ['nullable', 'string', 'max:30'],
             'timezone' => ['required', 'string', 'max:255'],
-            'brandPrimaryColor' => ['nullable', 'string', 'max:7'],
+            'brandPrimaryColor' => ['nullable', 'string', 'regex:'.Store::BRAND_COLOR_PATTERN],
             'generalPriceListFile' => ['nullable', 'file', 'mimes:pdf', 'mimetypes:application/pdf', 'max:10240'],
             // Raster formats only: an SVG served from our own domain can carry script.
             'brandLogoFile' => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp', 'max:2048'],
@@ -146,6 +149,8 @@ new class extends Component
             'taxRatePercent' => ['required', 'numeric', 'min:0', 'max:100'],
             'processingFeeEnabled' => ['boolean'],
             'processingFeePercent' => ['required', 'numeric', 'min:0', 'max:100'],
+        ], [
+            'brandPrimaryColor.regex' => __('Enter the brand color as a hex code, like #29564b.'),
         ]);
 
         $this->currentStore->update([
@@ -475,7 +480,14 @@ new class extends Component
                     </flux:field>
                     <flux:field>
                         <flux:label>{{ __('Brand color') }}</flux:label>
-                        <flux:input type="text" wire:model="brandPrimaryColor" placeholder="#29564b" />
+                        <flux:input type="text" wire:model.live.debounce.500ms="brandPrimaryColor" placeholder="#29564b">
+                            @if (preg_match(Store::BRAND_COLOR_PATTERN, $brandPrimaryColor))
+                                <x-slot name="iconTrailing">
+                                    <span class="block size-5 rounded border border-zinc-300" style="background-color: {{ $brandPrimaryColor }}"></span>
+                                </x-slot>
+                            @endif
+                        </flux:input>
+                        <flux:description>{{ __('Used for buttons and the checkout steps on the storefront.') }}</flux:description>
                         <flux:error name="brandPrimaryColor" />
                     </flux:field>
                     <flux:field class="sm:col-span-2">
