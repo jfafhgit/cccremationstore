@@ -41,6 +41,19 @@
     --color-accent: var(--color-brand-700);
     --color-accent-content: var(--color-brand-700);
     --color-accent-foreground: var(--color-white);
+
+    /* Treasured Memories gold, from the logo and buttons on
+       treasuredmemories.us. Used by the marketing site (see .theme-gold). */
+    --color-gold-50: #fffaeb;
+    --color-gold-100: #fdf0c7;
+    --color-gold-200: #fde08a;
+    --color-gold-300: #ffcd39;
+    --color-gold-400: #e6b746;
+    --color-gold-500: #db9f13;
+    --color-gold-600: #b88309;
+    --color-gold-700: #8a6206;
+    --color-gold-800: #6b4c08;
+    --color-gold-900: #4a3506;
 }
 
 /* A funeral home's own brand color on its storefront. The storefront layouts
@@ -53,6 +66,17 @@
 }
 
 @layer theme {
+    /* The marketing site wears the Treasured Memories gold-on-black look, so
+       Flux's primary buttons, links, and focus rings turn gold there. The
+       darker gold keeps link text readable on white. Headings (font-serif)
+       use EB Garamond, which the marketing layout loads via @fonts. */
+    .theme-gold {
+        --font-serif: var(--font-eb-garamond, ui-serif, Georgia, serif);
+        --color-accent: var(--color-gold-500);
+        --color-accent-content: var(--color-gold-700);
+        --color-accent-foreground: var(--color-black);
+    }
+
     .dark {
         --color-accent: var(--color-brand-400);
         --color-accent-content: var(--color-brand-300);

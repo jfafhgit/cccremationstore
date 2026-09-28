@@ -56,14 +56,15 @@ new #[Layout('layouts::marketing')] class extends Component
 <div>
     <section class="mx-auto max-w-5xl px-4 py-16 sm:px-6 sm:py-24">
         <div class="max-w-2xl">
-            <flux:heading size="xl" class="font-serif text-4xl text-brand-900">
+            <p class="text-sm font-semibold uppercase tracking-widest text-gold-700">{{ __('For funeral homes') }}</p>
+            <flux:heading size="xl" class="mt-3 font-serif text-4xl text-black">
                 {{ __('A calmer way to offer cremation arrangements online.') }}
             </flux:heading>
             <p class="mt-4 text-lg text-zinc-600">
                 {{ __('Planning by Treasured Memories gives your funeral home a dedicated, branded online store — simple packages, inline secure payment, and a dignified experience for families arranging services at any hour.') }}
             </p>
             <div class="mt-8 flex flex-wrap gap-4">
-                <flux:button href="#contact" variant="primary" class="!bg-brand-700 hover:!bg-brand-800">
+                <flux:button href="#contact" variant="primary">
                     {{ __('Request a demo') }}
                 </flux:button>
                 <flux:button href="#features" variant="ghost">
@@ -73,23 +74,23 @@ new #[Layout('layouts::marketing')] class extends Component
         </div>
     </section>
 
-    <section id="features" class="border-y border-brand-100 bg-white py-16">
+    <section id="features" class="bg-zinc-950 py-16 text-white">
         <div class="mx-auto grid max-w-5xl gap-8 px-4 sm:grid-cols-3 sm:px-6">
             <div>
-                <flux:heading size="lg">{{ __('Your own branded store') }}</flux:heading>
-                <p class="mt-2 text-sm text-zinc-500">
+                <flux:heading size="lg" class="font-serif !text-xl !text-gold-300">{{ __('Your own branded store') }}</flux:heading>
+                <p class="mt-2 text-sm text-zinc-300">
                     {{ __('Every funeral home gets its own address and branding — set up your packages, containers, urns, and keepsakes once, and families see only your offerings.') }}
                 </p>
             </div>
             <div>
-                <flux:heading size="lg">{{ __('Simple, respectful checkout') }}</flux:heading>
-                <p class="mt-2 text-sm text-zinc-500">
+                <flux:heading size="lg" class="font-serif !text-xl !text-gold-300">{{ __('Simple, respectful checkout') }}</flux:heading>
+                <p class="mt-2 text-sm text-zinc-300">
                     {{ __('A short, guided flow collects only what is needed to secure payment. The fuller intake — obituary details, service preferences — comes after, on the family\'s own time.') }}
                 </p>
             </div>
             <div>
-                <flux:heading size="lg">{{ __('Payments go straight to you') }}</flux:heading>
-                <p class="mt-2 text-sm text-zinc-500">
+                <flux:heading size="lg" class="font-serif !text-xl !text-gold-300">{{ __('Payments go straight to you') }}</flux:heading>
+                <p class="mt-2 text-sm text-zinc-300">
                     {{ __('Payments are processed securely by Stripe directly into your own account — we never hold your funds.') }}
                 </p>
             </div>
@@ -101,9 +102,9 @@ new #[Layout('layouts::marketing')] class extends Component
         <flux:subheading class="mt-1">{{ __("Tell us a little about your funeral home and we'll be in touch.") }}</flux:subheading>
 
         @if ($submitted)
-            <div class="mt-8 rounded-xl border border-brand-200 bg-brand-50 p-6 text-center">
-                <flux:icon.check-circle class="mx-auto size-8 text-brand-700" />
-                <p class="mt-3 font-medium text-brand-900">{{ __('Thank you for reaching out!') }}</p>
+            <div class="mt-8 rounded-xl border border-gold-200 bg-gold-50 p-6 text-center">
+                <flux:icon.check-circle class="mx-auto size-8 text-gold-600" />
+                <p class="mt-3 font-medium text-black">{{ __('Thank you for reaching out!') }}</p>
                 <p class="mt-1 text-sm text-zinc-500">{{ __("We'll be in touch shortly.") }}</p>
             </div>
         @else
@@ -136,7 +137,7 @@ new #[Layout('layouts::marketing')] class extends Component
                     <flux:error name="message" />
                 </flux:field>
                 <div class="flex justify-end">
-                    <flux:button type="submit" variant="primary" class="!bg-brand-700 hover:!bg-brand-800">
+                    <flux:button type="submit" variant="primary">
                         {{ __('Send') }}
                     </flux:button>
                 </div>

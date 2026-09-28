@@ -12,6 +12,11 @@ export default defineConfig({
                 bunny('Instrument Sans', {
                     weights: [400, 500, 600],
                 }),
+                // Treasured Memories' heading font; marketing pages only.
+                bunny('EB Garamond', {
+                    weights: [500, 600],
+                    fallbacks: ['Georgia', 'serif'],
+                }),
             ],
         }),
         tailwindcss(),
