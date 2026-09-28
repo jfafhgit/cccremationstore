@@ -17,7 +17,9 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Notifications\Notification;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Notification as NotificationFacade;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -137,6 +139,32 @@ class Store extends Model
             ->as('membership')
             ->withPivot('id', 'role')
             ->withTimestamps();
+    }
+
+    /**
+     * Staff (any role) who have chosen a password and can sign in, and so
+     * should hear about new orders.
+     *
+     * @return Collection<int, StoreUser>
+     */
+    public function signedUpStaff(): Collection
+    {
+        return $this->staff()->whereNotNull('invitation_accepted_at')->get();
+    }
+
+    /**
+     * Alert the store's staff who can sign in. A store without any yet falls
+     * back to its contact email, so nothing a family sends goes unnoticed.
+     */
+    public function notifyStaff(Notification $notification): void
+    {
+        $staff = $this->signedUpStaff();
+
+        if ($staff->isNotEmpty()) {
+            NotificationFacade::send($staff, $notification);
+        } elseif ($this->contact_email) {
+            NotificationFacade::route('mail', $this->contact_email)->notify($notification);
+        }
     }
 
     /**

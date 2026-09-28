@@ -2,12 +2,35 @@
 
 use App\Models\Order;
 use App\Models\Store;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 new #[Layout('layouts::portal')] class extends Component
 {
     public Order $currentOrder;
+
+    #[Locked]
+    public ?string $revealedSsn = null;
+
+    /**
+     * Show the full Social Security number, on purpose and on the record.
+     */
+    public function revealSsn(): void
+    {
+        $ssn = $this->currentOrder->detail?->ssn;
+
+        abort_unless($ssn, 404);
+
+        Log::info('Staff viewed a Social Security number.', [
+            'order_id' => $this->currentOrder->id,
+            'store_user_id' => Auth::guard('store')->id(),
+        ]);
+
+        $this->revealedSsn = $ssn;
+    }
 
     /**
      * Scoped to the current store rather than relying on implicit route
@@ -96,45 +119,11 @@ new #[Layout('layouts::portal')] class extends Component
         </div>
     </div>
 
-    @if ($detail = $currentOrder->detail)
-        <div class="mt-6 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-            <flux:heading size="sm" class="text-zinc-500">{{ __('Additional details') }}</flux:heading>
-            <dl class="mt-3 grid gap-3 text-sm sm:grid-cols-2">
-                @if ($detail->date_of_birth)
-                    <div><dt class="text-zinc-400">{{ __('Date of birth') }}</dt><dd>{{ $detail->date_of_birth->format('M j, Y') }}</dd></div>
-                @endif
-                @if ($detail->date_of_death)
-                    <div><dt class="text-zinc-400">{{ __('Date of passing') }}</dt><dd>{{ $detail->date_of_death->format('M j, Y') }}</dd></div>
-                @endif
-                @if ($detail->place_of_death)
-                    <div><dt class="text-zinc-400">{{ __('Place of passing') }}</dt><dd>{{ $detail->place_of_death }}</dd></div>
-                @endif
-                @if (! is_null($detail->veteran_status))
-                    <div><dt class="text-zinc-400">{{ __('Veteran') }}</dt><dd>{{ $detail->veteran_status ? __('Yes') : __('No') }}</dd></div>
-                @endif
-            </dl>
-            @if ($detail->obituary_text)
-                <div class="mt-4">
-                    <dt class="text-sm text-zinc-400">{{ __('Obituary') }}</dt>
-                    <dd class="mt-1 whitespace-pre-line text-sm">{{ $detail->obituary_text }}</dd>
-                </div>
-            @endif
-            @if ($detail->service_preferences)
-                <div class="mt-4">
-                    <dt class="text-sm text-zinc-400">{{ __('Service preferences') }}</dt>
-                    <dd class="mt-1 whitespace-pre-line text-sm">{{ $detail->service_preferences }}</dd>
-                </div>
-            @endif
-            @if ($detail->additional_notes)
-                <div class="mt-4">
-                    <dt class="text-sm text-zinc-400">{{ __('Additional notes') }}</dt>
-                    <dd class="mt-1 whitespace-pre-line text-sm">{{ $detail->additional_notes }}</dd>
-                </div>
-            @endif
-        </div>
+    @if ($currentOrder->detail)
+        <x-vital-statistics :detail="$currentOrder->detail" :revealed-ssn="$revealedSsn" class="mt-6" />
     @else
         <div class="mt-6 rounded-xl border border-dashed border-zinc-200 p-5 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-            {{ __("The purchaser hasn't submitted the follow-up details form yet.") }}
+            {{ __("The family hasn't started the Vital Statistics form yet.") }}
         </div>
     @endif
 </div>

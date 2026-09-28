@@ -14,4 +14,15 @@ enum OrderTiming: string
             self::PreNeed => 'Soon, I\'m preparing for end-of-life needs',
         };
     }
+
+    /**
+     * How funeral home staff refer to it, rather than the family-facing wording.
+     */
+    public function staffLabel(): string
+    {
+        return match ($this) {
+            self::Immediate => 'At-need (loved one has passed)',
+            self::PreNeed => 'Pre-need planning',
+        };
+    }
 }

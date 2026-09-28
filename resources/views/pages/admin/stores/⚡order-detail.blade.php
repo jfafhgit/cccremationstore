@@ -4,6 +4,8 @@ use App\Enums\OrderStatus;
 use App\Models\Order;
 use App\Models\Store;
 use Flux\Flux;
+use Illuminate\Support\Facades\Log;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 new class extends Component
@@ -15,6 +17,26 @@ new class extends Component
     public string $status = '';
 
     public string $internalNotes = '';
+
+    #[Locked]
+    public ?string $revealedSsn = null;
+
+    /**
+     * Show the full Social Security number, on purpose and on the record.
+     */
+    public function revealSsn(): void
+    {
+        $ssn = $this->currentOrder->detail?->ssn;
+
+        abort_unless($ssn, 404);
+
+        Log::info('Admin viewed a Social Security number.', [
+            'order_id' => $this->currentOrder->id,
+            'user_id' => auth()->id(),
+        ]);
+
+        $this->revealedSsn = $ssn;
+    }
 
     /**
      * Both {store} and {order} are resolved here rather than trusted as
@@ -110,13 +132,8 @@ new class extends Component
         </div>
     </div>
 
-    @if ($detail = $currentOrder->detail)
-        <div class="mt-6 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-800">
-            <flux:heading size="sm" class="text-zinc-500">{{ __('Additional details') }}</flux:heading>
-            @if ($detail->obituary_text)
-                <p class="mt-3 whitespace-pre-line text-sm">{{ $detail->obituary_text }}</p>
-            @endif
-        </div>
+    @if ($currentOrder->detail)
+        <x-vital-statistics :detail="$currentOrder->detail" :revealed-ssn="$revealedSsn" class="mt-6 dark:bg-zinc-800" />
     @endif
 
     <div class="mt-6 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-800">

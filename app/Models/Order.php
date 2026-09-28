@@ -149,7 +149,12 @@ class Order extends Model
 
     public function deceasedName(): string
     {
-        return trim("{$this->deceased_first_name} {$this->deceased_middle_name} {$this->deceased_last_name} {$this->deceased_suffix}");
+        return implode(' ', array_filter([
+            $this->deceased_first_name,
+            $this->deceased_middle_name,
+            $this->deceased_last_name,
+            $this->deceased_suffix,
+        ], 'filled'));
     }
 
     public function subtotalInDollars(): string

@@ -7,6 +7,7 @@ use App\Enums\OrderStatus;
 use App\Enums\ProductCategory;
 use App\Models\Order;
 use App\Models\Store;
+use App\Notifications\NewOrderNotification;
 use App\Notifications\OrderPaidNotification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -271,11 +272,23 @@ class CheckoutService
             return $intent->status;
         }
 
-        if ($this->markPaid($order) && $order->purchaser_email) {
-            $order->notify(new OrderPaidNotification($order));
+        if ($this->markPaid($order)) {
+            $this->sendPaidOrderEmails($order);
         }
 
         return $intent->status;
+    }
+
+    /**
+     * The family's confirmation and the funeral home's new-order alert.
+     */
+    private function sendPaidOrderEmails(Order $order): void
+    {
+        if ($order->purchaser_email) {
+            $order->notify(new OrderPaidNotification($order));
+        }
+
+        $order->store->notifyStaff(new NewOrderNotification($order));
     }
 
     /**

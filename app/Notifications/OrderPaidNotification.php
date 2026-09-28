@@ -2,15 +2,22 @@
 
 namespace App\Notifications;
 
+use App\Enums\OrderTiming;
 use App\Models\Order;
+use App\Notifications\Concerns\FormatsOrderForMail;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
+/**
+ * The purchaser's confirmation and receipt, sent once when payment clears.
+ * It comes from the funeral home (by name, and replies go to its contact
+ * email) and invites the family to share the fuller intake details.
+ */
 class OrderPaidNotification extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use FormatsOrderForMail, Queueable;
 
     public function __construct(private readonly Order $order) {}
 
@@ -24,15 +31,34 @@ class OrderPaidNotification extends Notification implements ShouldQueue
 
     public function toMail(object $notifiable): MailMessage
     {
-        $order = $this->order;
+        $order = $this->order->loadMissing(['store', 'items']);
+        $store = $order->store;
 
-        return (new MailMessage)
-            ->subject("Payment received — {$order->store->name}")
-            ->greeting("Thank you, {$order->purchaser_first_name}.")
-            ->line("We've received your payment for {$order->deceasedName()} with {$order->store->name}.")
-            ->line("Order number: {$order->order_number}")
-            ->line('To help us take the best possible care of your family, please take a few minutes to share some additional information.')
-            ->action('Continue with additional details', $order->detailsUrl())
-            ->line('If you have any questions, please contact us directly — we are here to help.');
+        $message = (new MailMessage)
+            ->from(config('mail.from.address'), $this->senderNameFor($order))
+            ->subject("Your order with {$store->name} is confirmed ({$order->order_number})")
+            ->markdown('mail.orders.paid', [
+                'frame' => $this->storeFrame(
+                    $order,
+                    storeUrl: route('storefront.start', ['store' => $store->slug]),
+                    footer: $this->escapeMarkdown($store->name.($store->contact_phone ? ' · '.$store->contact_phone : ''))
+                        ."\\\n".$this->poweredByFooter('Online arrangements powered by'),
+                ),
+                'storeName' => $this->escapeMarkdown($store->name),
+                'purchaserFirstName' => $this->escapeMarkdown($order->purchaser_first_name),
+                'deceasedName' => $this->escapeMarkdown($order->deceasedName()),
+                'isImmediate' => $order->timing === OrderTiming::Immediate,
+                'detailsUrl' => $order->detailsUrl(),
+                'summary' => $this->orderSummary($order),
+                'canReply' => filled($store->contact_email),
+                'contactPhone' => $store->contact_phone ? $this->escapeMarkdown($store->contact_phone) : null,
+                'contactName' => $store->contact_name ? $this->escapeMarkdown($store->contact_name) : null,
+            ]);
+
+        if ($store->contact_email) {
+            $message->replyTo($store->contact_email, $store->name);
+        }
+
+        return $message;
     }
 }

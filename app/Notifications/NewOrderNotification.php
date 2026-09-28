@@ -3,18 +3,19 @@
 namespace App\Notifications;
 
 use App\Models\Order;
+use App\Notifications\Concerns\FormatsOrderForMail;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 /**
- * Sent to a store's staff (or its contact_email, if it has no staff yet)
- * when a new paid order comes in.
+ * Alerts a store's staff (or its contact_email, if it has no staff who can
+ * sign in yet) that a new paid order came in. Replies go to the family.
  */
 class NewOrderNotification extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use FormatsOrderForMail, Queueable;
 
     public function __construct(private readonly Order $order) {}
 
@@ -28,16 +29,32 @@ class NewOrderNotification extends Notification implements ShouldQueue
 
     public function toMail(object $notifiable): MailMessage
     {
-        $order = $this->order;
+        $order = $this->order->loadMissing(['store', 'items']);
+        $store = $order->store;
 
-        $portalUrl = route('portal.order-detail', ['store' => $order->store->slug, 'order' => $order->id]);
+        $message = (new MailMessage)
+            ->subject("New order {$order->order_number} — {$order->deceasedName()}")
+            ->markdown('mail.orders.new-for-staff', [
+                'frame' => $this->storeFrame(
+                    $order,
+                    storeUrl: route('portal.orders', ['store' => $store->slug]),
+                    footer: $this->poweredByFooter("Sent to {$store->name} staff by"),
+                ),
+                'storeName' => $this->escapeMarkdown($store->name),
+                'deceasedName' => $this->escapeMarkdown($order->deceasedName()),
+                'purchaserName' => $this->escapeMarkdown($order->purchaserName()),
+                'relationship' => $order->relationship_to_deceased ? $this->escapeMarkdown($order->relationship_to_deceased) : null,
+                'purchaserEmail' => $this->escapeMarkdown($order->purchaser_email),
+                'purchaserPhone' => $order->purchaser_phone ? $this->escapeMarkdown($order->purchaser_phone) : null,
+                'timing' => $order->timing?->staffLabel(),
+                'summary' => $this->orderSummary($order),
+                'portalUrl' => route('portal.order-detail', ['store' => $store->slug, 'order' => $order->id]),
+            ]);
 
-        return (new MailMessage)
-            ->subject("New order — {$order->order_number}")
-            ->greeting('You have a new order.')
-            ->line("Purchaser: {$order->purchaserName()} ({$order->purchaser_email})")
-            ->line("For: {$order->deceasedName()}")
-            ->line("Total: \${$order->totalInDollars()}")
-            ->action('View order', $portalUrl);
+        if ($order->purchaser_email) {
+            $message->replyTo($order->purchaser_email, $order->purchaserName());
+        }
+
+        return $message;
     }
 }

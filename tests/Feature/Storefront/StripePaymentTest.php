@@ -2,9 +2,12 @@
 
 use App\Enums\OrderStatus;
 use App\Enums\ProductCategory;
+use App\Enums\StoreUserRole;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\Store;
+use App\Models\StoreUser;
+use App\Notifications\NewOrderNotification;
 use App\Notifications\OrderPaidNotification;
 use App\Services\Cart;
 use App\Services\CheckoutService;
@@ -220,6 +223,31 @@ test('the payment succeeded webhook marks the order paid only once', function ()
 
     expect($this->order->fresh()->status)->toBe(OrderStatus::Paid);
     Notification::assertSentTimes(OrderPaidNotification::class, 1);
+});
+
+test('a paid order alerts the store staff who can sign in, once', function () {
+    $this->stripe->intent('pi_existing', ['status' => 'succeeded', 'amount' => 150000, 'amount_received' => 150000]);
+    $owner = StoreUser::factory()->forStore($this->store)->create();
+    $staff = StoreUser::factory()->forStore($this->store, StoreUserRole::Staff)->create();
+    $pending = StoreUser::factory()->forStore($this->store)->invited()->create();
+    $otherStoreStaff = StoreUser::factory()->forStore(Store::factory()->create())->create();
+
+    app(CheckoutService::class)->syncPaymentStatus($this->order);
+    app(CheckoutService::class)->syncPaymentStatus($this->order->fresh());
+
+    Notification::assertSentToTimes($owner, NewOrderNotification::class, 1);
+    Notification::assertSentToTimes($staff, NewOrderNotification::class, 1);
+    Notification::assertNotSentTo([$pending, $otherStoreStaff], NewOrderNotification::class);
+    Notification::assertSentOnDemandTimes(NewOrderNotification::class, 0);
+});
+
+test('a store with no staff who can sign in gets the order alert at its contact email', function () {
+    $this->stripe->intent('pi_existing', ['status' => 'succeeded', 'amount' => 150000, 'amount_received' => 150000]);
+    $this->store->update(['contact_email' => 'office@funeralhome.test']);
+
+    app(CheckoutService::class)->syncPaymentStatus($this->order);
+
+    Notification::assertSentOnDemand(NewOrderNotification::class, fn ($notification, $channels, $notifiable) => $notifiable->routes['mail'] === 'office@funeralhome.test');
 });
 
 test('the webhook re-checks the payment with stripe rather than trusting the payload', function () {

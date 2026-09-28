@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Order;
+use App\Models\OrderDetail;
 use App\Models\Store;
 use App\Models\StoreUser;
 use Illuminate\Support\Facades\Auth;
@@ -91,6 +92,19 @@ test('staff can see their own store incomplete orders as leads, never another st
 
     expect($leads->total())->toBe(1)
         ->and($leads->first()->id)->toBe($mine->id);
+});
+
+test('staff see Vital Statistics with the Social Security number masked until they reveal it', function () {
+    Auth::guard('store')->login($this->staff);
+    $order = Order::factory()->create(['store_id' => $this->store->id, 'paid_at' => now()]);
+    OrderDetail::factory()->for($order)->submitted()->create(['ssn' => '123-45-6789', 'has_pacemaker' => true]);
+
+    Livewire::test('pages::portal.order-detail', ['order' => $order->id])
+        ->assertSee('•••-••-6789')
+        ->assertDontSee('123-45-6789')
+        ->assertSee('Pacemaker and/or defibrillator reported')
+        ->call('revealSsn')
+        ->assertSee('123-45-6789');
 });
 
 test('an order from a different store cannot be viewed in the portal', function () {
