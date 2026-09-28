@@ -40,8 +40,10 @@ class StripeConnectService
 
     /**
      * Ensure the store has a Stripe Connect account, creating one if needed.
+     * The email pre-fills Stripe's form; it defaults to the store's contact
+     * email, but an owner onboarding themselves passes their own.
      */
-    public function ensureAccount(Store $store): Store
+    public function ensureAccount(Store $store, ?string $email = null): Store
     {
         if ($store->stripe_account_id) {
             return $store;
@@ -49,7 +51,7 @@ class StripeConnectService
 
         $account = $this->client()->accounts->create([
             'type' => 'standard',
-            'email' => $store->contact_email,
+            'email' => $email ?? $store->contact_email,
             'business_type' => 'company',
             'company' => array_filter([
                 'name' => $store->name,
@@ -65,9 +67,9 @@ class StripeConnectService
         return $store->fresh();
     }
 
-    public function createOnboardingLink(Store $store, string $returnUrl, string $refreshUrl): AccountLink
+    public function createOnboardingLink(Store $store, string $returnUrl, string $refreshUrl, ?string $email = null): AccountLink
     {
-        $store = $this->ensureAccount($store);
+        $store = $this->ensureAccount($store, $email);
 
         return $this->client()->accountLinks->create([
             'account' => $store->stripe_account_id,

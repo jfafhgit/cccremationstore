@@ -347,5 +347,5 @@ test('an admin can create an owner login, who can manage billing', function () {
         ->call('createStaffUser')
         ->assertHasNoErrors();
 
-    expect($store->staff()->where('email', 'morgan@example.com')->first()->isOwner())->toBeTrue();
+    expect($store->staff()->where('email', 'morgan@example.com')->first()->isOwnerOf($store))->toBeTrue();
 });

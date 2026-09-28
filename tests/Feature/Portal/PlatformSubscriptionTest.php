@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\PlatformFeeModel;
+use App\Enums\StoreUserRole;
 use App\Models\Store;
 use App\Models\StoreUser;
 use App\Models\User;
@@ -100,7 +101,7 @@ beforeEach(function () {
     ]);
     actingAsTenant($this->store);
 
-    $this->owner = StoreUser::factory()->for($this->store)->create();
+    $this->owner = StoreUser::factory()->forStore($this->store)->create();
 });
 
 afterEach(function () {
@@ -142,7 +143,7 @@ test('the owner sets up billing through stripe checkout at the store monthly amo
 });
 
 test('staff who are not the owner cannot manage billing', function () {
-    Auth::guard('store')->login(StoreUser::factory()->for($this->store)->staff()->create());
+    Auth::guard('store')->login(StoreUser::factory()->forStore($this->store, StoreUserRole::Staff)->create());
 
     Livewire::test('pages::portal.billing')
         ->assertSee('Only the account owner can manage billing')

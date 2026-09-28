@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Portal\LocationSwitchController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -13,7 +14,10 @@ Route::prefix('portal')->name('portal.')->group(function (): void {
     // an expired or already-used link gets a friendly explanation, not a 404.
     Route::livewire('invitation/{storeUser}/{token}', 'pages::portal.accept-invitation')->name('invitation');
 
-    Route::middleware('auth:store')->group(function (): void {
+    // Arrival from another location's portal via the location switcher.
+    Route::get('handoff/{token}', [LocationSwitchController::class, 'handoff'])->name('handoff');
+
+    Route::middleware(['auth:store', 'store.member'])->group(function (): void {
         Route::redirect('/', '/portal/orders');
         Route::livewire('orders', 'pages::portal.orders')->name('orders');
         Route::livewire('orders/{order}', 'pages::portal.order-detail')->name('order-detail');
@@ -24,8 +28,13 @@ Route::prefix('portal')->name('portal.')->group(function (): void {
         // area only. Staff should never see other funeral homes' inquiries.
         Route::livewire('leads', 'pages::portal.leads')->name('leads');
 
+        // Connecting the funeral home's own Stripe account (owners only).
+        Route::livewire('payments', 'pages::portal.payments')->name('payments');
+
         // The funeral home's own subscription to the platform (owners only).
         Route::livewire('billing', 'pages::portal.billing')->name('billing');
+
+        Route::post('switch-location/{location}', [LocationSwitchController::class, 'switch'])->name('switch-location');
 
         Route::post('logout', function (Request $request) {
             Auth::guard('store')->logout();

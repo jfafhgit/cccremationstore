@@ -21,14 +21,21 @@ class StoreUserFactory extends Factory
     public function definition(): array
     {
         return [
-            'store_id' => Store::factory(),
             'name' => $this->faker->name(),
             'email' => $this->faker->unique()->safeEmail(),
             'password' => static::$password ??= Hash::make('password'),
-            'role' => StoreUserRole::Owner,
             'remember_token' => Str::random(10),
             'invitation_accepted_at' => now(),
         ];
+    }
+
+    /**
+     * Give the login access to a store (as its owner unless told otherwise).
+     * Chain it again for each extra location.
+     */
+    public function forStore(Store $store, StoreUserRole $role = StoreUserRole::Owner): static
+    {
+        return $this->hasAttached($store, ['role' => $role->value], 'stores');
     }
 
     /**
@@ -42,10 +49,5 @@ class StoreUserFactory extends Factory
             'invited_at' => now(),
             'invitation_accepted_at' => null,
         ]);
-    }
-
-    public function staff(): static
-    {
-        return $this->state(['role' => StoreUserRole::Staff]);
     }
 }

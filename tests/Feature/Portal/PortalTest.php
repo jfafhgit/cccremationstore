@@ -12,7 +12,7 @@ beforeEach(function () {
     $this->store = Store::factory()->create();
     actingAsTenant($this->store);
 
-    $this->staff = StoreUser::factory()->for($this->store)->create([
+    $this->staff = StoreUser::factory()->forStore($this->store)->create([
         'email' => 'owner@example.com',
         'password' => Hash::make('correct-password'),
     ]);

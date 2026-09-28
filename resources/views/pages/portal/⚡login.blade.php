@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Store;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Session;
@@ -40,7 +41,7 @@ new #[Layout('layouts::portal')] class extends Component
         $credentials = [
             'email' => $this->email,
             'password' => $this->password,
-            'store_id' => $store->id,
+            'store' => fn (Builder $query) => $query->whereHas('stores', fn (Builder $stores) => $stores->whereKey($store->id)),
         ];
 
         if (! Auth::guard('store')->attempt($credentials, $this->remember)) {
@@ -54,11 +55,12 @@ new #[Layout('layouts::portal')] class extends Component
         RateLimiter::clear($throttleKey);
         Session::regenerate();
 
-        $this->redirect(route('portal.orders'), navigate: true);
+        $this->redirectIntended(route('portal.orders'), navigate: true);
     }
 }; ?>
 
 <div class="w-full max-w-sm rounded-2xl border border-brand-100 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+    <x-portal-store-mark :store="\App\Models\Store::current()" class="mb-6" />
     <flux:heading size="xl" class="font-serif">{{ __('Staff sign in') }}</flux:heading>
     <flux:subheading class="mt-1">{{ __(':store staff portal', ['store' => \App\Models\Store::current()?->name]) }}</flux:subheading>
 

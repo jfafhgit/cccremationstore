@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureStaffBelongsToStore;
 use App\Http\Middleware\IdentifyStore;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -15,7 +16,14 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'store' => IdentifyStore::class,
+            'store.member' => EnsureStaffBelongsToStore::class,
         ]);
+
+        // Signed-out visitors to a store's portal belong on that store's own
+        // sign-in page, not the platform admin login.
+        $middleware->redirectGuestsTo(fn (Request $request) => $request->route('store')
+            ? route('portal.login', ['store' => $request->route('store')])
+            : route('login'));
 
         $middleware->validateCsrfTokens(except: [
             'stripe/webhook',

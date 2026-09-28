@@ -80,7 +80,7 @@ describe('sending invitations', function () {
 
     test('resending an invitation cancels the earlier link', function () {
         $store = Store::factory()->create();
-        $storeUser = StoreUser::factory()->for($store)->invited('first-token')->create();
+        $storeUser = StoreUser::factory()->forStore($store)->invited('first-token')->create();
 
         Livewire::test('pages::admin.stores.show', ['store' => $store])
             ->call('sendStaffInvitation', $storeUser->id);
@@ -93,7 +93,7 @@ describe('sending invitations', function () {
 
     test('staff who already chose a password cannot be sent another invitation', function () {
         $store = Store::factory()->create();
-        $storeUser = StoreUser::factory()->for($store)->create();
+        $storeUser = StoreUser::factory()->forStore($store)->create();
 
         Livewire::test('pages::admin.stores.show', ['store' => $store])
             ->call('sendStaffInvitation', $storeUser->id)
@@ -104,9 +104,9 @@ describe('sending invitations', function () {
 
     test('the invitation email escapes the names it shows', function () {
         $store = Store::factory()->create(['name' => '<script>alert(1)</script> Home']);
-        $storeUser = StoreUser::factory()->for($store)->invited()->create(['name' => '<b>Jordan</b>']);
+        $storeUser = StoreUser::factory()->forStore($store)->invited()->create(['name' => '<b>Jordan</b>']);
 
-        $html = (string) (new StoreStaffInvitationNotification($storeUser, $this->admin, 'token'))->toMail($storeUser)->render();
+        $html = (string) (new StoreStaffInvitationNotification($storeUser, $store, $this->admin, 'token'))->toMail($storeUser)->render();
 
         expect($html)->not->toContain('<script>alert(1)</script>')
             ->not->toContain('<b>Jordan</b>')
@@ -119,13 +119,14 @@ describe('accepting an invitation', function () {
         $this->store = Store::factory()->create();
         actingAsTenant($this->store);
 
-        $this->invitee = StoreUser::factory()->for($this->store)->invited('valid-token')->create([
+        $this->invitee = StoreUser::factory()->forStore($this->store)->invited('valid-token')->create([
             'email' => 'jordan@example.com',
         ]);
     });
 
     test('a valid invitation lets staff choose a password and signs them in', function () {
         $sessionIdBeforeAccepting = Session::getId();
+        $this->store->forceFill(['stripe_account_id' => 'acct_test', 'stripe_charges_enabled' => true])->save();
 
         Livewire::test('pages::portal.accept-invitation', ['storeUser' => $this->invitee->id, 'token' => 'valid-token'])
             ->assertSee('Choose a password')
@@ -185,7 +186,7 @@ describe('accepting an invitation', function () {
     });
 
     test('an invitation for another store\'s staff is not found', function () {
-        $otherStoreInvitee = StoreUser::factory()->for(Store::factory())->invited('valid-token')->create();
+        $otherStoreInvitee = StoreUser::factory()->forStore(Store::factory()->create())->invited('valid-token')->create();
 
         Livewire::test('pages::portal.accept-invitation', ['storeUser' => $otherStoreInvitee->id, 'token' => 'valid-token'])
             ->assertNotFound();

@@ -43,7 +43,7 @@ new #[Layout('layouts::portal')] class extends Component
     {
         $user = Auth::guard('store')->user();
 
-        return $user !== null && $user->store_id === $this->currentStore->id && $user->isOwner();
+        return $user !== null && $user->isOwnerOf($this->currentStore);
     }
 
     public function startSubscription(PlatformBillingService $billing): void

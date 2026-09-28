@@ -37,15 +37,15 @@ class TreasuredMemoriesDemoSeeder extends Seeder
             ],
         );
 
-        StoreUser::updateOrCreate(
+        $owner = StoreUser::updateOrCreate(
             ['email' => 'owner@chicagolandcremationcare.test'],
             [
-                'store_id' => $store->id,
                 'name' => 'Morgan Reyes',
                 'password' => Hash::make('password'),
-                'role' => StoreUserRole::Owner,
             ],
         );
+
+        $owner->stores()->syncWithoutDetaching([$store->id => ['role' => StoreUserRole::Owner->value]]);
 
         $this->seedPackages($store);
         $this->seedContainers($store);

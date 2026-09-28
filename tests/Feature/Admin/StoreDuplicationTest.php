@@ -102,7 +102,7 @@ test('a product whose image file is missing is copied without an image', functio
 });
 
 test('the duplicate is a draft with the source\'s settings but none of its identity, accounts, staff, or orders', function () {
-    StoreUser::factory()->for($this->source)->create();
+    StoreUser::factory()->forStore($this->source)->create();
     Order::factory()->create(['store_id' => $this->source->id]);
 
     $duplicate = duplicateThroughAdmin($this->source);

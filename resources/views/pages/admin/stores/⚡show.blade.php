@@ -6,7 +6,9 @@ use App\Enums\StoreStatus;
 use App\Enums\StoreUserRole;
 use App\Models\Store;
 use App\Models\StoreUser;
+use App\Notifications\StripeSetupRequestNotification;
 use Flux\Flux;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Http\UploadedFile;
 use App\Services\PlatformBillingService;
 use App\Services\StoreDuplicator;
@@ -258,26 +260,48 @@ new class extends Component
         }
     }
 
+    /**
+     * Add a login for this store. An email that already has a login (at
+     * another location) gets access here too, keeping its one password.
+     */
     public function createStaffUser(): void
     {
         $validated = $this->validate([
             'staffName' => ['required', 'string', 'max:255'],
-            'staffEmail' => ['required', 'email', 'max:255', 'unique:store_users,email'],
+            'staffEmail' => ['required', 'email', 'max:255'],
             'staffRole' => ['required', Rule::enum(StoreUserRole::class)],
         ]);
 
+        $existingLogin = StoreUser::where('email', $validated['staffEmail'])->first();
+
+        if ($existingLogin?->belongsToStore($this->currentStore)) {
+            $this->addError('staffEmail', __('This person already has access to this store.'));
+
+            return;
+        }
+
         // Nobody knows this password; the staff member chooses their own
         // from the invitation email.
-        $storeUser = StoreUser::create([
-            'store_id' => $this->currentStore->id,
+        $storeUser = $existingLogin ?? StoreUser::create([
             'name' => $validated['staffName'],
             'email' => $validated['staffEmail'],
             'password' => Hash::make(Str::random(40)),
-            'role' => StoreUserRole::from($validated['staffRole']),
         ]);
+
+        $storeUser->stores()->attach($this->currentStore, ['role' => $validated['staffRole']]);
 
         $this->reset(['staffName', 'staffEmail', 'staffRole', 'showStaffForm']);
         $this->currentStore->refresh();
+
+        if ($storeUser->hasAcceptedInvitation()) {
+            Flux::toast(
+                variant: 'success',
+                heading: __('Access added.'),
+                text: __(':name already has a staff login, so they can sign in here with their existing password or use "Switch location" in their portal.', ['name' => $storeUser->name]),
+            );
+
+            return;
+        }
 
         if (! $this->canInviteStaff()) {
             Flux::toast(
@@ -288,7 +312,7 @@ new class extends Component
             return;
         }
 
-        $storeUser->sendInvitation(auth()->user());
+        $storeUser->sendInvitation($this->currentStore, auth()->user());
 
         Flux::toast(variant: 'success', heading: __('Staff login created.'), text: __('An invitation to choose a password was emailed to :email.', ['email' => $storeUser->email]));
     }
@@ -330,7 +354,7 @@ new class extends Component
             return;
         }
 
-        $storeUser->sendInvitation(auth()->user());
+        $storeUser->sendInvitation($this->currentStore, auth()->user());
         $this->currentStore->refresh();
 
         Flux::toast(variant: 'success', text: __('Invitation sent to :email.', ['email' => $storeUser->email]));
@@ -344,7 +368,7 @@ new class extends Component
         $this->currentStore->staff()
             ->whereNull('invited_at')
             ->whereNull('invitation_accepted_at')
-            ->each(fn (StoreUser $storeUser) => $storeUser->sendInvitation(auth()->user()));
+            ->each(fn (StoreUser $storeUser) => $storeUser->sendInvitation($this->currentStore, auth()->user()));
     }
 
     /**
@@ -356,10 +380,40 @@ new class extends Component
         return $this->currentStore->status === StoreStatus::Active;
     }
 
+    /**
+     * Take away this store's access only. A login left with no locations at
+     * all is deleted.
+     */
     public function removeStaffUser(int $storeUserId): void
     {
-        $this->currentStore->staff()->whereKey($storeUserId)->delete();
+        $storeUser = $this->currentStore->staff()->findOrFail($storeUserId);
+
+        $storeUser->stores()->detach($this->currentStore);
+
+        if (! $storeUser->stores()->exists()) {
+            $storeUser->delete();
+        }
+
         $this->currentStore->refresh();
+    }
+
+    /**
+     * Ask the store's owners to connect their own Stripe account from the
+     * staff portal, for funeral homes whose Stripe we don't have access to.
+     */
+    public function requestStripeSetup(): void
+    {
+        $owners = $this->currentStore->signedUpOwners();
+
+        if ($owners->isEmpty()) {
+            Flux::toast(variant: 'danger', text: __('Add an owner login first. Once they have chosen a password, they can be asked to connect Stripe.'));
+
+            return;
+        }
+
+        Notification::send($owners, new StripeSetupRequestNotification($this->currentStore, auth()->user()));
+
+        Flux::toast(variant: 'success', text: __('Stripe setup request emailed to :emails.', ['emails' => $owners->pluck('email')->join(', ')]));
     }
 
     public function resetStripeConnection(StripeConnectService $stripeConnect): void
@@ -623,12 +677,24 @@ new class extends Component
                     <flux:badge color="zinc" class="mt-3">{{ __('Not connected') }}</flux:badge>
                 @endif
 
+                @unless ($currentStore->isStripeReady())
+                    <flux:text class="mt-4 text-xs">{{ __('The funeral home\'s owner connects their own Stripe account from Payments in their staff portal. Email them a reminder, or connect it here if you manage their Stripe account yourself.') }}</flux:text>
+                    <flux:button
+                        variant="primary"
+                        icon="envelope"
+                        class="mt-3 w-full !bg-brand-700 hover:!bg-brand-800"
+                        wire:click="requestStripeSetup"
+                    >
+                        {{ __('Email setup request to owner') }}
+                    </flux:button>
+                @endunless
+
                 <flux:button
                     href="{{ route('admin.stores.stripe.connect', $currentStore) }}"
-                    variant="primary"
-                    class="mt-4 w-full !bg-brand-700 hover:!bg-brand-800"
+                    variant="{{ $currentStore->isStripeReady() ? 'primary' : 'ghost' }}"
+                    class="mt-2 w-full"
                 >
-                    {{ $currentStore->stripe_account_id ? __('Continue onboarding') : __('Connect Stripe') }}
+                    {{ $currentStore->stripe_account_id ? __('Continue onboarding myself') : __('Connect Stripe myself') }}
                 </flux:button>
 
                 @if ($currentStore->stripe_account_id && ! $currentStore->stripe_details_submitted)
@@ -661,13 +727,14 @@ new class extends Component
                         <flux:field>
                             <flux:label>{{ __('Email') }}</flux:label>
                             <flux:input type="email" wire:model="staffEmail" />
+                            <flux:description>{{ __('Already a staff member at another location? Use the same email to give them access here too.') }}</flux:description>
                             <flux:error name="staffEmail" />
                         </flux:field>
                         <flux:field>
                             <flux:label>{{ __('Role') }}</flux:label>
                             <flux:select wire:model="staffRole">
                                 <option value="{{ StoreUserRole::Staff->value }}">{{ __('Staff — orders only') }}</option>
-                                <option value="{{ StoreUserRole::Owner->value }}">{{ __('Owner — orders and billing') }}</option>
+                                <option value="{{ StoreUserRole::Owner->value }}">{{ __('Owner — orders, payments and billing') }}</option>
                             </flux:select>
                             <flux:error name="staffRole" />
                         </flux:field>
@@ -679,11 +746,14 @@ new class extends Component
                 @endif
 
                 <ul class="mt-4 space-y-2">
-                    @forelse ($currentStore->staff as $staff)
+                    @forelse ($currentStore->staff()->withCount('stores')->get() as $staff)
                         <li class="flex items-center justify-between text-sm" wire:key="staff-{{ $staff->id }}">
                             <div>
                                 <p class="font-medium text-zinc-800 dark:text-zinc-100">{{ $staff->name }}</p>
-                                <p class="text-xs text-zinc-400">{{ $staff->email }} &middot; {{ $staff->role->value }}</p>
+                                <p class="text-xs text-zinc-400">{{ $staff->email }} &middot; {{ $staff->membership->role->value }}</p>
+                                @if ($staff->stores_count > 1)
+                                    <p class="text-xs text-zinc-400">{{ trans_choice('Also at :count other location|Also at :count other locations', $staff->stores_count - 1) }}</p>
+                                @endif
                                 @unless ($staff->hasAcceptedInvitation())
                                     <p class="mt-1 text-xs text-amber-600 dark:text-amber-400">
                                         {{ $staff->invited_at ? __('Invited :date — has not chosen a password yet', ['date' => $staff->invited_at->format('M j')]) : __('Invitation not sent yet') }}
@@ -696,7 +766,7 @@ new class extends Component
                                         {{ $staff->invited_at ? __('Resend invitation') : __('Send invitation') }}
                                     </flux:button>
                                 @endunless
-                                <flux:button size="sm" variant="ghost" wire:click="removeStaffUser({{ $staff->id }})" wire:confirm="{{ __('Remove this staff login?') }}">
+                                <flux:button size="sm" variant="ghost" wire:click="removeStaffUser({{ $staff->id }})" wire:confirm="{{ __('Remove this person\'s access to :store?', ['store' => $currentStore->name]) }}">
                                     {{ __('Remove') }}
                                 </flux:button>
                             </div>

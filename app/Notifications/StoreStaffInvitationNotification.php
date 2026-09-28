@@ -2,6 +2,7 @@
 
 namespace App\Notifications;
 
+use App\Models\Store;
 use App\Models\StoreUser;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
@@ -20,6 +21,7 @@ class StoreStaffInvitationNotification extends Notification implements ShouldQue
 
     public function __construct(
         private readonly StoreUser $storeUser,
+        private readonly Store $store,
         private readonly User $invitedBy,
         private readonly string $token,
     ) {}
@@ -34,16 +36,16 @@ class StoreStaffInvitationNotification extends Notification implements ShouldQue
 
     public function toMail(object $notifiable): MailMessage
     {
-        $storeName = $this->storeUser->store->name;
+        $storeName = $this->store->name;
 
         return (new MailMessage)
             ->subject("You're invited to the {$storeName} staff portal")
             ->greeting("Hi {$this->storeUser->name},")
             ->line("{$this->invitedBy->name} from ".config('app.name')." has set up a staff login for you at {$storeName}.")
-            ->line($this->storeUser->isOwner()
-                ? 'As the account owner, you can see your online orders and manage billing.'
+            ->line($this->storeUser->isOwnerOf($this->store)
+                ? 'As the account owner, you can see your online orders, connect your Stripe account to receive payments, and manage billing.'
                 : 'You can see and follow up on your online orders.')
-            ->action('Choose your password', $this->storeUser->invitationUrl($this->token))
+            ->action('Choose your password', $this->storeUser->invitationUrl($this->store, $this->token))
             ->line('This link can be used once and expires on '.$this->storeUser->invitationExpiresAt()->format('F j, Y').'. If it expires, ask us to send a new one.')
             ->line("If you weren't expecting this, you can ignore this email.");
     }

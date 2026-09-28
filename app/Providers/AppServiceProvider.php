@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Http\Middleware\EnsureStaffBelongsToStore;
 use App\Http\Middleware\IdentifyStore;
 use App\Models\User;
 use Carbon\CarbonImmutable;
@@ -66,6 +67,8 @@ class AppServiceProvider extends ServiceProvider
                 ->middleware(['web', IdentifyStore::class])
                 ->name('livewire.update');
         });
+
+        Livewire::addPersistentMiddleware([EnsureStaffBelongsToStore::class]);
     }
 
     /**

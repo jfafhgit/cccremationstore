@@ -59,11 +59,17 @@ new #[Layout('layouts::portal')] class extends Component
         Auth::guard('store')->login($invitee);
         Session::regenerate();
 
-        $this->redirect(route('portal.orders'), navigate: true);
+        // A new owner's first job is usually connecting Stripe.
+        $store = Store::current();
+        $this->redirect(
+            $invitee->isOwnerOf($store) && ! $store->isStripeReady() ? route('portal.payments') : route('portal.orders'),
+            navigate: true,
+        );
     }
 }; ?>
 
 <div class="w-full max-w-sm rounded-2xl border border-brand-100 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+    <x-portal-store-mark :store="\App\Models\Store::current()" class="mb-6" />
     @if ($invitationIsValid)
         <flux:heading size="xl" class="font-serif">{{ __('Welcome aboard') }}</flux:heading>
         <flux:subheading class="mt-1">{{ __('Choose a password for your :store staff login.', ['store' => \App\Models\Store::current()?->name]) }}</flux:subheading>

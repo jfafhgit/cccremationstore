@@ -7,12 +7,15 @@ use App\Enums\ProductCategory;
 use App\Enums\ProductSortMode;
 use App\Enums\StorePath;
 use App\Enums\StoreStatus;
+use App\Enums\StoreUserRole;
 use App\Services\BrandPalette;
 use Database\Factories\StoreFactory;
 use Illuminate\Database\Eloquent\Attributes\Scope;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
@@ -122,11 +125,31 @@ class Store extends Model
     }
 
     /**
-     * @return HasMany<StoreUser, $this>
+     * Staff logins with access to this store. Each one's role here is on
+     * ->membership->role.
+     *
+     * @return BelongsToMany<StoreUser, $this, StoreMembership, 'membership'>
      */
-    public function staff(): HasMany
+    public function staff(): BelongsToMany
     {
-        return $this->hasMany(StoreUser::class);
+        return $this->belongsToMany(StoreUser::class, 'store_memberships')
+            ->using(StoreMembership::class)
+            ->as('membership')
+            ->withPivot('id', 'role')
+            ->withTimestamps();
+    }
+
+    /**
+     * Owners of this store who have chosen a password and can sign in.
+     *
+     * @return Collection<int, StoreUser>
+     */
+    public function signedUpOwners(): Collection
+    {
+        return $this->staff()
+            ->wherePivot('role', StoreUserRole::Owner->value)
+            ->whereNotNull('invitation_accepted_at')
+            ->get();
     }
 
     /**

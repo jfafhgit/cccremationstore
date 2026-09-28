@@ -16,10 +16,14 @@
                             <span class="text-xs text-zinc-500">{{ __('Online cremation & memorial planning for funeral homes') }}</span>
                         </span>
                     </a>
-
+                    <div class="mt-8 flex flex-wrap gap-4">
                     <flux:button href="#contact" variant="primary" class="!bg-brand-700 hover:!bg-brand-800">
                         {{ __('Request a demo') }}
                     </flux:button>
+                    <flux:button href="{{ route('login') }}" variant="primary" class="!bg-brand-700 hover:!bg-brand-800">
+                        {{ __('Login') }}
+                    </flux:button>
+                </div>
                 </div>
             </header>
 

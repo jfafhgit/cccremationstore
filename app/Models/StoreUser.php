@@ -7,20 +7,19 @@ use App\Notifications\StoreStaffInvitationNotification;
 use Carbon\CarbonInterface;
 use Database\Factories\StoreUserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 /**
- * A funeral home staff member. Scoped to exactly one store.
+ * A funeral home staff member. One login (email and password) can have
+ * access to several locations, with its own role at each.
  *
  * @property int $id
- * @property int $store_id
  * @property string $name
  * @property string $email
- * @property StoreUserRole $role
  * @property string|null $invitation_token
  * @property Carbon|null $invited_at
  * @property Carbon|null $invitation_accepted_at
@@ -33,11 +32,9 @@ class StoreUser extends Authenticatable
     public const INVITATION_LIFETIME_DAYS = 7;
 
     protected $fillable = [
-        'store_id',
         'name',
         'email',
         'password',
-        'role',
     ];
 
     protected $hidden = [
@@ -51,23 +48,45 @@ class StoreUser extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
-            'role' => StoreUserRole::class,
             'invited_at' => 'datetime',
             'invitation_accepted_at' => 'datetime',
         ];
     }
 
     /**
-     * @return BelongsTo<Store, $this>
+     * The locations this login can sign in to.
+     *
+     * @return BelongsToMany<Store, $this, StoreMembership, 'membership'>
      */
-    public function store(): BelongsTo
+    public function stores(): BelongsToMany
     {
-        return $this->belongsTo(Store::class);
+        return $this->belongsToMany(Store::class, 'store_memberships')
+            ->using(StoreMembership::class)
+            ->as('membership')
+            ->withPivot('id', 'role')
+            ->withTimestamps();
     }
 
-    public function isOwner(): bool
+    /**
+     * This login's role at the store, or null when it has no access there.
+     */
+    public function roleAt(Store $store): ?StoreUserRole
     {
-        return $this->role === StoreUserRole::Owner;
+        return StoreMembership::query()
+            ->where('store_user_id', $this->id)
+            ->where('store_id', $store->id)
+            ->first()
+            ?->role;
+    }
+
+    public function belongsToStore(Store $store): bool
+    {
+        return $this->roleAt($store) !== null;
+    }
+
+    public function isOwnerOf(Store $store): bool
+    {
+        return $this->roleAt($store) === StoreUserRole::Owner;
     }
 
     /**
@@ -82,7 +101,7 @@ class StoreUser extends Authenticatable
      * Email a fresh invitation link. Only a hash of the token is stored, and
      * replacing it invalidates any link sent before this one.
      */
-    public function sendInvitation(User $invitedBy): void
+    public function sendInvitation(Store $store, User $invitedBy): void
     {
         $token = Str::random(64);
 
@@ -91,16 +110,16 @@ class StoreUser extends Authenticatable
             'invited_at' => now(),
         ])->save();
 
-        $this->notify(new StoreStaffInvitationNotification($this, $invitedBy, $token));
+        $this->notify(new StoreStaffInvitationNotification($this, $store, $invitedBy, $token));
     }
 
     /**
-     * The "choose your password" page on this staff member's own store subdomain.
+     * The "choose your password" page on the inviting store's subdomain.
      */
-    public function invitationUrl(string $token): string
+    public function invitationUrl(Store $store, string $token): string
     {
         return route('portal.invitation', [
-            'store' => $this->store->slug,
+            'store' => $store->slug,
             'storeUser' => $this->id,
             'token' => $token,
         ]);
