@@ -4,10 +4,12 @@ use App\Enums\PlatformFeeModel;
 use App\Enums\ProductCategory;
 use App\Enums\StorePath;
 use App\Enums\StoreStatus;
+use App\Enums\UsState;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Store;
+use App\Models\StoreLocation;
 use App\Models\StoreUser;
 use App\Models\User;
 use App\Services\StoreDuplicator;
@@ -82,6 +84,38 @@ test('duplicating a store copies every product and its variants', function () {
 
     expect($this->source->products()->count())->toBe(2)
         ->and($urn->variants()->count())->toBe(2);
+});
+
+test('duplicated packages include the copies of their included products', function () {
+    $package = Product::factory()->for($this->source)->create(['name' => 'Premium']);
+    $certificates = Product::factory()->for($this->source)->category(ProductCategory::Service)->create(['name' => 'Death certificates']);
+    $package->includedProducts()->attach($certificates->id, ['included_quantity' => 2]);
+
+    $duplicate = duplicateThroughAdmin($this->source);
+
+    $copiedPackage = $duplicate->products()->where('name', 'Premium')->sole();
+    $copiedCertificates = $duplicate->products()->where('name', 'Death certificates')->sole();
+
+    expect($copiedPackage->includedProducts->mapWithKeys(fn (Product $product) => [$product->id => $product->pivot->included_quantity])->all())
+        ->toBe([$copiedCertificates->id => 2]);
+});
+
+test('duplicating a store copies its cities and each package\'s city prices', function () {
+    $this->source->update(['location_pricing_enabled' => true]);
+    $location = StoreLocation::factory()->for($this->source)->create(['state' => UsState::IL, 'city' => 'Springfield']);
+    $package = Product::factory()->for($this->source)->create(['name' => 'Direct Cremation']);
+    $package->locationPrices()->attach($location->id, ['price_cents' => 120000]);
+
+    $duplicate = duplicateThroughAdmin($this->source);
+
+    $copiedLocation = $duplicate->locations()->sole();
+    $copiedPackage = $duplicate->products()->where('name', 'Direct Cremation')->sole();
+
+    expect($duplicate->location_pricing_enabled)->toBeTrue()
+        ->and($copiedLocation->only(['state', 'city']))->toBe(['state' => UsState::IL, 'city' => 'Springfield'])
+        ->and($copiedLocation->id)->not->toBe($location->id)
+        ->and($copiedPackage->locationPrices->mapWithKeys(fn (StoreLocation $priced) => [$priced->id => $priced->pivot->price_cents])->all())
+        ->toBe([$copiedLocation->id => 120000]);
 });
 
 test('each duplicated product gets its own copy of the image', function () {

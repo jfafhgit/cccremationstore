@@ -137,7 +137,9 @@ new class extends Component {
                     @elseif ($store)
                         <ul class="space-y-4">
                             @foreach ($this->cart()->allLines() as $key => $line)
-                                <li class="flex items-start gap-3 sm:gap-4 border-b border-zinc-100 pb-4" wire:key="cart-line-{{ $key }}">
+                                @php($discountCents = $this->cart()->lineDiscountCents($line))
+                                <li class="border-b border-zinc-100 pb-4" wire:key="cart-line-{{ $key }}">
+                                <div class="flex items-start gap-3 sm:gap-4">
                                     <x-product-image :src="Product::imageUrlFor($line['image_path'] ?? null)" :category="$line['category'] ?? 'package'" class="size-16 shrink-0 rounded-lg sm:size-20" />
 
                                     <div class="min-w-0 flex-1">
@@ -175,7 +177,9 @@ new class extends Component {
                                             @endif
 
                                             @if ($this->isRequiredKey($key, $line))
-                                                <span class="text-xs font-medium text-brand-700">{{ __('Required') }}</span>
+                                                <span class="text-xs font-medium text-brand-700">{{ in_array($key, ['container', 'urn'], true) ? __('Selection Required') : __('Required') }}</span>
+                                            @elseif (($line['included_quantity'] ?? 0) >= $line['quantity'])
+                                                <span class="text-xs font-medium text-brand-700">{{ __('Included') }}</span>
                                             @elseif ($key === 'package')
                                                 <flux:modal.trigger name="confirm-start-over">
                                                     <button type="button" class="text-xs text-zinc-400 underline hover:text-red-600">
@@ -191,8 +195,24 @@ new class extends Component {
                                     </div>
 
                                     <span class="shrink-0 text-sm font-semibold text-zinc-800">
-                                        ${{ number_format($this->cart()->lineTotalCents($line) / 100, 2) }}
+                                        ${{ number_format($this->cart()->lineRegularTotalCents($line) / 100, 2) }}
                                     </span>
+                                </div>
+                                @if ($discountCents > 0)
+                                    {{-- Indented to line up with the item details, past the image. --}}
+                                    <div class="mt-2 flex items-center justify-between gap-3 pl-[4.75rem] text-sm text-brand-700 sm:pl-24">
+                                        <span>
+                                            @if ($line['allowance_cents'] ?? 0)
+                                                {{ __('Package allowance') }}
+                                            @elseif (($line['included_quantity'] ?? 0) > 1)
+                                                {{ __(':count included with package', ['count' => $line['included_quantity']]) }}
+                                            @else
+                                                {{ __('Included with package') }}
+                                            @endif
+                                        </span>
+                                        <span class="shrink-0 font-semibold">&minus;${{ number_format($discountCents / 100, 2) }}</span>
+                                    </div>
+                                @endif
                                 </li>
                             @endforeach
                         </ul>

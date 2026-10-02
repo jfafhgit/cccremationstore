@@ -20,6 +20,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $unit_price_cents
  * @property int $base_price_cents_snapshot
  * @property int $quantity
+ * @property int $included_quantity
+ * @property int $allowance_cents
  * @property int $total_price_cents
  */
 class OrderItem extends Model
@@ -39,6 +41,8 @@ class OrderItem extends Model
         'unit_price_cents',
         'base_price_cents_snapshot',
         'quantity',
+        'included_quantity',
+        'allowance_cents',
         'total_price_cents',
     ];
 
@@ -50,6 +54,8 @@ class OrderItem extends Model
             'unit_price_cents' => 'integer',
             'base_price_cents_snapshot' => 'integer',
             'quantity' => 'integer',
+            'included_quantity' => 'integer',
+            'allowance_cents' => 'integer',
             'total_price_cents' => 'integer',
         ];
     }

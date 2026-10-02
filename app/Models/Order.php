@@ -25,6 +25,8 @@ use Illuminate\Support\Str;
  * @property OrderStatus $status
  * @property OrderSource $source
  * @property OrderTiming|null $timing
+ * @property string|null $service_city
+ * @property string|null $service_state
  * @property string|null $purchaser_first_name
  * @property string|null $purchaser_last_name
  * @property string|null $purchaser_email
@@ -55,6 +57,8 @@ class Order extends Model
         'status',
         'source',
         'timing',
+        'service_city',
+        'service_state',
         'purchaser_first_name',
         'purchaser_last_name',
         'purchaser_email',

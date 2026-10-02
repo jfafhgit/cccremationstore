@@ -30,6 +30,7 @@ use Illuminate\Support\Facades\Storage;
  * @property StorePath $checkout_path
  * @property bool $requires_container
  * @property bool $requires_urn
+ * @property bool $location_pricing_enabled
  * @property string|null $contact_name
  * @property string|null $contact_email
  * @property string|null $contact_phone
@@ -66,6 +67,7 @@ class Store extends Model
         'checkout_path' => 'packages',
         'requires_container' => false,
         'requires_urn' => false,
+        'location_pricing_enabled' => false,
         'processing_fee_enabled' => false,
         'processing_fee_bps' => 350,
         'platform_fee_model' => 'percentage',
@@ -80,6 +82,7 @@ class Store extends Model
         'checkout_path',
         'requires_container',
         'requires_urn',
+        'location_pricing_enabled',
         'contact_name',
         'contact_email',
         'contact_phone',
@@ -104,6 +107,7 @@ class Store extends Model
             'checkout_path' => StorePath::class,
             'requires_container' => 'boolean',
             'requires_urn' => 'boolean',
+            'location_pricing_enabled' => 'boolean',
             'stripe_details_submitted' => 'boolean',
             'stripe_charges_enabled' => 'boolean',
             'stripe_payouts_enabled' => 'boolean',
@@ -124,6 +128,25 @@ class Store extends Model
     public function products(): HasMany
     {
         return $this->hasMany(Product::class);
+    }
+
+    /**
+     * The cities this store serves, for location-based package pricing.
+     *
+     * @return HasMany<StoreLocation, $this>
+     */
+    public function locations(): HasMany
+    {
+        return $this->hasMany(StoreLocation::class)->orderBy('state')->orderBy('city');
+    }
+
+    /**
+     * Whether package prices depend on the city the family chooses. Only in
+     * effect once at least one city has been added.
+     */
+    public function usesLocationPricing(): bool
+    {
+        return $this->location_pricing_enabled && $this->locations()->exists();
     }
 
     /**

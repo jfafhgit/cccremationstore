@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\StoreStatus;
 use App\Models\Product;
 use App\Models\Store;
+use App\Models\StoreLocation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -28,6 +29,7 @@ class StoreDuplicator
         'checkout_path',
         'requires_container',
         'requires_urn',
+        'location_pricing_enabled',
         'timezone',
         'platform_fee_model',
         'platform_fee_bps',
@@ -59,9 +61,17 @@ class StoreDuplicator
                     'status' => StoreStatus::Draft,
                 ]);
 
+                /** @var array<int, int> $copiedProductIds source product ID => copy's ID */
+                $copiedProductIds = [];
+
                 $source->products()->with('variants')->orderBy('id')->each(
-                    fn (Product $product) => $this->copyProduct($product, $duplicate),
+                    function (Product $product) use ($duplicate, &$copiedProductIds): void {
+                        $copiedProductIds[$product->id] = $this->copyProduct($product, $duplicate);
+                    },
                 );
+
+                $this->copyPackageInclusions($source, $copiedProductIds);
+                $this->copyLocations($source, $duplicate, $copiedProductIds);
 
                 return $duplicate;
             });
@@ -76,7 +86,7 @@ class StoreDuplicator
      * Every product attribute is copied, so fields added to products later
      * carry over without changes here.
      */
-    private function copyProduct(Product $product, Store $duplicate): void
+    private function copyProduct(Product $product, Store $duplicate): int
     {
         $copy = $product->replicate();
         $copy->store_id = $duplicate->id;
@@ -88,6 +98,51 @@ class StoreDuplicator
             $variantCopy->product_id = $copy->id;
             $variantCopy->save();
         }
+
+        return $copy->id;
+    }
+
+    /**
+     * Copy the cities served along with each package's price in them.
+     *
+     * @param  array<int, int>  $copiedProductIds  source product ID => copy's ID
+     */
+    private function copyLocations(Store $source, Store $duplicate, array $copiedProductIds): void
+    {
+        $source->locations()->get()->each(function (StoreLocation $location) use ($duplicate, $copiedProductIds): void {
+            $copy = $duplicate->locations()->create($location->only(['state', 'city']));
+
+            DB::table('package_location_prices')
+                ->where('store_location_id', $location->id)
+                ->get()
+                ->each(fn (object $price) => DB::table('package_location_prices')->insert([
+                    'product_id' => $copiedProductIds[$price->product_id],
+                    'store_location_id' => $copy->id,
+                    'price_cents' => $price->price_cents,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]));
+        });
+    }
+
+    /**
+     * Point each copied package at the copies of the products it includes.
+     *
+     * @param  array<int, int>  $copiedProductIds  source product ID => copy's ID
+     */
+    private function copyPackageInclusions(Store $source, array $copiedProductIds): void
+    {
+        $source->products()->with('includedProducts')->each(function (Product $package) use ($copiedProductIds): void {
+            if ($package->includedProducts->isEmpty()) {
+                return;
+            }
+
+            Product::find($copiedProductIds[$package->id])->includedProducts()->sync(
+                $package->includedProducts->mapWithKeys(fn (Product $included) => [
+                    $copiedProductIds[$included->id] => ['included_quantity' => $included->pivot->included_quantity],
+                ])->all(),
+            );
+        });
     }
 
     /**

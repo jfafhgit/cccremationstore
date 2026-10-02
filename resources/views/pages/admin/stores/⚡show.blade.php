@@ -446,6 +446,7 @@ new class extends Component
         <flux:heading size="xl">{{ $currentStore->name }}</flux:heading>
         <div class="flex gap-2">
             <flux:button :href="route('admin.stores.products', $currentStore)" wire:navigate variant="ghost">{{ __('Products') }}</flux:button>
+            <flux:button :href="route('admin.stores.locations', $currentStore)" wire:navigate variant="ghost">{{ __('Locations') }}</flux:button>
             <flux:button :href="route('admin.stores.orders', $currentStore)" wire:navigate variant="ghost">{{ __('Orders') }}</flux:button>
             <flux:button href="https://{{ $currentStore->slug }}.{{ config('app.root_domain') }}" target="_blank" variant="ghost">{{ __('View store') }}</flux:button>
             <flux:modal.trigger name="duplicate-store">

@@ -5,6 +5,7 @@ use App\Enums\ProductSortMode;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Store;
+use App\Models\StoreLocation;
 use Flux\Flux;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
@@ -44,6 +45,30 @@ new class extends Component
 
     #[Validate('boolean')]
     public bool $formIsRequired = false;
+
+    /**
+     * A package's included add-ons / services / keepsakes, keyed by product ID.
+     *
+     * @var array<int, array{included: bool, quantity: int|string}>
+     */
+    public array $formIncludedProducts = [];
+
+    /** A package's allowance toward the customer's container (blank = none). */
+    public string $formContainerAllowance = '';
+
+    /** A package's allowance toward the customer's urn (blank = none). */
+    public string $formUrnAllowance = '';
+
+    #[Validate('boolean')]
+    public bool $formHideOptionsBelowAllowance = false;
+
+    /**
+     * A package's price per city in dollars, keyed by StoreLocation ID
+     * (blank = not offered there). Only used with location-based pricing.
+     *
+     * @var array<int, string>
+     */
+    public array $formLocationPrices = [];
 
     /** Additional price per unit (blank = normal pricing); the main price then becomes a one-time base fee. */
     #[Validate('nullable|numeric|min:0')]
@@ -181,7 +206,7 @@ new class extends Component
 
     public function newProduct(?string $category = null): void
     {
-        $this->reset(['editingProductId', 'formName', 'formDescription', 'formIncludedItems', 'formPrice', 'formTaxableAmount', 'formPerUnitPrice', 'formPerUnitLabel', 'formImage', 'existingImagePath', 'newVariantName', 'newVariantPrice']);
+        $this->reset(['editingProductId', 'formName', 'formDescription', 'formIncludedItems', 'formPrice', 'formTaxableAmount', 'formPerUnitPrice', 'formPerUnitLabel', 'formImage', 'existingImagePath', 'newVariantName', 'newVariantPrice', 'formIncludedProducts', 'formContainerAllowance', 'formUrnAllowance', 'formHideOptionsBelowAllowance', 'formLocationPrices']);
         $this->formCategory = $category ?? ProductCategory::Package->value;
         $this->formIsTaxable = true;
         $this->formIsRequired = false;
@@ -214,6 +239,15 @@ new class extends Component
             '.',
             ''
         );
+        $this->formIncludedProducts = $product->includedProducts
+            ->mapWithKeys(fn (Product $included) => [$included->id => ['included' => true, 'quantity' => $included->pivot->included_quantity]])
+            ->all();
+        $this->formContainerAllowance = $product->container_allowance_cents !== null ? number_format($product->container_allowance_cents / 100, 2, '.', '') : '';
+        $this->formUrnAllowance = $product->urn_allowance_cents !== null ? number_format($product->urn_allowance_cents / 100, 2, '.', '') : '';
+        $this->formHideOptionsBelowAllowance = $product->hide_options_below_allowance;
+        $this->formLocationPrices = $product->locationPrices
+            ->mapWithKeys(fn (StoreLocation $location) => [$location->id => number_format($location->pivot->price_cents / 100, 2, '.', '')])
+            ->all();
         $this->formIsActive = $product->is_active;
         $this->formAllowMultipleQuantity = $product->allow_multiple_quantity;
         $this->formAvailableForImmediate = $product->available_for_immediate;
@@ -243,7 +277,17 @@ new class extends Component
         if ($isPackage) {
             $this->validate([
                 'formTaxableAmount' => ['required', 'numeric', 'min:0', 'lte:formPrice'],
-            ], attributes: ['formTaxableAmount' => 'taxable amount']);
+                'formContainerAllowance' => ['nullable', 'numeric', 'min:0'],
+                'formUrnAllowance' => ['nullable', 'numeric', 'min:0'],
+                'formIncludedProducts.*.quantity' => ['nullable', 'integer', 'min:1', 'max:999'],
+                'formLocationPrices.*' => ['nullable', 'numeric', 'min:0'],
+            ], attributes: [
+                'formLocationPrices.*' => 'city price',
+                'formTaxableAmount' => 'taxable amount',
+                'formContainerAllowance' => 'container allowance',
+                'formUrnAllowance' => 'urn allowance',
+                'formIncludedProducts.*.quantity' => 'included quantity',
+            ]);
         }
 
         $isSlotCategory = in_array($validated['formCategory'], [
@@ -273,6 +317,9 @@ new class extends Component
             'price_cents' => (int) round(((float) $validated['formPrice']) * 100),
             'is_taxable' => $isPackage ? $taxableAmountCents > 0 : $this->formIsTaxable,
             'taxable_amount_cents' => $taxableAmountCents,
+            'container_allowance_cents' => $isPackage ? $this->dollarsToCents($this->formContainerAllowance) : null,
+            'urn_allowance_cents' => $isPackage ? $this->dollarsToCents($this->formUrnAllowance) : null,
+            'hide_options_below_allowance' => $isPackage && $this->formHideOptionsBelowAllowance,
             'is_required' => ! $isSlotCategory && $this->formIsRequired,
             'per_unit_price_cents' => $hasPerUnitPrice ? (int) round(((float) $this->formPerUnitPrice) * 100) : null,
             'per_unit_label' => $hasPerUnitPrice ? ($this->formPerUnitLabel ?: null) : null,
@@ -296,11 +343,75 @@ new class extends Component
             unset($data['slug']); // keep the original slug on edit
             $product->update($data);
         } else {
-            Product::create($data);
+            $product = Product::create($data);
+        }
+
+        $product->includedProducts()->sync($isPackage ? $this->includedProductsToSync() : []);
+
+        // Only sync city prices when the form showed them, so saving while
+        // location pricing is off keeps them for when it's turned back on.
+        if (! $isPackage) {
+            $product->locationPrices()->sync([]);
+        } elseif ($this->currentStore->location_pricing_enabled) {
+            $product->locationPrices()->sync($this->locationPricesToSync());
         }
 
         Flux::modal('product-form')->close();
         Flux::toast(variant: 'success', text: __('Product saved.'));
+    }
+
+    /**
+     * The products a package can include: this store's add-ons, services, and keepsakes.
+     *
+     * @return Collection<int, Product>
+     */
+    public function includableProducts(): Collection
+    {
+        return $this->currentStore->products()
+            ->whereIn('category', [
+                ProductCategory::Addon->value,
+                ProductCategory::Service->value,
+                ProductCategory::Keepsake->value,
+            ])
+            ->orderBy('category')
+            ->orderBy('name')
+            ->get();
+    }
+
+    /**
+     * The checked included products as sync() input, limited to this
+     * store's includable products.
+     *
+     * @return array<int, array{included_quantity: int}>
+     */
+    private function includedProductsToSync(): array
+    {
+        $includableIds = $this->includableProducts()->pluck('id');
+
+        return collect($this->formIncludedProducts)
+            ->filter(fn (array $selection, int $productId) => ($selection['included'] ?? false) && $includableIds->contains($productId))
+            ->map(fn (array $selection) => ['included_quantity' => max(1, (int) ($selection['quantity'] ?? 1))])
+            ->all();
+    }
+
+    /**
+     * The filled-in city prices as sync() input, limited to this store's cities.
+     *
+     * @return array<int, array{price_cents: int}>
+     */
+    private function locationPricesToSync(): array
+    {
+        $locationIds = $this->currentStore->locations()->pluck('id');
+
+        return collect($this->formLocationPrices)
+            ->filter(fn (?string $price, int $locationId) => trim((string) $price) !== '' && $locationIds->contains($locationId))
+            ->map(fn (string $price) => ['price_cents' => $this->dollarsToCents($price)])
+            ->all();
+    }
+
+    private function dollarsToCents(string $dollars): ?int
+    {
+        return trim($dollars) === '' ? null : (int) round(((float) $dollars) * 100);
     }
 
     public function deleteProduct(int $productId): void
@@ -506,10 +617,72 @@ new class extends Component
             @if ($formCategory === ProductCategory::Package->value)
                 <flux:field>
                     <flux:label>{{ __('Taxable amount (USD)') }}</flux:label>
-                    <flux:description>{{ __('The part of the package price that sales tax applies to, after any package discount. Enter 0 if none of it is taxable.') }}</flux:description>
+                    <flux:description>{{ __('The part of the package price that sales tax applies to, after any package discount. Enter 0 if none of it is taxable. Leave out container and urn allowances and included add-ons, services, and keepsakes; those are taxed on the item the family receives.') }}</flux:description>
                     <flux:input type="number" step="0.01" min="0" wire:model="formTaxableAmount" />
                     <flux:error name="formTaxableAmount" />
                 </flux:field>
+
+                @if ($currentStore->location_pricing_enabled)
+                    <div class="space-y-3 border-t border-zinc-100 pt-4 dark:border-zinc-700">
+                        <flux:heading size="sm" class="text-zinc-500">{{ __('Price by city') }}</flux:heading>
+                        <p class="text-xs text-zinc-500">{{ __('Location-based pricing is on, so families pay the price for their city instead of the price above. Leave a city blank to not offer this package there.') }}</p>
+                        @forelse ($currentStore->locations->groupBy(fn ($location) => $location->state->label())->sortKeys() as $stateName => $locations)
+                            <div wire:key="price-state-{{ $stateName }}">
+                                <p class="text-xs font-medium text-zinc-600 dark:text-zinc-300">{{ $stateName }}</p>
+                                <div class="mt-1 grid grid-cols-2 gap-2">
+                                    @foreach ($locations as $location)
+                                        <flux:field wire:key="price-location-{{ $location->id }}">
+                                            <flux:input size="sm" type="number" step="0.01" min="0" wire:model="formLocationPrices.{{ $location->id }}" :label="$location->city" placeholder="{{ __('Not offered') }}" />
+                                            <flux:error name="formLocationPrices.{{ $location->id }}" />
+                                        </flux:field>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @empty
+                            <p class="text-xs text-zinc-400">
+                                {{ __('No cities yet.') }}
+                                <flux:link :href="route('admin.stores.locations', $currentStore)" wire:navigate>{{ __('Add cities') }}</flux:link>
+                            </p>
+                        @endforelse
+                    </div>
+                @endif
+
+                <div class="space-y-3 border-t border-zinc-100 pt-4 dark:border-zinc-700">
+                    <flux:heading size="sm" class="text-zinc-500">{{ __('Container & urn allowances') }}</flux:heading>
+                    <p class="text-xs text-zinc-500">{{ __('Credited toward the container or urn the family picks. To include a specific item, enter its price. Leave blank for no allowance.') }}</p>
+                    <div class="grid grid-cols-2 gap-3">
+                        <flux:field>
+                            <flux:label>{{ __('Container allowance (USD)') }}</flux:label>
+                            <flux:input type="number" step="0.01" min="0" wire:model="formContainerAllowance" />
+                            <flux:error name="formContainerAllowance" />
+                        </flux:field>
+                        <flux:field>
+                            <flux:label>{{ __('Urn allowance (USD)') }}</flux:label>
+                            <flux:input type="number" step="0.01" min="0" wire:model="formUrnAllowance" />
+                            <flux:error name="formUrnAllowance" />
+                        </flux:field>
+                    </div>
+                    <flux:checkbox wire:model="formHideOptionsBelowAllowance" :label="__('Hide containers and urns priced below the allowance')" />
+                </div>
+
+                <div class="space-y-2 border-t border-zinc-100 pt-4 dark:border-zinc-700">
+                    <flux:heading size="sm" class="text-zinc-500">{{ __('Included add-ons, services & keepsakes') }}</flux:heading>
+                    <p class="text-xs text-zinc-500">{{ __('Checked items are free with this package. The family can still add more at the regular price where quantity allows.') }}</p>
+                    @forelse ($this->includableProducts() as $includable)
+                        <div class="flex items-center justify-between gap-3" wire:key="includable-{{ $includable->id }}">
+                            <flux:checkbox wire:model.live="formIncludedProducts.{{ $includable->id }}.included" :label="$includable->name.' ('.$includable->category->label().')'" />
+                            @if ($formIncludedProducts[$includable->id]['included'] ?? false)
+                                <div class="flex items-center gap-2">
+                                    <flux:input size="sm" type="number" min="1" step="1" wire:model="formIncludedProducts.{{ $includable->id }}.quantity" placeholder="1" class="w-20" :aria-label="__('Included quantity')" />
+                                    <span class="text-xs text-zinc-500">{{ $includable->per_unit_label ?: __('qty') }}</span>
+                                </div>
+                            @endif
+                        </div>
+                        <flux:error name="formIncludedProducts.{{ $includable->id }}.quantity" />
+                    @empty
+                        <p class="text-xs text-zinc-400">{{ __('Add add-ons, services, or keepsakes first to include them here.') }}</p>
+                    @endforelse
+                </div>
             @endif
 
             <flux:field>

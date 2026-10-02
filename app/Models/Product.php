@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Storage;
 
@@ -27,6 +28,9 @@ use Illuminate\Support\Facades\Storage;
  * @property int|null $per_unit_price_cents
  * @property string|null $per_unit_label
  * @property int|null $taxable_amount_cents
+ * @property int|null $container_allowance_cents
+ * @property int|null $urn_allowance_cents
+ * @property bool $hide_options_below_allowance
  * @property string|null $image_path
  * @property bool $is_active
  * @property int $sort_order
@@ -51,6 +55,9 @@ class Product extends Model
         'is_taxable',
         'is_required',
         'taxable_amount_cents',
+        'container_allowance_cents',
+        'urn_allowance_cents',
+        'hide_options_below_allowance',
         'per_unit_price_cents',
         'per_unit_label',
         'image_path',
@@ -71,6 +78,9 @@ class Product extends Model
             'is_taxable' => 'boolean',
             'is_required' => 'boolean',
             'taxable_amount_cents' => 'integer',
+            'container_allowance_cents' => 'integer',
+            'urn_allowance_cents' => 'integer',
+            'hide_options_below_allowance' => 'boolean',
             'per_unit_price_cents' => 'integer',
             'is_active' => 'boolean',
             'sort_order' => 'integer',
@@ -95,6 +105,32 @@ class Product extends Model
     public function variants(): HasMany
     {
         return $this->hasMany(ProductVariant::class)->orderBy('sort_order');
+    }
+
+    /**
+     * For a package: the add-ons, services, and keepsakes it covers, with
+     * how many of each are included in the package price.
+     *
+     * @return BelongsToMany<Product, $this>
+     */
+    public function includedProducts(): BelongsToMany
+    {
+        return $this->belongsToMany(Product::class, 'package_included_products', 'package_id', 'product_id')
+            ->withPivot('included_quantity')
+            ->withTimestamps();
+    }
+
+    /**
+     * For a package in a location-priced store: its price in each city it's
+     * offered in.
+     *
+     * @return BelongsToMany<StoreLocation, $this>
+     */
+    public function locationPrices(): BelongsToMany
+    {
+        return $this->belongsToMany(StoreLocation::class, 'package_location_prices')
+            ->withPivot('price_cents')
+            ->withTimestamps();
     }
 
     #[Scope]

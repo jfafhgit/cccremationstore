@@ -4,7 +4,9 @@ use App\Enums\OrderTiming;
 use App\Enums\ProductCategory;
 use App\Models\Order;
 use App\Models\Product;
+use App\Enums\UsState;
 use App\Models\Store;
+use App\Models\StoreLocation;
 use App\Services\Cart;
 use App\Services\CheckoutService;
 use Illuminate\Support\Collection;
@@ -21,6 +23,12 @@ new class extends Component
     public string $step = 'timing';
 
     public ?string $timing = null;
+
+    /** The state picked in the location dropdown (location-priced stores only). */
+    public ?string $locationState = null;
+
+    /** The StoreLocation (city) picked in the location dropdown. */
+    public ?int $locationId = null;
 
     public ?int $packageId = null;
 
@@ -82,6 +90,9 @@ new class extends Component
         $cart = $this->cart();
 
         $this->timing = $cart->timing()?->value;
+        $location = $cart->location();
+        $this->locationState = $location?->state->value ?? $this->locationState;
+        $this->locationId = $location?->id;
         $this->packageId = $cart->state()['package']['product_id'] ?? null;
         $this->containerId = $cart->state()['container']['product_id'] ?? null;
         $this->containerVariantId = $cart->state()['container']['variant_id'] ?? null;
@@ -110,19 +121,181 @@ new class extends Component
         return array_search($this->step, $this->steps, true) ?: 0;
     }
 
+    /**
+     * Packages offered for the chosen city (all of them when the store
+     * doesn't use location pricing).
+     */
     public function packages(): Collection
     {
-        return $this->productsFor(ProductCategory::Package);
+        $packages = $this->productsFor(ProductCategory::Package);
+
+        if (! $this->usesLocationPricing()) {
+            return $packages;
+        }
+
+        $cart = $this->cart();
+
+        return $packages->filter(fn (Product $package) => $cart->packagePriceCents($package) !== null)->values();
+    }
+
+    public function packagePriceLabel(Product $package): string
+    {
+        if (! $this->usesLocationPricing()) {
+            return $package->priceLabel();
+        }
+
+        return '$'.number_format(($this->cart()->packagePriceCents($package) ?? $package->price_cents) / 100, 2);
+    }
+
+    public function usesLocationPricing(): bool
+    {
+        return $this->storeModel()->usesLocationPricing();
+    }
+
+    /**
+     * Whether the family can move on to timing and packages: they've picked
+     * a city, or the store doesn't price by location.
+     */
+    public function hasLocation(): bool
+    {
+        return ! $this->usesLocationPricing() || $this->locationId !== null;
+    }
+
+    /**
+     * @return Collection<int, UsState>
+     */
+    public function locationStates(): Collection
+    {
+        return $this->storeModel()->locations->pluck('state')->unique()->sortBy(fn (UsState $state) => $state->label())->values();
+    }
+
+    /**
+     * @return Collection<int, StoreLocation>
+     */
+    public function citiesInState(): Collection
+    {
+        return $this->storeModel()->locations->filter(fn (StoreLocation $location) => $location->state->value === $this->locationState)->values();
+    }
+
+    public function updatedLocationState(): void
+    {
+        $this->locationId = null;
+    }
+
+    public function updatedLocationId(?int $locationId): void
+    {
+        $location = $locationId ? $this->storeModel()->locations()->find($locationId) : null;
+
+        if (! $location) {
+            $this->locationId = null;
+
+            return;
+        }
+
+        $this->cart()->setLocation($location);
+
+        if ($this->timing) {
+            $this->ensureBasePackage();
+            $this->cart()->ensureRequiredLines();
+        }
+
+        $this->syncFromCart();
+        $this->dispatch('cart-updated');
     }
 
     public function containers(): Collection
     {
-        return $this->productsFor(ProductCategory::Container);
+        return $this->slotOptions(ProductCategory::Container, 'container');
     }
 
     public function urns(): Collection
     {
-        return $this->productsFor(ProductCategory::Urn);
+        return $this->slotOptions(ProductCategory::Urn, 'urn');
+    }
+
+    /**
+     * Container / urn options, without those priced below the package's
+     * allowance when the package asks for that. If that would hide every
+     * option, all of them are shown so a required selection is still possible.
+     */
+    private function slotOptions(ProductCategory $category, string $slot): Collection
+    {
+        $options = $this->productsFor($category);
+        $allowanceCents = $this->cart()->packageAllowanceCents($slot);
+
+        if (! $this->cart()->hidesOptionsBelowAllowance() || $allowanceCents === 0) {
+            return $options;
+        }
+
+        $filtered = $options->filter(fn (Product $product) => $product->price_cents >= $allowanceCents)->values();
+
+        return $filtered->isNotEmpty() ? $filtered : $options;
+    }
+
+    /**
+     * The package allowance toward the "container" or "urn" slot.
+     */
+    public function allowanceCents(string $slot): int
+    {
+        return $this->cart()->packageAllowanceCents($slot);
+    }
+
+    /**
+     * What a container / urn costs once the package allowance is applied,
+     * e.g. "Included with your package" or "$150.00 after allowance".
+     */
+    public function allowanceNote(Product $product, string $slot): ?string
+    {
+        $allowanceCents = $this->allowanceCents($slot);
+
+        if ($allowanceCents === 0 || $product->price_cents === 0) {
+            return null;
+        }
+
+        if ($product->price_cents <= $allowanceCents) {
+            return __('Included with your package');
+        }
+
+        return __(':price after allowance', ['price' => '$'.number_format(($product->price_cents - $allowanceCents) / 100, 2)]);
+    }
+
+    /**
+     * Pricing for an item the package includes, e.g. "2 included, then
+     * $15.00 per copy".
+     */
+    public function includedNote(Product $product, int $includedQuantity): string
+    {
+        if (! $this->canAddBeyondIncluded($product)) {
+            return __('Included');
+        }
+
+        $unitCents = $product->hasPerUnitPricing() ? $product->per_unit_price_cents : $product->price_cents;
+        $unit = $product->hasPerUnitPricing() && $product->per_unit_label
+            ? __('per :unit', ['unit' => $product->per_unit_label])
+            : __('each');
+
+        return __(':count included, then :price :unit', [
+            'count' => $includedQuantity,
+            'price' => '$'.number_format($unitCents / 100, 2),
+            'unit' => $unit,
+        ]);
+    }
+
+    /**
+     * Whether the customer can buy more of an included item than the
+     * package covers.
+     */
+    public function canAddBeyondIncluded(Product $product): bool
+    {
+        return $product->hasPerUnitPricing() || $product->allow_multiple_quantity;
+    }
+
+    /**
+     * How many units of a product the selected package includes.
+     */
+    public function includedQuantity(int $productId): int
+    {
+        return $this->cart()->includedQuantity($productId.'-0');
     }
 
     public function keepsakes(): Collection
@@ -212,7 +385,32 @@ new class extends Component
 
         $this->packageId = $productId;
         $this->cart()->selectSlot($product);
+        $this->replaceUnavailableSlotSelections();
+        $this->syncFromCart();
         $this->dispatch('cart-updated');
+    }
+
+    /**
+     * A new package may hide the container or urn already chosen (when it
+     * hides options below its allowance), so swap in the option it covers.
+     */
+    private function replaceUnavailableSlotSelections(): void
+    {
+        $cart = $this->cart();
+
+        foreach (['container' => $this->containers(), 'urn' => $this->urns()] as $slot => $options) {
+            $selectedProductId = $cart->state()[$slot]['product_id'] ?? null;
+
+            if ($selectedProductId === null || $options->contains('id', $selectedProductId)) {
+                continue;
+            }
+
+            $replacement = $options->firstWhere('price_cents', '<=', $cart->packageAllowanceCents($slot)) ?? $options->first();
+
+            if ($replacement) {
+                $cart->selectSlot($replacement);
+            }
+        }
     }
 
     public function selectContainer(int $productId, ?int $variantId = null): void
@@ -293,6 +491,12 @@ new class extends Component
 
     public function goToContainers(): void
     {
+        if (! $this->hasLocation()) {
+            $this->addError('location', __('Please choose your city to continue.'));
+
+            return;
+        }
+
         $this->ensureBasePackage();
         $this->cart()->ensureRequiredLines();
         $this->preselectIncludedOptions();
@@ -302,26 +506,23 @@ new class extends Component
     }
 
     /**
-     * Container and urn options priced at $0.00 are the ones included in the
-     * package, so pre-select the first of each when nothing is chosen yet.
+     * Container and urn options fully covered by the package (priced at $0.00
+     * or within its allowance) are the ones included in the package, so
+     * pre-select the first of each when nothing is chosen yet.
      */
     private function preselectIncludedOptions(): void
     {
         $cart = $this->cart();
 
-        if (! $cart->state()['container']) {
-            $container = $this->containers()->firstWhere('price_cents', 0);
-
-            if ($container) {
-                $cart->selectSlot($container);
+        foreach (['container' => $this->containers(), 'urn' => $this->urns()] as $slot => $options) {
+            if ($cart->state()[$slot]) {
+                continue;
             }
-        }
 
-        if (! $cart->state()['urn']) {
-            $urn = $this->urns()->firstWhere('price_cents', 0);
+            $included = $options->firstWhere('price_cents', '<=', $cart->packageAllowanceCents($slot));
 
-            if ($urn) {
-                $cart->selectSlot($urn);
+            if ($included) {
+                $cart->selectSlot($included);
             }
         }
 
@@ -488,7 +689,33 @@ new class extends Component
             <flux:heading size="xl" class="font-serif">{{ __('A few details to get started') }}</flux:heading>
             <flux:subheading class="mt-1">{{ __('This helps us show you appropriate options.') }}</flux:subheading>
 
-            <div class="mt-6 grid gap-3 sm:grid-cols-2">
+            @if ($this->usesLocationPricing())
+                <div class="mt-6 grid gap-3 sm:grid-cols-2">
+                    <flux:field>
+                        <flux:label>{{ __('State') }}</flux:label>
+                        <flux:select wire:model.live="locationState">
+                            <option value="">{{ __('Choose a state') }}</option>
+                            @foreach ($this->locationStates() as $state)
+                                <option value="{{ $state->value }}">{{ $state->label() }}</option>
+                            @endforeach
+                        </flux:select>
+                    </flux:field>
+                    @if ($locationState)
+                        <flux:field>
+                            <flux:label>{{ __('City') }}</flux:label>
+                            <flux:select wire:model.live="locationId" wire:key="cities-{{ $locationState }}">
+                                <option value="">{{ __('Choose a city') }}</option>
+                                @foreach ($this->citiesInState() as $location)
+                                    <option value="{{ $location->id }}">{{ $location->city }}</option>
+                                @endforeach
+                            </flux:select>
+                        </flux:field>
+                    @endif
+                    @error('location') <flux:error class="sm:col-span-2">{{ $message }}</flux:error> @enderror
+                </div>
+            @endif
+
+            <div @class(['mt-6 grid gap-3 sm:grid-cols-2', 'hidden' => ! $this->hasLocation()])>
                 @foreach (OrderTiming::cases() as $option)
                     <label @class([
                         'flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition',
@@ -502,7 +729,7 @@ new class extends Component
                 @error('timing') <flux:error class="sm:col-span-2">{{ $message }}</flux:error> @enderror
             </div>
 
-            @if ($timing)
+            @if ($timing && $this->hasLocation())
                 <div class="mt-8">
                     <flux:heading size="lg">{{ $this->isALaCarte() ? __('Your base package') : __('Choose a package') }}</flux:heading>
                     @if ($this->isALaCarte())
@@ -542,7 +769,7 @@ new class extends Component
                                         </ul>
                                     @endif
                                     {{-- mt-auto keeps prices aligned along the bottom of each row. --}}
-                                    <p @class(['mt-auto pt-4 font-semibold text-brand-700', 'text-xl' => $this->isALaCarte()])>{{ $product->priceLabel() }}</p>
+                                    <p @class(['mt-auto pt-4 font-semibold text-brand-700', 'text-xl' => $this->isALaCarte()])>{{ $this->packagePriceLabel($product) }}</p>
                                 </div>
                             </button>
                         @empty
@@ -573,6 +800,9 @@ new class extends Component
                     <p class="mb-3 text-xs text-zinc-500">
                         {{ $this->storeModel()->requires_container ? __('Required by law for dignified care and handling.') : __('Optional — you can also decide later.') }}
                     </p>
+                    @if ($this->allowanceCents('container') > 0)
+                        <p class="mb-3 rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-800">{{ __('Your package includes a :amount allowance toward a cremation container.', ['amount' => '$'.number_format($this->allowanceCents('container') / 100, 2)]) }}</p>
+                    @endif
                     <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                         @foreach ($this->containers() as $product)
                             <div class="relative" wire:key="container-{{ $product->id }}">
@@ -593,6 +823,9 @@ new class extends Component
                                             <p class="mt-1 text-xs text-zinc-500">{{ $product->description }}</p>
                                         @endif
                                         <p class="mt-1 text-sm text-brand-700">{{ $product->priceLabel() }}</p>
+                                        @if ($note = $this->allowanceNote($product, 'container'))
+                                            <p class="text-xs font-medium text-brand-800">{{ $note }}</p>
+                                        @endif
                                     </div>
                                 </button>
                                 @if ($product->imageUrl())
@@ -616,6 +849,9 @@ new class extends Component
                     @if ($this->storeModel()->requires_urn)
                         <p class="mb-3 text-xs text-zinc-500">{{ __('An urn selection is required to continue.') }}</p>
                     @endif
+                    @if ($this->allowanceCents('urn') > 0)
+                        <p class="mb-3 rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-800">{{ __('Your package includes a :amount allowance toward an urn.', ['amount' => '$'.number_format($this->allowanceCents('urn') / 100, 2)]) }}</p>
+                    @endif
                     <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                         @foreach ($this->urns() as $product)
                             <div class="relative" wire:key="urn-{{ $product->id }}">
@@ -636,6 +872,9 @@ new class extends Component
                                             <p class="mt-1 text-xs text-zinc-500">{{ $product->description }}</p>
                                         @endif
                                         <p class="mt-1 text-sm text-brand-700">{{ $product->priceLabel() }}</p>
+                                        @if ($note = $this->allowanceNote($product, 'urn'))
+                                            <p class="text-xs font-medium text-brand-800">{{ $note }}</p>
+                                        @endif
                                     </div>
                                 </button>
                                 @if ($product->imageUrl())
@@ -690,9 +929,22 @@ new class extends Component
                             @if ($product->description)
                                 <p class="text-xs text-zinc-500">{{ $product->description }}</p>
                             @endif
-                            <p class="mt-1 text-sm text-brand-700">{{ $product->priceLabel() }}</p>
+                            @php($includedQty = $this->includedQuantity($product->id))
+                            <p class="mt-1 text-sm text-brand-700">{{ $includedQty > 0 ? $this->includedNote($product, $includedQty) : $product->priceLabel() }}</p>
 
-                            @if ($product->is_required && ! $product->hasPerUnitPricing())
+                            @if ($includedQty > 0)
+                                <span class="mt-2 inline-block rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Included with your package') }}</span>
+                                @if ($this->canAddBeyondIncluded($product))
+                                    <div class="mt-2 flex items-center gap-2">
+                                        <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-200 text-sm disabled:opacity-40" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ $qty - 1 }})" @disabled($qty <= $includedQty)>&minus;</button>
+                                        <span class="w-4 text-center text-sm">{{ $qty }}</span>
+                                        <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-200 text-sm" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ $qty + 1 }})">+</button>
+                                        @if ($product->hasPerUnitPricing() && $product->per_unit_label)
+                                            <span class="text-xs text-zinc-400">{{ $product->per_unit_label }}{{ $qty === 1 ? '' : 's' }}</span>
+                                        @endif
+                                    </div>
+                                @endif
+                            @elseif ($product->is_required && ! $product->hasPerUnitPricing())
                                 <span class="mt-2 inline-block rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Required') }}</span>
                             @else
                                 @if ($product->is_required)
@@ -750,12 +1002,18 @@ new class extends Component
                             @if ($product->description)
                                 <p class="mt-1 text-xs text-zinc-500">{{ $product->description }}</p>
                             @endif
-                            <p class="mt-1 text-sm text-brand-700">{{ $product->priceLabel() }}</p>
-                            <div class="mt-2 flex items-center gap-2">
-                                <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-200 text-sm" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ (int) ($keepsakeQty[$key] ?? 0) - 1 }})">&minus;</button>
-                                <span class="w-4 text-center text-sm">{{ $keepsakeQty[$key] ?? 0 }}</span>
-                                <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-200 text-sm" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ (int) ($keepsakeQty[$key] ?? 0) + 1 }})">+</button>
-                            </div>
+                            @php($includedQty = $this->includedQuantity($product->id))
+                            <p class="mt-1 text-sm text-brand-700">{{ $includedQty > 0 ? $this->includedNote($product, $includedQty) : $product->priceLabel() }}</p>
+                            @if ($includedQty > 0)
+                                <span class="mt-2 inline-block rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Included with your package') }}</span>
+                            @endif
+                            @if ($includedQty === 0 || $this->canAddBeyondIncluded($product))
+                                <div class="mt-2 flex items-center gap-2">
+                                    <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-200 text-sm disabled:opacity-40" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ (int) ($keepsakeQty[$key] ?? 0) - 1 }})" @disabled($includedQty > 0 && (int) ($keepsakeQty[$key] ?? 0) <= $includedQty)>&minus;</button>
+                                    <span class="w-4 text-center text-sm">{{ $keepsakeQty[$key] ?? 0 }}</span>
+                                    <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-200 text-sm" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ (int) ($keepsakeQty[$key] ?? 0) + 1 }})">+</button>
+                                </div>
+                            @endif
                         </div>
                     </div>
                 @empty

@@ -117,9 +117,12 @@ class CheckoutService
         $subtotalCents = $cart->subtotalCents();
         $taxCents = $cart->taxCents();
         $processingFeeCents = $cart->processingFeeCents();
+        $location = $store->usesLocationPricing() ? $cart->location() : null;
 
         return [
             'timing' => $cart->timing(),
+            'service_city' => $location?->city,
+            'service_state' => $location?->state->value,
             'purchaser_first_name' => $details['purchaser_first_name'],
             'purchaser_last_name' => $details['purchaser_last_name'],
             'purchaser_email' => $details['purchaser_email'],
@@ -154,6 +157,8 @@ class CheckoutService
                 'unit_price_cents' => $line['unit_price_cents'],
                 'base_price_cents_snapshot' => $line['base_price_cents'] ?? 0,
                 'quantity' => $line['quantity'],
+                'included_quantity' => $line['included_quantity'] ?? 0,
+                'allowance_cents' => $line['allowance_cents'] ?? 0,
                 'total_price_cents' => $cart->lineTotalCents($line),
             ]);
         }
@@ -168,6 +173,10 @@ class CheckoutService
      */
     private function assertRequiredSelectionsPresent(Store $store, Cart $cart): void
     {
+        if ($store->usesLocationPricing() && ! $cart->location()) {
+            throw new \RuntimeException('A city must be chosen to complete this order.');
+        }
+
         if ($store->requires_container && ! $cart->hasContainer() && $store->products()->active()->ofCategory(ProductCategory::Container)->exists()) {
             throw new \RuntimeException('A cremation container selection is required to complete this order.');
         }

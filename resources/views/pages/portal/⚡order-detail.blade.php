@@ -73,6 +73,9 @@ new #[Layout('layouts::portal')] class extends Component
             @if ($currentOrder->timing)
                 <p class="text-sm text-zinc-500 dark:text-zinc-400">{{ $currentOrder->timing->label() }}</p>
             @endif
+            @if ($currentOrder->service_city)
+                <p class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Service area: :city, :state', ['city' => $currentOrder->service_city, 'state' => $currentOrder->service_state]) }}</p>
+            @endif
         </div>
     </div>
 
@@ -88,9 +91,18 @@ new #[Layout('layouts::portal')] class extends Component
                         @if ($item->variant_snapshot)
                             <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ $item->variant_snapshot }}</p>
                         @endif
+                        @if ($item->included_quantity)
+                            <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ __(':count included with package', ['count' => $item->included_quantity]) }}</p>
+                        @endif
+                        @if ($item->allowance_cents)
+                            <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Package allowance: −$:amount', ['amount' => number_format($item->allowance_cents / 100, 2)]) }}</p>
+                        @endif
                     </div>
                     <div class="text-right">
                         <p>{{ $item->quantity }} &times; ${{ number_format($item->unit_price_cents / 100, 2) }}</p>
+                        @if ($item->included_quantity || $item->allowance_cents)
+                            <p class="text-xs text-zinc-500 dark:text-zinc-400">${{ number_format($item->total_price_cents / 100, 2) }}</p>
+                        @endif
                     </div>
                 </li>
             @endforeach

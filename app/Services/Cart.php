@@ -7,6 +7,7 @@ use App\Enums\ProductCategory;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Store;
+use App\Models\StoreLocation;
 use Illuminate\Support\Collection;
 
 /**
@@ -81,6 +82,7 @@ class Cart
     {
         return [
             'timing' => null,
+            'location_id' => null, // the city chosen, for location-priced stores
             'package' => null,
             'container' => null,
             'urn' => null,
@@ -121,6 +123,60 @@ class Cart
         $this->persist();
     }
 
+    public function location(): ?StoreLocation
+    {
+        $locationId = $this->state['location_id'] ?? null;
+
+        return $locationId ? $this->store->locations()->find($locationId) : null;
+    }
+
+    /**
+     * Choose the city the arrangement is for. A package already selected is
+     * re-priced for the new city; if it isn't offered there, the cart starts
+     * over (everything else only makes sense in the context of a package).
+     */
+    public function setLocation(StoreLocation $location): void
+    {
+        $this->state['location_id'] = $location->id;
+
+        $packageLine = $this->state['package'];
+        $package = $packageLine ? Product::find($packageLine['product_id']) : null;
+
+        if ($package && $this->packagePriceCents($package) !== null) {
+            $variant = $packageLine['variant_id'] ? ProductVariant::find($packageLine['variant_id']) : null;
+            $this->state['package'] = $this->lineFor($package, $variant, 1);
+        } elseif ($packageLine) {
+            $this->state = [
+                ...$this->emptyState(),
+                'timing' => $this->state['timing'],
+                'location_id' => $location->id,
+            ];
+        }
+
+        $this->persist();
+    }
+
+    /**
+     * A package's price for the chosen city, or null when the store uses
+     * location pricing and the package isn't offered there (or no city has
+     * been chosen yet). Stores without location pricing use the package's
+     * own price.
+     */
+    public function packagePriceCents(Product $package): ?int
+    {
+        if (! $this->store->usesLocationPricing()) {
+            return $package->price_cents;
+        }
+
+        $locationId = $this->state['location_id'] ?? null;
+
+        if (! $locationId) {
+            return null;
+        }
+
+        return $package->locationPrices()->whereKey($locationId)->first()?->pivot->price_cents;
+    }
+
     private function slotKeyFor(ProductCategory $category): ?string
     {
         return match ($category) {
@@ -142,7 +198,91 @@ class Cart
         }
 
         $this->state[$slot] = $this->lineFor($product, $variant, 1);
+
+        if ($slot === 'package') {
+            $this->syncPackageInclusions();
+        }
+
+        $this->applyPackageAllowances();
         $this->persist();
+    }
+
+    /**
+     * Credit the package's container / urn allowance against whichever
+     * container and urn are selected, so a package can cover "any urn up to
+     * $X" (or a specific urn, by setting the allowance to its price).
+     */
+    private function applyPackageAllowances(): void
+    {
+        foreach (['container', 'urn'] as $slot) {
+            if ($this->state[$slot] !== null) {
+                $this->state[$slot]['allowance_cents'] = $this->packageAllowanceCents($slot);
+            }
+        }
+    }
+
+    /**
+     * The selected package's allowance toward the "container" or "urn" slot.
+     */
+    public function packageAllowanceCents(string $slot): int
+    {
+        return (int) ($this->state['package']["{$slot}_allowance_cents"] ?? 0);
+    }
+
+    /**
+     * Whether the selected package hides container / urn options priced
+     * below its allowance for them.
+     */
+    public function hidesOptionsBelowAllowance(): bool
+    {
+        return (bool) ($this->state['package']['hide_options_below_allowance'] ?? false);
+    }
+
+    /**
+     * Swap the previous package's included items for the newly selected
+     * package's. Included items are cart lines whose first included_quantity
+     * units are free; the customer can still add more at the regular price.
+     * Each line remembers its quantity from before the package included it,
+     * so switching packages back and forth doesn't lose or inflate what the
+     * customer chose themselves.
+     */
+    private function syncPackageInclusions(): void
+    {
+        foreach ($this->state['lines'] as $key => $line) {
+            $previouslyIncludedQuantity = $line['included_quantity'] ?? 0;
+
+            if ($previouslyIncludedQuantity === 0) {
+                continue;
+            }
+
+            $quantity = max($line['quantity_before_package'] ?? 0, $line['quantity'] - $previouslyIncludedQuantity);
+            unset($line['included_quantity'], $line['quantity_before_package']);
+
+            if ($quantity === 0 && ! ($line['is_required'] ?? false)) {
+                unset($this->state['lines'][$key]);
+
+                continue;
+            }
+
+            $line['quantity'] = max(1, $quantity);
+            $this->state['lines'][$key] = $line;
+        }
+
+        $package = $this->state['package']
+            ? Product::with(['includedProducts' => fn ($query) => $query->active()])->find($this->state['package']['product_id'])
+            : null;
+
+        foreach ($package?->includedProducts ?? [] as $product) {
+            $key = $this->lineKey($product, null);
+            $includedQuantity = (int) $product->pivot->included_quantity;
+            $line = $this->state['lines'][$key] ?? $this->lineFor($product, null, 0);
+
+            $line['quantity_before_package'] = $line['quantity'];
+            $line['quantity'] = max($line['quantity'], $includedQuantity);
+            $line['included_quantity'] = $includedQuantity;
+
+            $this->state['lines'][$key] = $line;
+        }
     }
 
     public function clearSlot(ProductCategory $category): void
@@ -176,6 +316,7 @@ class Cart
 
         if (isset($this->state['lines'][$key])) {
             $this->state['lines'][$key]['quantity'] += $quantity;
+            unset($this->state['lines'][$key]['quantity_before_package']);
         } else {
             $this->state['lines'][$key] = $this->lineFor($product, $variant, $quantity);
         }
@@ -190,10 +331,15 @@ class Cart
             $quantity = max(1, $quantity);
         }
 
+        // Units the package includes can't be removed either.
+        $quantity = max($this->includedQuantity($key), $quantity);
+
         if ($quantity <= 0) {
             unset($this->state['lines'][$key]);
         } elseif (isset($this->state['lines'][$key])) {
             $this->state['lines'][$key]['quantity'] = $quantity;
+            // The customer has now chosen this quantity themselves.
+            unset($this->state['lines'][$key]['quantity_before_package']);
         }
 
         $this->persist();
@@ -205,8 +351,23 @@ class Cart
             return;
         }
 
+        if ($this->includedQuantity($key) > 0) {
+            // Removing an included item only drops the extras added on top.
+            $this->updateLineQuantity($key, 0);
+
+            return;
+        }
+
         unset($this->state['lines'][$key]);
         $this->persist();
+    }
+
+    /**
+     * How many units of this line the selected package covers.
+     */
+    public function includedQuantity(string $key): int
+    {
+        return (int) ($this->state['lines'][$key]['included_quantity'] ?? 0);
     }
 
     /**
@@ -313,9 +474,21 @@ class Cart
             ];
         }
 
-        $unitPriceCents = $product->price_cents + $variantDeltaCents;
+        $priceCents = $product->category === ProductCategory::Package
+            ? ($this->packagePriceCents($product) ?? $product->price_cents)
+            : $product->price_cents;
+        $unitPriceCents = $priceCents + $variantDeltaCents;
+
+        $packageAllowances = $product->category === ProductCategory::Package
+            ? [
+                'container_allowance_cents' => (int) $product->container_allowance_cents,
+                'urn_allowance_cents' => (int) $product->urn_allowance_cents,
+                'hide_options_below_allowance' => $product->hide_options_below_allowance,
+            ]
+            : [];
 
         return [
+            ...$packageAllowances,
             'product_id' => $product->id,
             'variant_id' => $variant?->id,
             'category' => $product->category->value,
@@ -324,7 +497,7 @@ class Cart
             'image_path' => $product->image_path,
             'is_taxable' => $product->is_taxable,
             'is_required' => $product->is_required,
-            'taxable_unit_cents' => $this->taxableUnitCentsForProduct($product, $variantDeltaCents),
+            'taxable_unit_cents' => $this->taxableUnitCentsForProduct($product, $variantDeltaCents, $priceCents),
             'unit_price_cents' => $unitPriceCents,
             'quantity' => $quantity,
         ];
@@ -383,13 +556,59 @@ class Cart
     }
 
     /**
-     * A line's total: an optional one-time base fee plus unit price x quantity.
+     * A line's total: an optional one-time base fee plus unit price x the
+     * quantity beyond what the package includes, less any package allowance.
+     * An item the package includes has its base fee covered too.
      *
      * @param  array<string, mixed>  $line
      */
     public function lineTotalCents(array $line): int
     {
+        $includedQuantity = $line['included_quantity'] ?? 0;
+        $baseCents = $includedQuantity > 0 ? 0 : ($line['base_price_cents'] ?? 0);
+
+        return max(0, $baseCents + $line['unit_price_cents'] * $this->chargedQuantity($line) - ($line['allowance_cents'] ?? 0));
+    }
+
+    /**
+     * What a line would cost at its regular price, before the package covers
+     * any of it.
+     *
+     * @param  array<string, mixed>  $line
+     */
+    public function lineRegularTotalCents(array $line): int
+    {
         return ($line['base_price_cents'] ?? 0) + $line['unit_price_cents'] * $line['quantity'];
+    }
+
+    /**
+     * How much of a line the package covers (included units and allowances).
+     *
+     * @param  array<string, mixed>  $line
+     */
+    public function lineDiscountCents(array $line): int
+    {
+        return $this->lineRegularTotalCents($line) - $this->lineTotalCents($line);
+    }
+
+    /**
+     * @param  array<string, mixed>  $line
+     */
+    private function chargedQuantity(array $line): int
+    {
+        return max(0, $line['quantity'] - ($line['included_quantity'] ?? 0));
+    }
+
+    /**
+     * The taxable part of a line at its regular price. Units the package
+     * includes and allowances it credits are still taxed here, on the item
+     * actually provided, so a package's own taxable amount never covers them.
+     *
+     * @param  array<string, mixed>  $line
+     */
+    private function taxableLineCents(array $line): int
+    {
+        return ($line['taxable_base_cents'] ?? 0) + $this->taxableUnitCentsFor($line) * $line['quantity'];
     }
 
     /**
@@ -400,18 +619,17 @@ class Cart
      */
     public function taxableSubtotalCents(): int
     {
-        return (int) $this->allLines()->sum(
-            fn (array $line) => ($line['taxable_base_cents'] ?? 0) + $this->taxableUnitCentsFor($line) * $line['quantity']
-        );
+        return (int) $this->allLines()->sum(fn (array $line) => $this->taxableLineCents($line));
     }
 
     /**
      * A product with an explicit taxable amount only taxes that portion (plus
      * any variant upcharge); otherwise the is_taxable flag covers the full price.
+     * $priceCents overrides the product's own price (a package's city price).
      */
-    private function taxableUnitCentsForProduct(Product $product, int $variantDeltaCents): int
+    private function taxableUnitCentsForProduct(Product $product, int $variantDeltaCents, ?int $priceCents = null): int
     {
-        $unitPriceCents = $product->price_cents + $variantDeltaCents;
+        $unitPriceCents = ($priceCents ?? $product->price_cents) + $variantDeltaCents;
 
         return max(0, match (true) {
             ! $product->is_taxable => 0,
