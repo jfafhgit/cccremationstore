@@ -179,6 +179,11 @@ new class extends Component
             'processing_fee_bps' => (int) round(((float) $validated['processingFeePercent']) * 100),
         ]);
 
+        // Apple Pay / Google Pay only work on a domain registered with the store's Stripe account.
+        if ($this->currentStore->wasChanged('slug')) {
+            app(StripeConnectService::class)->ensurePaymentMethodDomain($this->currentStore);
+        }
+
         if ($this->currentStore->wasChanged('status') && $this->canInviteStaff()) {
             $this->sendHeldBackInvitations();
         }

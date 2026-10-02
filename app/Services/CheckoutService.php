@@ -33,6 +33,17 @@ class CheckoutService
         PaymentIntent::STATUS_REQUIRES_ACTION,
     ];
 
+    /**
+     * Card only, set here rather than left to each store's own Stripe
+     * dashboard, so no store offers delayed-settlement methods (bank debits,
+     * Cash App, buy now pay later) that can fail after the order is placed.
+     * Apple Pay and Google Pay are card wallets, so they're included; they
+     * need the storefront domain registered (StripeConnectService).
+     *
+     * @var list<string>
+     */
+    private const PAYMENT_METHOD_TYPES = ['card'];
+
     private ?StripeClient $client = null;
 
     /**
@@ -200,11 +211,13 @@ class CheckoutService
         if ($intent && in_array($intent->status, self::UPDATABLE_INTENT_STATUSES, true)) {
             if ($intent->amount !== $order->total_cents
                 || $intent->application_fee_amount !== $order->platform_fee_cents
-                || $intent->receipt_email !== $order->purchaser_email) {
+                || $intent->receipt_email !== $order->purchaser_email
+                || ($intent->payment_method_types ?? self::PAYMENT_METHOD_TYPES) !== self::PAYMENT_METHOD_TYPES) {
                 $intent = $this->client()->paymentIntents->update($intent->id, [
                     'amount' => $order->total_cents,
                     'application_fee_amount' => $order->platform_fee_cents,
                     'receipt_email' => $order->purchaser_email,
+                    'payment_method_types' => self::PAYMENT_METHOD_TYPES,
                 ], ['stripe_account' => $order->stripe_account_id]);
             }
 
@@ -220,7 +233,7 @@ class CheckoutService
             'amount' => $order->total_cents,
             'currency' => $order->currency,
             'application_fee_amount' => $order->platform_fee_cents,
-            'automatic_payment_methods' => ['enabled' => true],
+            'payment_method_types' => self::PAYMENT_METHOD_TYPES,
             'receipt_email' => $order->purchaser_email,
             'metadata' => [
                 'order_id' => (string) $order->id,

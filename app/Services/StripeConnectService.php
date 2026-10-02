@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Models\Store;
+use Illuminate\Support\Facades\Log;
 use Stripe\Account;
 use Stripe\AccountLink;
+use Stripe\Exception\ApiErrorException;
 use Stripe\Exception\InvalidRequestException;
 use Stripe\StripeClient;
 
@@ -139,6 +141,47 @@ class StripeConnectService
             'stripe_payouts_enabled' => (bool) $account->payouts_enabled,
         ])->save();
 
-        return $store->fresh();
+        return $this->ensurePaymentMethodDomain($store->fresh());
+    }
+
+    /**
+     * Register the storefront's domain with the store's own Stripe account,
+     * which Stripe requires (per domain, per account, for direct charges)
+     * before Apple Pay and Google Pay can appear in the Payment Element.
+     * Remembered on the store, so it runs once per domain — and again after
+     * a subdomain change. A failure is logged rather than thrown: card
+     * payments still work without it, just without the wallets.
+     */
+    public function ensurePaymentMethodDomain(Store $store): Store
+    {
+        $domain = $store->storefrontDomain();
+
+        if (! $store->stripe_account_id || ! $store->stripe_charges_enabled || $store->stripe_payment_method_domain === $domain) {
+            return $store;
+        }
+
+        $options = ['stripe_account' => $store->stripe_account_id];
+
+        try {
+            $existing = $this->client()->paymentMethodDomains->all(['domain_name' => $domain, 'limit' => 1], $options)->data[0] ?? null;
+
+            if (! $existing) {
+                $this->client()->paymentMethodDomains->create(['domain_name' => $domain], $options);
+            } elseif (! $existing->enabled) {
+                $this->client()->paymentMethodDomains->update($existing->id, ['enabled' => true], $options);
+            }
+        } catch (ApiErrorException|\RuntimeException $e) {
+            Log::warning('Could not register the storefront domain for Apple Pay / Google Pay.', [
+                'store_id' => $store->id,
+                'domain' => $domain,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $store;
+        }
+
+        $store->forceFill(['stripe_payment_method_domain' => $domain])->save();
+
+        return $store;
     }
 }

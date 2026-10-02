@@ -61,6 +61,35 @@ class OrderItem extends Model
     }
 
     /**
+     * What the item would have cost at its regular price, before the
+     * package covered any of it.
+     */
+    public function regularTotalCents(): int
+    {
+        return $this->base_price_cents_snapshot + $this->unit_price_cents * $this->quantity;
+    }
+
+    /**
+     * How much of the item the package covered (included units and allowances).
+     */
+    public function discountCents(): int
+    {
+        return max(0, $this->regularTotalCents() - $this->total_price_cents);
+    }
+
+    /**
+     * E.g. "Package allowance" or "2 included with package".
+     */
+    public function discountLabel(): string
+    {
+        return match (true) {
+            $this->allowance_cents > 0 => __('Package allowance'),
+            $this->included_quantity > 1 => __(':count included with package', ['count' => $this->included_quantity]),
+            default => __('Included with package'),
+        };
+    }
+
+    /**
      * @return BelongsTo<Order, $this>
      */
     public function order(): BelongsTo

@@ -161,6 +161,31 @@ test('changing the cart after starting payment updates the same order and its pa
         ->and($this->stripe->intents[$intentId]['receipt_email'])->toBe('corrected@example.com');
 });
 
+test('a new payment intent accepts cards only', function () {
+    $this->order->update(['stripe_payment_intent_id' => null]);
+
+    app(CheckoutService::class)->createPaymentIntent($this->order);
+
+    $params = $this->stripe->intents['pi_0'];
+    expect($params['payment_method_types'])->toBe(['card'])
+        ->and($params)->not->toHaveKey('automatic_payment_methods');
+});
+
+test('a payment intent started before cards-only is switched to cards only', function () {
+    $this->stripe->intent('pi_existing', [
+        'status' => 'requires_payment_method',
+        'amount' => 150000,
+        'application_fee_amount' => $this->order->platform_fee_cents,
+        'receipt_email' => $this->order->purchaser_email,
+        'payment_method_types' => ['card', 'cashapp', 'us_bank_account'],
+    ]);
+
+    app(CheckoutService::class)->createPaymentIntent($this->order);
+
+    expect($this->stripe->updatesTo('pi_existing'))->toHaveCount(1)
+        ->and($this->stripe->intents['pi_existing']['payment_method_types'])->toBe(['card']);
+});
+
 test('a payment intent that already succeeded is never replaced with a new charge', function () {
     $this->stripe->intent('pi_existing', ['status' => 'succeeded', 'amount' => 150000]);
 

@@ -42,6 +42,7 @@ use Illuminate\Support\Facades\Storage;
  * @property bool $stripe_details_submitted
  * @property bool $stripe_charges_enabled
  * @property bool $stripe_payouts_enabled
+ * @property string|null $stripe_payment_method_domain
  * @property int $platform_fee_bps
  * @property PlatformFeeModel $platform_fee_model
  * @property int $platform_fee_flat_cents
@@ -128,6 +129,14 @@ class Store extends Model
     public function products(): HasMany
     {
         return $this->hasMany(Product::class);
+    }
+
+    /**
+     * The host the storefront is served from, e.g. "riverside.example.com".
+     */
+    public function storefrontDomain(): string
+    {
+        return $this->slug.'.'.config('app.root_domain');
     }
 
     /**

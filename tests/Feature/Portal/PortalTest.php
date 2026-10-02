@@ -2,6 +2,7 @@
 
 use App\Models\Order;
 use App\Models\OrderDetail;
+use App\Models\OrderItem;
 use App\Models\Store;
 use App\Models\StoreUser;
 use Illuminate\Support\Facades\Auth;
@@ -105,6 +106,29 @@ test('staff see Vital Statistics with the Social Security number masked until th
         ->assertSee('Pacemaker and/or defibrillator reported')
         ->call('revealSsn')
         ->assertSee('123-45-6789');
+});
+
+test('order items show their regular price with the package discount on its own line', function () {
+    Auth::guard('store')->login($this->staff);
+    $order = Order::factory()->create(['store_id' => $this->store->id, 'paid_at' => now()]);
+    OrderItem::factory()->for($order)->create([
+        'name_snapshot' => 'Walnut Urn',
+        'unit_price_cents' => 35000,
+        'allowance_cents' => 20000,
+        'total_price_cents' => 15000,
+    ]);
+    OrderItem::factory()->for($order)->create([
+        'name_snapshot' => 'Death certificates',
+        'base_price_cents_snapshot' => 25000,
+        'unit_price_cents' => 1500,
+        'quantity' => 3,
+        'included_quantity' => 2,
+        'total_price_cents' => 1500,
+    ]);
+
+    Livewire::test('pages::portal.order-detail', ['order' => $order->id])
+        ->assertSeeInOrder(['Walnut Urn', '$350.00', 'Package allowance', '−$200.00'])
+        ->assertSeeInOrder(['Death certificates', '$295.00', '2 included with package', '−$280.00']);
 });
 
 test('an order from a different store cannot be viewed in the portal', function () {
