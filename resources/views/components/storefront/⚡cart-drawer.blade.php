@@ -140,7 +140,9 @@ new class extends Component {
                                 @php($discountCents = $this->cart()->lineDiscountCents($line))
                                 <li class="border-b border-zinc-100 pb-4" wire:key="cart-line-{{ $key }}">
                                 <div class="flex items-start gap-3 sm:gap-4">
-                                    <x-product-image :src="Product::imageUrlFor($line['image_path'] ?? null)" :category="$line['category'] ?? 'package'" class="size-16 shrink-0 rounded-lg sm:size-20" />
+                                    @unless (($line['category'] ?? 'package') === 'package')
+                                        <x-product-image :src="Product::imageUrlFor($line['image_path'] ?? null)" :category="$line['category']" class="size-16 shrink-0 rounded-lg sm:size-20" />
+                                    @endunless
 
                                     <div class="min-w-0 flex-1">
                                         <p class="font-medium text-zinc-800">{{ $line['name'] }}</p>

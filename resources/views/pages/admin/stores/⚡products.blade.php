@@ -329,7 +329,9 @@ new class extends Component
             'available_for_pre_need' => $this->formAvailableForPreNeed,
         ];
 
-        if ($this->formImage) {
+        if ($isPackage) {
+            $this->formImage = null;
+        } elseif ($this->formImage) {
             if ($product?->image_path) {
                 Storage::disk('public')->delete($product->image_path);
             }
@@ -523,7 +525,9 @@ new class extends Component
                                 'border-dashed border-zinc-200 bg-zinc-50 opacity-60 dark:border-zinc-700 dark:bg-zinc-800/40' => ! $product->is_active,
                             ])
                         >
-                            <x-product-image :src="$product->imageUrl()" :category="$product->category->value" class="h-16 w-full" />
+                            @unless ($product->category === ProductCategory::Package)
+                                <x-product-image :src="$product->imageUrl()" :category="$product->category->value" class="h-16 w-full" />
+                            @endunless
                             <div class="p-2">
                                 <div class="flex items-start justify-between gap-1">
                                     <p class="truncate text-xs font-medium text-zinc-800 dark:text-zinc-100">{{ $product->name }}</p>
@@ -685,6 +689,7 @@ new class extends Component
                 </div>
             @endif
 
+            @unless ($formCategory === ProductCategory::Package->value)
             <flux:field>
                 <flux:label>{{ __('Image') }}</flux:label>
                 <div class="flex items-center gap-3">
@@ -703,6 +708,7 @@ new class extends Component
                 </div>
                 <flux:error name="formImage" />
             </flux:field>
+            @endunless
 
             <div class="grid grid-cols-2 gap-3">
                 <flux:checkbox wire:model="formIsActive" :label="__('Active (visible in store)')" />

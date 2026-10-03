@@ -793,10 +793,9 @@ new class extends Component
                                     'relative flex flex-col justify-start overflow-hidden rounded-xl border text-left shadow-sm transition',
                                     'border-brand-600 bg-brand-50' => $packageId === $product->id,
                                     'border-zinc-200 bg-white hover:border-brand-300' => $packageId !== $product->id,
-                                    'cursor-default sm:flex-row' => $this->isALaCarte(),
+                                    'cursor-default' => $this->isALaCarte(),
                                 ])
                             >
-                                <x-product-image :src="$product->imageUrl()" :category="$product->category->value" @class(['w-full shrink-0', 'aspect-[4/3]' => ! $this->isALaCarte(), 'aspect-[4/3] sm:aspect-auto sm:w-2/5' => $this->isALaCarte()]) />
                                 {{-- À la carte stores have only the one base package, so "Selected" would say nothing. --}}
                                 @if (! $this->isALaCarte() && $packageId === $product->id)
                                     <span class="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-store px-2 py-0.5 text-xs font-semibold text-store-foreground shadow">
