@@ -12,7 +12,7 @@ use Illuminate\Notifications\Notification;
 
 /**
  * The purchaser's confirmation and receipt, sent once when payment clears.
- * It comes from the funeral home (by name, and replies go to its contact
+ * It comes from the funeral home (by name, and replies go to its general
  * email) and invites the family to share the fuller intake details.
  */
 class OrderPaidNotification extends Notification implements ShouldQueue
@@ -50,13 +50,12 @@ class OrderPaidNotification extends Notification implements ShouldQueue
                 'isImmediate' => $order->timing === OrderTiming::Immediate,
                 'detailsUrl' => $order->detailsUrl(),
                 'summary' => $this->orderSummary($order),
-                'canReply' => filled($store->contact_email),
+                'canReply' => filled($store->general_email),
                 'contactPhone' => $store->contact_phone ? $this->escapeMarkdown($store->contact_phone) : null,
-                'contactName' => $store->contact_name ? $this->escapeMarkdown($store->contact_name) : null,
             ]);
 
-        if ($store->contact_email) {
-            $message->replyTo($store->contact_email, $store->name);
+        if ($store->general_email) {
+            $message->replyTo($store->general_email, $store->name);
         }
 
         return $message;

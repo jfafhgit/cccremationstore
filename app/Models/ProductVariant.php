@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $id
  * @property int $product_id
  * @property string $name
+ * @property string|null $description
  * @property int $price_delta_cents
  * @property string|null $sku
  */
@@ -22,6 +23,7 @@ class ProductVariant extends Model
     protected $fillable = [
         'product_id',
         'name',
+        'description',
         'price_delta_cents',
         'sku',
         'sort_order',

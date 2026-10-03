@@ -195,6 +195,10 @@ class CheckoutService
         if ($store->requires_urn && ! $cart->hasUrn() && $store->products()->active()->ofCategory(ProductCategory::Urn)->exists()) {
             throw new \RuntimeException('An urn selection is required to complete this order.');
         }
+
+        if ($cart->missingRequiredOptions()->isNotEmpty()) {
+            throw new \RuntimeException('A required option has not been chosen.');
+        }
     }
 
     /**

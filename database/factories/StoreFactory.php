@@ -24,6 +24,7 @@ class StoreFactory extends Factory
             'contact_name' => $this->faker->name(),
             'contact_email' => $this->faker->companyEmail(),
             'contact_phone' => $this->faker->numerify('###-###-####'),
+            'general_email' => $this->faker->companyEmail(),
             'timezone' => 'America/New_York',
             'platform_fee_bps' => 500,
         ];

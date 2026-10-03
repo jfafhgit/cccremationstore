@@ -324,6 +324,64 @@ class Cart
         $this->persist();
     }
 
+    /**
+     * Choose one of a "choose one" product's options (its variants),
+     * replacing whichever option was chosen before. Required products can
+     * switch options here even though their lines can't otherwise be removed.
+     */
+    public function selectOption(Product $product, ProductVariant $variant): void
+    {
+        $this->forgetProductLines($product->id);
+        $this->state['lines'][$this->lineKey($product, $variant)] = $this->lineFor($product, $variant, 1);
+        $this->persist();
+    }
+
+    /**
+     * Clear the chosen option of an optional "choose one" product.
+     */
+    public function clearOption(Product $product): void
+    {
+        if ($product->is_required) {
+            return;
+        }
+
+        $this->forgetProductLines($product->id);
+        $this->persist();
+    }
+
+    /**
+     * The variant chosen for a "choose one" product, if any.
+     */
+    public function selectedVariantId(int $productId): ?int
+    {
+        return collect($this->state['lines'])->firstWhere('product_id', $productId)['variant_id'] ?? null;
+    }
+
+    /**
+     * Required "choose one" products (for the current timing) the customer
+     * hasn't picked an option for yet.
+     *
+     * @return Collection<int, Product>
+     */
+    public function missingRequiredOptions(): Collection
+    {
+        $query = $this->store->products()->active()->ofCategory(ProductCategory::Choice)->where('is_required', true)->has('variants');
+
+        if ($this->state['timing']) {
+            $query->availableForTiming($this->state['timing']);
+        }
+
+        return $query->get()->reject(fn (Product $product) => $this->selectedVariantId($product->id) !== null)->values();
+    }
+
+    private function forgetProductLines(int $productId): void
+    {
+        $this->state['lines'] = array_filter(
+            $this->state['lines'],
+            fn (array $line) => $line['product_id'] !== $productId,
+        );
+    }
+
     public function updateLineQuantity(string $key, int $quantity): void
     {
         if ($this->isRequiredLine($key)) {
@@ -411,6 +469,7 @@ class Cart
      * Add every active required product for the current timing that isn't
      * already in the cart, and refresh the flag on lines already present.
      * Called by the wizard so required items are pre-selected for the customer.
+     * Required "choose one" products are left for the customer to pick from.
      */
     public function ensureRequiredLines(): void
     {
@@ -419,6 +478,7 @@ class Cart
                 ProductCategory::Package->value,
                 ProductCategory::Container->value,
                 ProductCategory::Urn->value,
+                ProductCategory::Choice->value,
             ]);
 
         if ($this->state['timing']) {

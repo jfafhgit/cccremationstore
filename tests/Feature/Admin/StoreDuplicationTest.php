@@ -88,7 +88,7 @@ test('duplicating a store copies every product and its variants', function () {
 
 test('duplicated packages include the copies of their included products', function () {
     $package = Product::factory()->for($this->source)->create(['name' => 'Premium']);
-    $certificates = Product::factory()->for($this->source)->category(ProductCategory::Service)->create(['name' => 'Death certificates']);
+    $certificates = Product::factory()->for($this->source)->category(ProductCategory::Addon)->create(['name' => 'Death certificates']);
     $package->includedProducts()->attach($certificates->id, ['included_quantity' => 2]);
 
     $duplicate = duplicateThroughAdmin($this->source);

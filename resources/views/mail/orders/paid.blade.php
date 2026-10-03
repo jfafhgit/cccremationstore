@@ -29,6 +29,6 @@ We are here to help. Please contact {{ $storeName }} directly.
 @endif
 
 With care,<br>
-{{ $contactName ?: $storeName }}@if ($contactName)<br>{{ $storeName }}@endif
+The {{ $storeName }} Team
 
 </x-mail::store-message>

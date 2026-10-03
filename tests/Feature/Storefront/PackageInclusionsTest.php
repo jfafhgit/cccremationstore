@@ -14,14 +14,14 @@ beforeEach(function () {
     $this->basic = Product::factory()->for($this->store)->create(['name' => 'Basic', 'price_cents' => 100000]);
     $this->premium = Product::factory()->for($this->store)->create(['name' => 'Premium', 'price_cents' => 300000]);
 
-    $this->certificates = Product::factory()->for($this->store)->category(ProductCategory::Service)->create([
+    $this->certificates = Product::factory()->for($this->store)->category(ProductCategory::Addon)->create([
         'name' => 'Death certificates',
         'price_cents' => 25000,
         'per_unit_price_cents' => 1500,
         'per_unit_label' => 'copy',
         'is_taxable' => false,
     ]);
-    $this->memorial = Product::factory()->for($this->store)->category(ProductCategory::Service)->create([
+    $this->memorial = Product::factory()->for($this->store)->category(ProductCategory::Addon)->create([
         'name' => 'Memorial service',
         'price_cents' => 80000,
         'is_taxable' => false,

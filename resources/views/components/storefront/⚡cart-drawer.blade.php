@@ -96,14 +96,19 @@ new class extends Component {
     <button
         type="button"
         x-on:click="open = true"
-        class="relative flex size-10 items-center justify-center rounded-full border border-brand-200 bg-white text-brand-800 transition hover:bg-brand-50"
+        class="flex flex-col items-center gap-0.5"
         aria-label="{{ __('Open cart') }}"
     >
-        <flux:icon.shopping-bag class="size-5" />
-        @if ($store && $this->cart()->itemCount() > 0)
-            <span class="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-store text-[10px] font-semibold text-store-foreground">
-                {{ $this->cart()->itemCount() }}
-            </span>
+        <span class="relative flex size-10 items-center justify-center rounded-full border border-brand-200 bg-white text-brand-800 transition hover:bg-brand-50">
+            <flux:icon.shopping-bag class="size-5" />
+            @if ($store && $this->cart()->itemCount() > 0)
+                <span class="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-store text-[10px] font-semibold text-store-foreground">
+                    {{ $this->cart()->itemCount() }}
+                </span>
+            @endif
+        </span>
+        @if ($store && ! $this->cart()->isEmpty())
+            <span class="text-xs font-semibold text-brand-800">${{ number_format($this->cart()->subtotalCents() / 100, 2) }}</span>
         @endif
     </button>
 

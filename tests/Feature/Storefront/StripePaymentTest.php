@@ -250,7 +250,7 @@ test('the payment succeeded webhook marks the order paid only once', function ()
     Notification::assertSentTimes(OrderPaidNotification::class, 1);
 });
 
-test('a paid order alerts the store staff who can sign in, once', function () {
+test('a paid order alerts the store staff who can sign in and the main email, once', function () {
     $this->stripe->intent('pi_existing', ['status' => 'succeeded', 'amount' => 150000, 'amount_received' => 150000]);
     $owner = StoreUser::factory()->forStore($this->store)->create();
     $staff = StoreUser::factory()->forStore($this->store, StoreUserRole::Staff)->create();
@@ -263,16 +263,36 @@ test('a paid order alerts the store staff who can sign in, once', function () {
     Notification::assertSentToTimes($owner, NewOrderNotification::class, 1);
     Notification::assertSentToTimes($staff, NewOrderNotification::class, 1);
     Notification::assertNotSentTo([$pending, $otherStoreStaff], NewOrderNotification::class);
-    Notification::assertSentOnDemandTimes(NewOrderNotification::class, 0);
+    Notification::assertSentOnDemandTimes(NewOrderNotification::class, 1);
 });
 
-test('a store with no staff who can sign in gets the order alert at its contact email', function () {
+test('a store with no staff who can sign in gets the order alert at its main email', function () {
     $this->stripe->intent('pi_existing', ['status' => 'succeeded', 'amount' => 150000, 'amount_received' => 150000]);
-    $this->store->update(['contact_email' => 'office@funeralhome.test']);
+    $this->store->update(['general_email' => 'office@funeralhome.test', 'contact_email' => 'billing@funeralhome.test']);
 
     app(CheckoutService::class)->syncPaymentStatus($this->order);
 
     Notification::assertSentOnDemand(NewOrderNotification::class, fn ($notification, $channels, $notifiable) => $notifiable->routes['mail'] === 'office@funeralhome.test');
+});
+
+test('the main email is not alerted twice when a staff login uses the same address', function () {
+    $this->stripe->intent('pi_existing', ['status' => 'succeeded', 'amount' => 150000, 'amount_received' => 150000]);
+    $owner = StoreUser::factory()->forStore($this->store)->create(['email' => 'office@funeralhome.test']);
+    $this->store->update(['general_email' => 'Office@FuneralHome.test']);
+
+    app(CheckoutService::class)->syncPaymentStatus($this->order);
+
+    Notification::assertSentToTimes($owner, NewOrderNotification::class, 1);
+    Notification::assertSentOnDemandTimes(NewOrderNotification::class, 0);
+});
+
+test('the contact email never gets order alerts', function () {
+    $this->stripe->intent('pi_existing', ['status' => 'succeeded', 'amount' => 150000, 'amount_received' => 150000]);
+    $this->store->update(['general_email' => null, 'contact_email' => 'billing@funeralhome.test']);
+
+    app(CheckoutService::class)->syncPaymentStatus($this->order);
+
+    Notification::assertSentOnDemandTimes(NewOrderNotification::class, 0);
 });
 
 test('the webhook re-checks the payment with stripe rather than trusting the payload', function () {
@@ -318,4 +338,30 @@ test('a full refund from the stripe dashboard marks the order refunded', functio
     ]))->assertOk();
 
     expect($this->order->fresh()->status)->toBe(OrderStatus::Refunded);
+});
+
+test('the payment step lists everything in the cart alongside the payment form', function () {
+    $package = Product::factory()->for($this->store)->category(ProductCategory::Package)->create(['name' => 'Direct Cremation', 'price_cents' => 100000]);
+    $keepsake = Product::factory()->for($this->store)->category(ProductCategory::Keepsake)->create(['name' => 'Fingerprint Pendant', 'price_cents' => 5000]);
+
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $package->id)
+        ->call('goToContainers')
+        ->call('goToAddons')
+        ->call('goToKeepsakes')
+        ->call('setKeepsakeQty', $keepsake->id, null, 2)
+        ->call('goToDetails')
+        ->set('deceasedFirstName', 'Pat')
+        ->set('deceasedLastName', 'Rivera')
+        ->set('relationshipToDeceased', 'Adult child')
+        ->set('purchaserFirstName', 'Sam')
+        ->set('purchaserLastName', 'Rivera')
+        ->set('purchaserEmail', 'sam@example.com')
+        ->set('purchaserPhone', '555-0100')
+        ->call('submitDetails');
+
+    $component->assertSet('step', 'payment')
+        ->assertSeeInOrder(['Your order', 'Direct Cremation', '$1,000.00', 'Fingerprint Pendant', 'Qty 2', '$100.00', 'Total due today', '$1,100.00'])
+        ->assertSeeHtml('id="payment-element"');
 });

@@ -10,8 +10,8 @@ use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 /**
- * Alerts a store's staff (or its contact_email, if it has no staff who can
- * sign in yet) that a new paid order came in. Replies go to the family.
+ * Alerts a store's staff and its general email that a new paid order
+ * came in. Replies go to the family.
  */
 class NewOrderNotification extends Notification implements ShouldQueue
 {

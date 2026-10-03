@@ -209,7 +209,7 @@ test('an admin can save a required per-unit service', function () {
 
     Livewire::test('pages::admin.stores.products', ['store' => $store])
         ->set('formName', 'Death certificates')
-        ->set('formCategory', ProductCategory::Service->value)
+        ->set('formCategory', ProductCategory::Addon->value)
         ->set('formPrice', '250.00')
         ->set('formPerUnitPrice', '15.00')
         ->set('formPerUnitLabel', 'copy')
@@ -348,4 +348,29 @@ test('an admin can create an owner login, who can manage billing', function () {
         ->assertHasNoErrors();
 
     expect($store->staff()->where('email', 'morgan@example.com')->first()->isOwnerOf($store))->toBeTrue();
+});
+
+test('an admin can add and edit an option description on a choose-one item', function () {
+    $store = Store::factory()->create();
+    $handling = Product::factory()->for($store)->category(ProductCategory::Choice)->create(['price_cents' => 0]);
+
+    $component = Livewire::test('pages::admin.stores.products', ['store' => $store->id])
+        ->call('editProduct', $handling->id)
+        ->set('newVariantName', 'Package and ship')
+        ->set('newVariantPrice', '75.00')
+        ->set('newVariantDescription', 'Sent by USPS Priority Mail Express.')
+        ->call('addVariant')
+        ->assertHasNoErrors();
+
+    $option = $handling->variants()->first();
+    expect($option->description)->toBe('Sent by USPS Priority Mail Express.');
+
+    $component->call('editVariant', $option->id)
+        ->assertSet('newVariantName', 'Package and ship')
+        ->set('newVariantDescription', '')
+        ->call('addVariant');
+
+    expect($handling->variants()->count())->toBe(1)
+        ->and($option->fresh()->description)->toBeNull()
+        ->and($option->fresh()->price_delta_cents)->toBe(7500);
 });

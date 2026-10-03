@@ -4,6 +4,7 @@ use App\Enums\OrderTiming;
 use App\Enums\ProductCategory;
 use App\Models\Order;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Enums\UsState;
 use App\Models\Store;
 use App\Models\StoreLocation;
@@ -304,7 +305,52 @@ new class extends Component
      */
     public function canToggleExtra(Product $product): bool
     {
-        return ! $product->is_required && $this->includedQuantity($product->id) === 0;
+        return ! $this->hasOptions($product) && ! $product->is_required && $this->includedQuantity($product->id) === 0;
+    }
+
+    /**
+     * Whether a product is a choose-one item, where the customer picks one
+     * of its options instead of selecting the item itself.
+     */
+    public function hasOptions(Product $product): bool
+    {
+        return $product->category === ProductCategory::Choice && $product->variants->isNotEmpty();
+    }
+
+    public function selectedOptionId(int $productId): ?int
+    {
+        return $this->cart()->selectedVariantId($productId);
+    }
+
+    public function optionPriceLabel(Product $product, ProductVariant $option): string
+    {
+        return '$'.number_format(($product->price_cents + $option->price_delta_cents) / 100, 2);
+    }
+
+    /**
+     * Choose one of a "choose one" service / add-on's options, or clear the
+     * choice (null) when the item is optional.
+     */
+    public function selectExtraOption(int $productId, ?int $optionId): void
+    {
+        $product = $this->extras()->firstWhere('id', $productId);
+
+        if (! $product || ! $this->hasOptions($product)) {
+            return;
+        }
+
+        $option = $optionId ? $product->variants->firstWhere('id', $optionId) : null;
+
+        if ($option) {
+            $this->cart()->selectOption($product, $option);
+        } elseif ($optionId === null) {
+            $this->cart()->clearOption($product);
+        } else {
+            return;
+        }
+
+        $this->syncFromCart();
+        $this->dispatch('cart-updated');
     }
 
     /**
@@ -333,14 +379,14 @@ new class extends Component
     }
 
     /**
-     * Services and add-ons, including required ones (which show as included).
+     * Services and add-ons, including required ones (which show as included),
+     * followed by the choose-one items that have options to choose from.
      */
     public function extras(): Collection
     {
-        return $this->productsFor(ProductCategory::Addon)
-            ->concat($this->productsFor(ProductCategory::Service))
-            ->sortBy('sort_order')
-            ->values();
+        $choices = $this->productsFor(ProductCategory::Choice)->filter(fn (Product $product) => $this->hasOptions($product));
+
+        return $this->productsFor(ProductCategory::Addon)->concat($choices)->values();
     }
 
     private function productsFor(ProductCategory $category): Collection
@@ -493,7 +539,7 @@ new class extends Component
     {
         $product = $this->keepsakes()->merge($this->extras())->firstWhere('id', $productId);
 
-        if (! $product) {
+        if (! $product || $this->hasOptions($product)) {
             return;
         }
 
@@ -604,6 +650,14 @@ new class extends Component
 
     public function goToKeepsakes(): void
     {
+        $missing = $this->cart()->missingRequiredOptions()->first();
+
+        if ($missing) {
+            $this->addError('options', __('Please choose an option for :name to continue.', ['name' => $missing->name]));
+
+            return;
+        }
+
         $this->step = 'keepsakes';
     }
 
@@ -969,11 +1023,14 @@ new class extends Component
                     @foreach ($extras as $product)
                         @php($qty = (int) ($keepsakeQty[$product->id.'-0'] ?? 0))
                         @php($includedQty = $this->includedQuantity($product->id))
-                        @php($isSelected = $qty > 0 || $includedQty > 0 || $product->is_required)
+                        @php($hasOptions = $this->hasOptions($product))
+                        @php($selectedOptionId = $hasOptions ? $this->selectedOptionId($product->id) : null)
+                        @php($isSelected = $hasOptions ? $selectedOptionId !== null : ($qty > 0 || $includedQty > 0 || $product->is_required))
                         @php($canToggle = $this->canToggleExtra($product))
                         {{-- Each card spans four rows of the shared grid (name, description, price, quantity) so those rows line up across cards even when some content is missing. --}}
                         <div wire:key="extra-{{ $product->id }}" @class([
                             'relative row-span-4 grid grid-rows-subgrid gap-0 overflow-hidden rounded-xl transition',
+                            'col-span-full' => $hasOptions,
                             'border-2 border-brand-600 bg-brand-50 ring-2 ring-brand-600/30' => $isSelected,
                             'border border-zinc-200 hover:border-brand-300' => ! $isSelected,
                         ])>
@@ -991,7 +1048,11 @@ new class extends Component
                             </div>
                             <p class="px-3 pt-1 text-xs text-zinc-500">{{ $product->description }}</p>
                             <div class="px-3 pt-1 pb-3">
-                                <p class="text-sm text-brand-700">{{ $includedQty > 0 ? $this->includedNote($product, $includedQty) : $product->priceLabel() }}</p>
+                                <p class="text-sm text-brand-700">{{ match (true) {
+                                    $hasOptions => __('Choose one'),
+                                    $includedQty > 0 => $this->includedNote($product, $includedQty),
+                                    default => $product->priceLabel(),
+                                } }}</p>
                                 @if ($includedQty > 0)
                                     <span class="mt-2 inline-block rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Included with your package') }}</span>
                                 @elseif ($product->is_required)
@@ -999,7 +1060,36 @@ new class extends Component
                                 @endif
                             </div>
                             <div class="self-end">
-                                @if ($this->showsQuantitySelector($product) && $isSelected)
+                                @if ($hasOptions)
+                                    <fieldset class="space-y-1 border-t border-brand-200 px-3 py-2">
+                                        <legend class="sr-only">{{ __('Options for :name', ['name' => $product->name]) }}</legend>
+                                        @foreach ($product->variants as $option)
+                                            <div wire:key="extra-{{ $product->id }}-option-{{ $option->id }}" @if ($option->description) x-data="{ detail: false }" @endif>
+                                                <label class="flex cursor-pointer items-start gap-2 text-sm text-zinc-700">
+                                                    <input type="radio" name="extra-option-{{ $product->id }}" value="{{ $option->id }}" @checked($selectedOptionId === $option->id) wire:click="selectExtraOption({{ $product->id }}, {{ $option->id }})" class="mt-1 accent-[var(--color-brand-700)]" />
+                                                    <span class="flex-1">
+                                                        {{ $option->name }}
+                                                        @if ($option->description)
+                                                            <button type="button" class="ml-1 text-xs text-brand-700 underline hover:text-brand-900" x-on:click.prevent="detail = ! detail" x-bind:aria-expanded="detail" aria-controls="option-detail-{{ $option->id }}">
+                                                                <span x-text="detail ? @js(__('Hide detail')) : @js(__('Show detail'))">{{ __('Show detail') }}</span>
+                                                            </button>
+                                                        @endif
+                                                    </span>
+                                                    <span class="font-medium text-brand-700">{{ $this->optionPriceLabel($product, $option) }}</span>
+                                                </label>
+                                                @if ($option->description)
+                                                    <p id="option-detail-{{ $option->id }}" x-show="detail" x-transition.opacity style="display: none" class="ml-6 mt-1 whitespace-pre-line rounded-lg bg-white/70 px-3 py-2 text-xs text-zinc-600">{{ $option->description }}</p>
+                                                @endif
+                                            </div>
+                                        @endforeach
+                                        @unless ($product->is_required)
+                                            <label class="flex cursor-pointer items-start gap-2 text-sm text-zinc-500">
+                                                <input type="radio" name="extra-option-{{ $product->id }}" value="" @checked($selectedOptionId === null) wire:click="selectExtraOption({{ $product->id }}, null)" class="mt-1 accent-[var(--color-brand-700)]" />
+                                                <span>{{ __('No thanks') }}</span>
+                                            </label>
+                                        @endunless
+                                    </fieldset>
+                                @elseif ($this->showsQuantitySelector($product) && $isSelected)
                                     @php($minimumQty = max($includedQty, $product->is_required ? 1 : 0))
                                     <div class="relative z-20 flex flex-wrap items-center justify-between gap-2 border-t border-brand-200 px-3 py-2">
                                         <div class="flex items-center gap-2">
@@ -1017,6 +1107,7 @@ new class extends Component
             @else
                 <p class="mt-6 text-sm text-zinc-500">{{ __('No services or add-ons are available for this option — you can continue to the next step.') }}</p>
             @endif
+            @error('options') <flux:error class="mt-2">{{ $message }}</flux:error> @enderror
 
             <div class="mt-8 flex items-center justify-between">
                 <flux:button variant="ghost" wire:click="backTo('containers')">{{ __('Back') }}</flux:button>
@@ -1162,44 +1253,72 @@ new class extends Component
 
     {{-- Step 6: Payment --}}
     @if ($step === 'payment')
-        <div class="mx-auto max-w-3xl rounded-2xl border border-brand-100 bg-white p-6 shadow-sm sm:p-8">
-            <flux:heading size="xl" class="font-serif">{{ __('Secure payment') }}</flux:heading>
-            <flux:subheading class="mt-1">{{ __('Your card details are handled directly and securely by Stripe.') }}</flux:subheading>
-
-            <div class="mt-6 rounded-xl bg-brand-50 p-4 text-sm">
-                <div class="flex justify-between text-zinc-600">
-                    <span>{{ __('Subtotal') }}</span>
-                    <span>${{ number_format($this->cart()->subtotalCents() / 100, 2) }}</span>
-                </div>
-                @if ($this->cart()->taxCents() > 0)
-                    <div class="mt-1 flex justify-between text-zinc-600">
-                        <span>{{ __('Tax') }}</span>
-                        <span>${{ number_format($this->cart()->taxCents() / 100, 2) }}</span>
+        @php($cart = $this->cart())
+        <div class="grid items-start gap-6 lg:grid-cols-5">
+            <aside class="rounded-2xl border border-brand-100 bg-white p-6 shadow-sm lg:sticky lg:top-6 lg:order-last lg:col-span-2" aria-label="{{ __('Order summary') }}">
+                <flux:heading size="lg" class="font-serif">{{ __('Your order') }}</flux:heading>
+    
+                <ul class="mt-4 divide-y divide-zinc-100 text-sm">
+                    @foreach ($cart->allLines() as $key => $line)
+                        @php($discountCents = $cart->lineDiscountCents($line))
+                        <li class="flex items-start justify-between gap-3 py-3 first:pt-0" wire:key="summary-line-{{ $key }}">
+                            <div class="min-w-0">
+                                <p class="font-medium text-zinc-800">{{ $line['name'] }}</p>
+                                @if ($line['variant_name'] ?? null)
+                                    <p class="text-xs text-zinc-500">{{ $line['variant_name'] }}</p>
+                                @endif
+                                @if ($line['quantity'] > 1 || ($line['unit_label'] ?? null))
+                                    <p class="text-xs text-zinc-500">{{ __('Qty :count', ['count' => $line['quantity']]) }}{{ ($line['unit_label'] ?? null) ? ' '.str($line['unit_label'])->plural($line['quantity']) : '' }}</p>
+                                @endif
+                                @if ($discountCents > 0)
+                                    <p class="text-xs font-medium text-brand-800">{{ __('Includes :amount package credit', ['amount' => '$'.number_format($discountCents / 100, 2)]) }}</p>
+                                @endif
+                            </div>
+                            <span class="shrink-0 font-medium text-zinc-800">${{ number_format($cart->lineTotalCents($line) / 100, 2) }}</span>
+                        </li>
+                    @endforeach
+                </ul>
+    
+                <div class="mt-2 space-y-1 border-t border-zinc-200 pt-3 text-sm">
+                    <div class="flex justify-between text-zinc-600">
+                        <span>{{ __('Subtotal') }}</span>
+                        <span>${{ number_format($cart->subtotalCents() / 100, 2) }}</span>
                     </div>
-                @endif
-                @if ($this->cart()->processingFeeCents() > 0)
-                    <div class="mt-1 flex justify-between text-zinc-600">
-                        <span>{{ __('Processing fee') }}</span>
-                        <span>${{ number_format($this->cart()->processingFeeCents() / 100, 2) }}</span>
+                    @if ($cart->taxCents() > 0)
+                        <div class="flex justify-between text-zinc-600">
+                            <span>{{ __('Tax') }}</span>
+                            <span>${{ number_format($cart->taxCents() / 100, 2) }}</span>
+                        </div>
+                    @endif
+                    @if ($cart->processingFeeCents() > 0)
+                        <div class="flex justify-between text-zinc-600">
+                            <span>{{ __('Processing fee') }}</span>
+                            <span>${{ number_format($cart->processingFeeCents() / 100, 2) }}</span>
+                        </div>
+                    @endif
+                    <div class="flex justify-between border-t border-zinc-200 pt-2 text-base font-semibold text-zinc-800">
+                        <span>{{ __('Total due today') }}</span>
+                        <span>${{ number_format($cart->totalCents() / 100, 2) }}</span>
                     </div>
-                @endif
-                <div class="mt-1 flex justify-between border-t border-brand-100 pt-1 font-semibold text-zinc-800">
-                    <span>{{ __('Total due today') }}</span>
-                    <span>${{ number_format($this->cart()->totalCents() / 100, 2) }}</span>
                 </div>
+            </aside>
+    
+            <div class="rounded-2xl border border-brand-100 bg-white p-6 shadow-sm sm:p-8 lg:col-span-3">
+                <flux:heading size="xl" class="font-serif">{{ __('Secure payment') }}</flux:heading>
+                <flux:subheading class="mt-1">{{ __('Your card details are handled directly and securely by Stripe.') }}</flux:subheading>
+    
+                <div class="mt-6" wire:ignore>
+                    <form id="payment-form">
+                        <div id="payment-element"></div>
+                        <p id="payment-errors" class="mt-3 text-sm text-red-600"></p>
+                        <button id="pay-button" type="submit" class="mt-4 w-full rounded-lg bg-store px-4 py-3 text-sm font-semibold text-store-foreground transition hover:bg-store-hover disabled:opacity-50">
+                            {{ __('Pay now') }}
+                        </button>
+                    </form>
+                </div>
+    
+                <button type="button" wire:click="backTo('details')" class="mt-4 text-xs text-zinc-400 underline">{{ __('Back') }}</button>
             </div>
-
-            <div class="mt-6" wire:ignore>
-                <form id="payment-form">
-                    <div id="payment-element"></div>
-                    <p id="payment-errors" class="mt-3 text-sm text-red-600"></p>
-                    <button id="pay-button" type="submit" class="mt-4 w-full rounded-lg bg-store px-4 py-3 text-sm font-semibold text-store-foreground transition hover:bg-store-hover disabled:opacity-50">
-                        {{ __('Pay now') }}
-                    </button>
-                </form>
-            </div>
-
-            <button type="button" wire:click="backTo('details')" class="mt-4 text-xs text-zinc-400 underline">{{ __('Back') }}</button>
         </div>
     @endif
 

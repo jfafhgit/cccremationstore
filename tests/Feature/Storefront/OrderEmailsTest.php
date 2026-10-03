@@ -15,7 +15,7 @@ beforeEach(function () {
     $this->store = Store::factory()->create([
         'name' => 'Riverside Cremation',
         'slug' => 'riverside',
-        'contact_email' => 'care@riverside.test',
+        'general_email' => 'care@riverside.test',
         'contact_phone' => '555-0142',
         'timezone' => 'America/Chicago',
     ]);
@@ -52,6 +52,7 @@ describe('the customer confirmation', function () {
             ->toContain('$1,150.00')
             ->toContain('September 28, 2026 at 10:30 AM CDT')
             ->toContain('555-0142')
+            ->toContain('The Riverside Cremation Team')
             ->toContain(e($this->order->detailsUrl()))
             ->not->toContain('Processing fee');
     });
@@ -67,8 +68,8 @@ describe('the customer confirmation', function () {
         'pre-need' => [OrderTiming::PreNeed, false],
     ]);
 
-    test('does not invite a reply when the store has no contact email', function () {
-        $this->store->update(['contact_email' => null]);
+    test('does not invite a reply when the store has no main email', function () {
+        $this->store->update(['general_email' => null]);
 
         $mail = (new OrderPaidNotification($this->order->fresh()))->toMail($this->order);
 

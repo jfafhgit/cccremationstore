@@ -12,7 +12,7 @@ beforeEach(function () {
     $this->store = Store::factory()->stripeConnected()->create(['tax_rate_bps' => 1000]);
     actingAsTenant($this->store);
 
-    $this->certificates = Product::factory()->for($this->store)->category(ProductCategory::Service)->create([
+    $this->certificates = Product::factory()->for($this->store)->category(ProductCategory::Addon)->create([
         'name' => 'Death certificates',
         'price_cents' => 25000,
         'per_unit_price_cents' => 1500,

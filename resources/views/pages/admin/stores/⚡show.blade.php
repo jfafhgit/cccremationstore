@@ -49,6 +49,9 @@ new class extends Component
     #[Validate('nullable|email|max:255')]
     public string $contactEmail = '';
 
+    #[Validate('nullable|email|max:255')]
+    public string $generalEmail = '';
+
     #[Validate('nullable|string|max:30')]
     public string $contactPhone = '';
 
@@ -111,6 +114,7 @@ new class extends Component
         $this->contactName = $store->contact_name ?? '';
         $this->contactEmail = $store->contact_email ?? '';
         $this->contactPhone = $store->contact_phone ?? '';
+        $this->generalEmail = $store->general_email ?? '';
         $this->timezone = $store->timezone;
         $this->brandPrimaryColor = $store->brand_primary_color ?? '';
         $this->platformFeeModel = $store->platform_fee_model->value;
@@ -139,6 +143,7 @@ new class extends Component
             'contactName' => ['nullable', 'string', 'max:255'],
             'contactEmail' => ['nullable', 'email', 'max:255'],
             'contactPhone' => ['nullable', 'string', 'max:30'],
+            'generalEmail' => ['nullable', 'email', 'max:255'],
             'timezone' => ['required', 'string', 'max:255'],
             'brandPrimaryColor' => ['nullable', 'string', 'regex:'.Store::BRAND_COLOR_PATTERN],
             'generalPriceListFile' => ['nullable', 'file', 'mimes:pdf', 'mimetypes:application/pdf', 'max:10240'],
@@ -165,6 +170,7 @@ new class extends Component
             'contact_name' => $validated['contactName'] ?: null,
             'contact_email' => $validated['contactEmail'] ?: null,
             'contact_phone' => $validated['contactPhone'] ?: null,
+            'general_email' => $validated['generalEmail'] ?: null,
             'timezone' => $validated['timezone'],
             'brand_primary_color' => $validated['brandPrimaryColor'] ?: null,
             'platform_fee_model' => PlatformFeeModel::from($validated['platformFeeModel']),
@@ -496,176 +502,242 @@ new class extends Component
 
     <div class="mt-6 grid gap-6 lg:grid-cols-3">
         <div class="lg:col-span-2">
-            <div class="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-800">
-                <flux:heading size="lg">{{ __('Store details') }}</flux:heading>
-                <form wire:submit="save" class="mt-4 grid gap-4 sm:grid-cols-2">
-                    <flux:field>
-                        <flux:label>{{ __('Name') }}</flux:label>
-                        <flux:input wire:model="name" required />
-                        <flux:error name="name" />
-                    </flux:field>
-                    <flux:field>
-                        <flux:label>{{ __('Subdomain') }}</flux:label>
-                        <flux:input wire:model="slug" required />
-                        <flux:error name="slug" />
-                    </flux:field>
-                    <flux:field>
-                        <flux:label>{{ __('Status') }}</flux:label>
-                        <flux:select wire:model="status">
-                            @foreach (StoreStatus::cases() as $option)
-                                <option value="{{ $option->value }}">{{ ucfirst($option->value) }}</option>
-                            @endforeach
-                        </flux:select>
-                        <flux:error name="status" />
-                    </flux:field>
-                    <flux:field>
-                        <flux:label>{{ __('Timezone') }}</flux:label>
-                        <flux:input wire:model="timezone" required />
-                        <flux:error name="timezone" />
-                    </flux:field>
-                    <flux:field>
-                        <flux:label>{{ __('Contact name') }}</flux:label>
-                        <flux:input wire:model="contactName" />
-                        <flux:error name="contactName" />
-                    </flux:field>
-                    <flux:field>
-                        <flux:label>{{ __('Contact email') }}</flux:label>
-                        <flux:input type="email" wire:model="contactEmail" />
-                        <flux:error name="contactEmail" />
-                    </flux:field>
-                    <flux:field>
-                        <flux:label>{{ __('Contact phone') }}</flux:label>
-                        <flux:input wire:model="contactPhone" />
-                        <flux:error name="contactPhone" />
-                    </flux:field>
-                    <flux:field>
-                        <flux:label>{{ __('Brand color') }}</flux:label>
-                        <flux:input type="text" wire:model.live.debounce.500ms="brandPrimaryColor" placeholder="#29564b">
-                            @if (preg_match(Store::BRAND_COLOR_PATTERN, $brandPrimaryColor))
-                                <x-slot name="iconTrailing">
-                                    <span class="block size-5 rounded border border-zinc-300" style="background-color: {{ $brandPrimaryColor }}"></span>
-                                </x-slot>
-                            @endif
-                        </flux:input>
-                        <flux:description>{{ __('Used for buttons and the checkout steps on the storefront.') }}</flux:description>
-                        <flux:error name="brandPrimaryColor" />
-                    </flux:field>
-                    <flux:field class="sm:col-span-2">
-                        <flux:label>{{ __('Logo') }}</flux:label>
-                        <flux:description>{{ __('Shown in the storefront header in place of the store name. PNG, JPG or WebP, up to 2 MB; a wide logo on a transparent background works best.') }}</flux:description>
-                        @if ($currentStore->brand_logo_path && ! $removeBrandLogo)
-                            <div class="flex items-center gap-4">
-                                <img src="{{ $currentStore->brandLogoUrl() }}" alt="{{ __('Current logo') }}" class="h-12 max-w-48 rounded border border-zinc-200 bg-white object-contain p-1 dark:border-zinc-600" />
-                                <button type="button" wire:click="$set('removeBrandLogo', true)" class="text-xs text-zinc-400 underline hover:text-red-600">{{ __('Remove') }}</button>
-                            </div>
-                        @elseif ($removeBrandLogo)
-                            <p class="text-sm text-zinc-500">
-                                {{ __('The current logo will be removed when you save.') }}
-                                <button type="button" wire:click="$set('removeBrandLogo', false)" class="underline">{{ __('Undo') }}</button>
-                            </p>
-                        @endif
-                        <input type="file" wire:model="brandLogoFile" accept="image/png,image/jpeg,image/webp" class="block w-full text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-zinc-800 hover:file:bg-zinc-200 hover:file:text-zinc-900 dark:text-zinc-300 dark:file:bg-zinc-700 dark:file:text-zinc-100 dark:hover:file:bg-zinc-600 dark:hover:file:text-white" />
-                        <flux:error name="brandLogoFile" />
-                    </flux:field>
-                    <flux:field class="sm:col-span-2">
-                        <flux:label>{{ __('General Price List (PDF)') }}</flux:label>
-                        <flux:description>{{ __('Linked on every storefront page, per FTC Funeral Rule requirements. PDF only, up to 10 MB.') }}</flux:description>
-                        @if ($currentStore->general_price_list_path && ! $removeGeneralPriceList)
-                            <div class="flex items-center gap-3 text-sm">
-                                <a href="{{ $currentStore->generalPriceListUrl() }}" target="_blank" rel="noopener" class="text-brand-700 underline dark:text-brand-300">{{ __('View current price list') }}</a>
-                                <button type="button" wire:click="$set('removeGeneralPriceList', true)" class="text-xs text-zinc-400 underline hover:text-red-600">{{ __('Remove') }}</button>
-                            </div>
-                        @elseif ($removeGeneralPriceList)
-                            <p class="text-sm text-zinc-500">
-                                {{ __('The current price list will be removed when you save.') }}
-                                <button type="button" wire:click="$set('removeGeneralPriceList', false)" class="underline">{{ __('Undo') }}</button>
-                            </p>
-                        @endif
-                        <input type="file" wire:model="generalPriceListFile" accept="application/pdf,.pdf" class="block w-full text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-zinc-800 hover:file:bg-zinc-200 hover:file:text-zinc-900 dark:text-zinc-300 dark:file:bg-zinc-700 dark:file:text-zinc-100 dark:hover:file:bg-zinc-600 dark:hover:file:text-white" />
-                        <flux:error name="generalPriceListFile" />
-                    </flux:field>
-                    <flux:field class="sm:col-span-2">
-                        <flux:label>{{ __('Platform fee') }}</flux:label>
-                        <flux:description>{{ __('Per-order fees are collected automatically via the Stripe application fee and are never charged on sales tax or the processing fee.') }}</flux:description>
-                        <flux:radio.group wire:model.live="platformFeeModel" variant="cards" class="grid! gap-3 sm:grid-cols-2">
-                            @foreach (PlatformFeeModel::cases() as $option)
-                                <flux:radio :value="$option->value" :label="__($option->label())" :description="__($option->description())" />
-                            @endforeach
-                        </flux:radio.group>
-                        <flux:error name="platformFeeModel" />
-                    </flux:field>
-                    @if ($platformFeeModel === PlatformFeeModel::Subscription->value)
-                        <flux:field>
-                            <flux:label>{{ __('Monthly amount ($)') }}</flux:label>
-                            <flux:description>{{ __('Changes to an active subscription apply from the next bill.') }}</flux:description>
-                            <flux:input type="number" step="0.01" min="1" max="100000" wire:model="subscriptionMonthly" />
-                            <flux:error name="subscriptionMonthly" />
-                        </flux:field>
-                        <div class="text-sm">
-                            <p class="font-medium text-zinc-800 dark:text-zinc-100">{{ __('Billing status') }}</p>
-                            @if ($currentStore->isSubscriptionPastDue())
-                                <flux:badge color="red" class="mt-2">{{ __('Past due') }}</flux:badge>
-                                <p class="mt-1 text-zinc-500">{{ __('Stripe is retrying the payment. The store keeps selling in the meantime.') }}</p>
-                            @elseif ($currentStore->hasLiveSubscription())
-                                <flux:badge color="green" class="mt-2">{{ __('Active') }}</flux:badge>
-                            @else
-                                <flux:badge color="amber" class="mt-2">{{ __('Not set up') }}</flux:badge>
-                                <p class="mt-1 text-zinc-500">{{ __('The store owner starts billing from Billing in their staff portal.') }}</p>
-                            @endif
+            <div class="rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
+                <div class="border-b border-zinc-100 px-6 py-4 dark:border-zinc-700">
+                    <flux:heading size="lg">{{ __('Store details') }}</flux:heading>
+                </div>
+
+                <form wire:submit="save" class="divide-y divide-zinc-100 dark:divide-zinc-700">
+                    {{-- General --}}
+                    <section class="space-y-4 px-6 py-5">
+                        <div>
+                            <flux:heading size="sm">{{ __('General') }}</flux:heading>
+                            <flux:text class="text-xs">{{ __('How the store is identified and whether it is open.') }}</flux:text>
                         </div>
-                    @elseif ($platformFeeModel === PlatformFeeModel::None->value)
-                        {{-- Nothing to configure. --}}
-                    @elseif ($platformFeeModel === PlatformFeeModel::FlatPerOrder->value)
+                        <div class="grid gap-4 sm:grid-cols-2">
+                            <flux:field>
+                                <flux:label>{{ __('Name') }}</flux:label>
+                                <flux:input wire:model="name" required />
+                                <flux:error name="name" />
+                            </flux:field>
+                            <flux:field>
+                                <flux:label>{{ __('Subdomain') }}</flux:label>
+                                <flux:input wire:model="slug" required>
+                                    <x-slot name="iconTrailing">
+                                        <span class="text-xs text-zinc-400">.{{ config('app.root_domain') }}</span>
+                                    </x-slot>
+                                </flux:input>
+                                <flux:error name="slug" />
+                            </flux:field>
+                            <flux:field>
+                                <flux:label>{{ __('Status') }}</flux:label>
+                                <flux:select wire:model="status">
+                                    @foreach (StoreStatus::cases() as $option)
+                                        <option value="{{ $option->value }}">{{ ucfirst($option->value) }}</option>
+                                    @endforeach
+                                </flux:select>
+                                <flux:error name="status" />
+                            </flux:field>
+                            <flux:field>
+                                <flux:label>{{ __('Timezone') }}</flux:label>
+                                <flux:input wire:model="timezone" required />
+                                <flux:error name="timezone" />
+                            </flux:field>
+                            <flux:field>
+                                <flux:label>{{ __('Main phone number') }}</flux:label>
+                                <flux:input type="tel" wire:model="contactPhone" />
+                                <flux:description>{{ __('Shown to families in the storefront header and on their receipt email.') }}</flux:description>
+                                <flux:error name="contactPhone" />
+                            </flux:field>
+                            <flux:field>
+                                <flux:label>{{ __('Main email') }}</flux:label>
+                                <flux:input type="email" wire:model="generalEmail" placeholder="info@example.com" />
+                                <flux:description>{{ __('Family replies go here, and it gets new order alerts along with staff logins.') }}</flux:description>
+                                <flux:error name="generalEmail" />
+                            </flux:field>
+                        </div>
+                    </section>
+
+                    {{-- Contact --}}
+                    <section class="space-y-4 px-6 py-5">
+                        <div>
+                            <flux:heading size="sm">{{ __('Contact') }}</flux:heading>
+                            <flux:text class="text-xs">{{ __('Only used for Stripe setup and platform billing. Never shown to families.') }}</flux:text>
+                        </div>
+                        <div class="grid gap-4 sm:grid-cols-2">
+                            <flux:field>
+                                <flux:label>{{ __('Name') }}</flux:label>
+                                <flux:input wire:model="contactName" />
+                                <flux:error name="contactName" />
+                            </flux:field>
+                            <flux:field>
+                                <flux:label>{{ __('Email') }}</flux:label>
+                                <flux:input type="email" wire:model="contactEmail" />
+                                <flux:error name="contactEmail" />
+                            </flux:field>
+                        </div>
+                    </section>
+
+                    {{-- Branding & documents --}}
+                    <section class="space-y-4 px-6 py-5">
+                        <div>
+                            <flux:heading size="sm">{{ __('Branding & documents') }}</flux:heading>
+                            <flux:text class="text-xs">{{ __('How the storefront looks, and the price list it links to.') }}</flux:text>
+                        </div>
+                        <div class="grid gap-x-4 gap-y-5 sm:grid-cols-2">
+                            <flux:field>
+                                <flux:label>{{ __('Brand color') }}</flux:label>
+                                <flux:input type="text" wire:model.live.debounce.500ms="brandPrimaryColor" placeholder="#29564b">
+                                    @if (preg_match(Store::BRAND_COLOR_PATTERN, $brandPrimaryColor))
+                                        <x-slot name="iconTrailing">
+                                            <span class="block size-5 rounded border border-zinc-300" style="background-color: {{ $brandPrimaryColor }}"></span>
+                                        </x-slot>
+                                    @endif
+                                </flux:input>
+                                <flux:description>{{ __('Buttons and checkout steps.') }}</flux:description>
+                                <flux:error name="brandPrimaryColor" />
+                            </flux:field>
+                            <flux:field>
+                                <flux:label>{{ __('Logo') }}</flux:label>
+                                @if ($currentStore->brand_logo_path && ! $removeBrandLogo)
+                                    <div class="flex items-center gap-3">
+                                        <img src="{{ $currentStore->brandLogoUrl() }}" alt="{{ __('Current logo') }}" class="h-10 max-w-40 rounded border border-zinc-200 bg-white object-contain p-1 dark:border-zinc-600" />
+                                        <button type="button" wire:click="$set('removeBrandLogo', true)" class="text-xs text-zinc-400 underline hover:text-red-600">{{ __('Remove') }}</button>
+                                    </div>
+                                @elseif ($removeBrandLogo)
+                                    <p class="text-sm text-zinc-500">
+                                        {{ __('Will be removed when you save.') }}
+                                        <button type="button" wire:click="$set('removeBrandLogo', false)" class="underline">{{ __('Undo') }}</button>
+                                    </p>
+                                @endif
+                                <input type="file" wire:model="brandLogoFile" accept="image/png,image/jpeg,image/webp" class="block w-full text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-zinc-800 hover:file:bg-zinc-200 hover:file:text-zinc-900 dark:text-zinc-300 dark:file:bg-zinc-700 dark:file:text-zinc-100 dark:hover:file:bg-zinc-600 dark:hover:file:text-white" />
+                                <flux:description>{{ __('Replaces the store name in the header. PNG, JPG or WebP, up to 2 MB.') }}</flux:description>
+                                <flux:error name="brandLogoFile" />
+                            </flux:field>
+                            <flux:field class="sm:col-span-2">
+                                <flux:label>{{ __('General Price List (PDF)') }}</flux:label>
+                                @if ($currentStore->general_price_list_path && ! $removeGeneralPriceList)
+                                    <div class="flex items-center gap-3 text-sm">
+                                        <a href="{{ $currentStore->generalPriceListUrl() }}" target="_blank" rel="noopener" class="text-brand-700 underline dark:text-brand-300">{{ __('View current price list') }}</a>
+                                        <button type="button" wire:click="$set('removeGeneralPriceList', true)" class="text-xs text-zinc-400 underline hover:text-red-600">{{ __('Remove') }}</button>
+                                    </div>
+                                @elseif ($removeGeneralPriceList)
+                                    <p class="text-sm text-zinc-500">
+                                        {{ __('Will be removed when you save.') }}
+                                        <button type="button" wire:click="$set('removeGeneralPriceList', false)" class="underline">{{ __('Undo') }}</button>
+                                    </p>
+                                @endif
+                                <input type="file" wire:model="generalPriceListFile" accept="application/pdf,.pdf" class="block w-full text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-zinc-800 hover:file:bg-zinc-200 hover:file:text-zinc-900 dark:text-zinc-300 dark:file:bg-zinc-700 dark:file:text-zinc-100 dark:hover:file:bg-zinc-600 dark:hover:file:text-white" />
+                                <flux:description>{{ __('Linked on every storefront page, per the FTC Funeral Rule. PDF only, up to 10 MB.') }}</flux:description>
+                                <flux:error name="generalPriceListFile" />
+                            </flux:field>
+                        </div>
+                    </section>
+
+                    {{-- Checkout --}}
+                    <section class="space-y-4 px-6 py-5">
+                        <div>
+                            <flux:heading size="sm">{{ __('Checkout') }}</flux:heading>
+                            <flux:text class="text-xs">{{ __('How families move through the storefront.') }}</flux:text>
+                        </div>
                         <flux:field>
-                            <flux:label>{{ __('Fee per order ($)') }}</flux:label>
-                            <flux:description>{{ __('Capped at the order subtotal, so it can never exceed what the store earns.') }}</flux:description>
-                            <flux:input type="number" step="0.01" min="0" max="10000" wire:model="platformFeeFlat" />
-                            <flux:error name="platformFeeFlat" />
+                            <flux:label>{{ __('Storefront path') }}</flux:label>
+                            <flux:radio.group wire:model="checkoutPath" variant="cards" class="max-sm:flex-col">
+                                @foreach (StorePath::cases() as $option)
+                                    <flux:radio :value="$option->value" :label="__($option->label())" :description="__($option->description())" />
+                                @endforeach
+                            </flux:radio.group>
+                            <flux:error name="checkoutPath" />
                         </flux:field>
-                    @else
                         <flux:field>
-                            <flux:label>{{ __('Fee percentage (%)') }}</flux:label>
-                            <flux:description>{{ __('Of the order subtotal, before sales tax and the processing fee.') }}</flux:description>
-                            <flux:input type="number" step="0.01" min="0" max="100" wire:model="platformFeePercent" />
-                            <flux:error name="platformFeePercent" />
+                            <flux:label>{{ __('Required selections') }}</flux:label>
+                            <div class="mt-1 flex flex-wrap gap-x-6 gap-y-2">
+                                <flux:checkbox wire:model="requiresContainer" :label="__('Cremation container')" />
+                                <flux:checkbox wire:model="requiresUrn" :label="__('Urn')" />
+                            </div>
+                            <flux:description>{{ __('Customers must choose one to complete their order. Only applies if the store offers products in that category.') }}</flux:description>
                         </flux:field>
-                    @endif
-                    <flux:field>
-                        <flux:label>{{ __('Sales tax rate (%)') }}</flux:label>
-                        <flux:description>{{ __('Applied at checkout to products marked taxable. Leave at 0 if this store handles tax separately.') }}</flux:description>
-                        <flux:input type="number" step="0.01" min="0" max="100" wire:model="taxRatePercent" />
-                        <flux:error name="taxRatePercent" />
-                    </flux:field>
-                    <flux:field class="sm:col-span-2">
-                        <flux:label>{{ __('Processing fee') }}</flux:label>
-                        <flux:description>{{ __('An extra fee added to the total at checkout to help cover card processing costs. Not itself taxed.') }}</flux:description>
-                        <flux:checkbox wire:model.live="processingFeeEnabled" :label="__('Charge a processing fee')" />
-                        @if ($processingFeeEnabled)
-                            <div class="mt-2 max-w-40">
-                                <flux:input type="number" step="0.01" min="0" max="100" wire:model="processingFeePercent" placeholder="3.50" />
+                    </section>
+
+                    {{-- Tax & fees --}}
+                    <section class="space-y-4 px-6 py-5">
+                        <div>
+                            <flux:heading size="sm">{{ __('Tax & fees') }}</flux:heading>
+                            <flux:text class="text-xs">{{ __('What is added at checkout, and what the platform collects.') }}</flux:text>
+                        </div>
+                        <div class="grid gap-4 sm:grid-cols-2">
+                            <flux:field>
+                                <flux:label>{{ __('Sales tax rate (%)') }}</flux:label>
+                                <flux:input type="number" step="0.01" min="0" max="100" wire:model="taxRatePercent" />
+                                <flux:description>{{ __('Applied to taxable products. Use 0 if tax is handled separately.') }}</flux:description>
+                                <flux:error name="taxRatePercent" />
+                            </flux:field>
+                            <flux:field>
+                                <flux:label>{{ __('Processing fee') }}</flux:label>
+                                <div class="flex items-center gap-3">
+                                    <flux:checkbox wire:model.live="processingFeeEnabled" :label="__('Charge')" />
+                                    @if ($processingFeeEnabled)
+                                        <div class="w-28">
+                                            <flux:input type="number" step="0.01" min="0" max="100" wire:model="processingFeePercent" placeholder="3.50" :aria-label="__('Processing fee percentage')">
+                                                <x-slot name="iconTrailing"><span class="text-xs text-zinc-400">%</span></x-slot>
+                                            </flux:input>
+                                        </div>
+                                    @endif
+                                </div>
+                                <flux:description>{{ __('Helps cover card costs. Not itself taxed.') }}</flux:description>
                                 <flux:error name="processingFeePercent" />
-                            </div>
-                        @endif
-                    </flux:field>
-                    <flux:field class="sm:col-span-2">
-                        <flux:label>{{ __('Storefront path') }}</flux:label>
-                        <flux:radio.group wire:model="checkoutPath" variant="cards" class="max-sm:flex-col">
-                            @foreach (StorePath::cases() as $option)
-                                <flux:radio :value="$option->value" :label="__($option->label())" :description="__($option->description())" />
-                            @endforeach
-                        </flux:radio.group>
-                        <flux:error name="checkoutPath" />
-                    </flux:field>
-                    <flux:field class="sm:col-span-2">
-                        <flux:label>{{ __('Required selections at checkout') }}</flux:label>
-                        <flux:description>{{ __('Customers must choose one before completing their order. Only takes effect if the store offers products in that category.') }}</flux:description>
-                        <div class="mt-1 space-y-2">
-                            <flux:checkbox wire:model="requiresContainer" :label="__('Require a cremation container selection')" />
-                            <flux:checkbox wire:model="requiresUrn" :label="__('Require an urn selection')" />
+                            </flux:field>
                         </div>
-                    </flux:field>
-                    <div class="flex justify-end sm:col-span-2">
-                        <flux:button type="submit" variant="primary">{{ __('Save') }}</flux:button>
+                        <flux:field>
+                            <flux:label>{{ __('Platform fee') }}</flux:label>
+                            <flux:radio.group wire:model.live="platformFeeModel" variant="cards" class="grid! gap-3 sm:grid-cols-2">
+                                @foreach (PlatformFeeModel::cases() as $option)
+                                    <flux:radio :value="$option->value" :label="__($option->label())" :description="__($option->description())" />
+                                @endforeach
+                            </flux:radio.group>
+                            <flux:description>{{ __('Per-order fees are collected through Stripe and never charged on sales tax or the processing fee.') }}</flux:description>
+                            <flux:error name="platformFeeModel" />
+                        </flux:field>
+                        @if ($platformFeeModel === PlatformFeeModel::Subscription->value)
+                            <div class="grid gap-4 sm:grid-cols-2">
+                                <flux:field>
+                                    <flux:label>{{ __('Monthly amount ($)') }}</flux:label>
+                                    <flux:input type="number" step="0.01" min="1" max="100000" wire:model="subscriptionMonthly" />
+                                    <flux:description>{{ __('Changes to an active subscription apply from the next bill.') }}</flux:description>
+                                    <flux:error name="subscriptionMonthly" />
+                                </flux:field>
+                                <div class="text-sm">
+                                    <p class="font-medium text-zinc-800 dark:text-zinc-100">{{ __('Billing status') }}</p>
+                                    @if ($currentStore->isSubscriptionPastDue())
+                                        <flux:badge color="red" class="mt-2">{{ __('Past due') }}</flux:badge>
+                                        <p class="mt-1 text-xs text-zinc-500">{{ __('Stripe is retrying the payment. The store keeps selling in the meantime.') }}</p>
+                                    @elseif ($currentStore->hasLiveSubscription())
+                                        <flux:badge color="green" class="mt-2">{{ __('Active') }}</flux:badge>
+                                    @else
+                                        <flux:badge color="amber" class="mt-2">{{ __('Not set up') }}</flux:badge>
+                                        <p class="mt-1 text-xs text-zinc-500">{{ __('The store owner starts billing from Billing in their staff portal.') }}</p>
+                                    @endif
+                                </div>
+                            </div>
+                        @elseif ($platformFeeModel === PlatformFeeModel::FlatPerOrder->value)
+                            <flux:field class="sm:max-w-xs">
+                                <flux:label>{{ __('Fee per order ($)') }}</flux:label>
+                                <flux:input type="number" step="0.01" min="0" max="10000" wire:model="platformFeeFlat" />
+                                <flux:description>{{ __('Capped at the order subtotal.') }}</flux:description>
+                                <flux:error name="platformFeeFlat" />
+                            </flux:field>
+                        @elseif ($platformFeeModel !== PlatformFeeModel::None->value)
+                            <flux:field class="sm:max-w-xs">
+                                <flux:label>{{ __('Fee percentage (%)') }}</flux:label>
+                                <flux:input type="number" step="0.01" min="0" max="100" wire:model="platformFeePercent" />
+                                <flux:description>{{ __('Of the order subtotal, before tax and the processing fee.') }}</flux:description>
+                                <flux:error name="platformFeePercent" />
+                            </flux:field>
+                        @endif
+                    </section>
+
+                    <div class="flex justify-end rounded-b-xl bg-zinc-50 px-6 py-4 dark:bg-zinc-800/60">
+                        <flux:button type="submit" variant="primary">{{ __('Save changes') }}</flux:button>
                     </div>
                 </form>
             </div>

@@ -27,8 +27,9 @@ class TreasuredMemoriesDemoSeeder extends Seeder
                 'name' => 'Chicagoland Cremation Care',
                 'status' => StoreStatus::Active,
                 'contact_name' => 'Morgan Reyes',
-                'contact_email' => 'info@chicagolandcremationcare.test',
+                'contact_email' => 'morgan@chicagolandcremationcare.test',
                 'contact_phone' => '312-555-0142',
+                'general_email' => 'info@chicagolandcremationcare.test',
                 'timezone' => 'America/Chicago',
                 'platform_fee_bps' => 500,
                 'tax_rate_bps' => 1025, // 10.25% — Chicago's combined sales tax rate.

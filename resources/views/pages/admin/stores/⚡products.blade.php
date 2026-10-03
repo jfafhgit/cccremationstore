@@ -105,6 +105,11 @@ new class extends Component
 
     public string $newVariantPrice = '0.00';
 
+    public string $newVariantDescription = '';
+
+    /** The option being edited in the option form, or null when adding a new one. */
+    public ?int $editingVariantId = null;
+
     /** @var array<string, string> the selected ProductSortMode value per category, for the "Sort by" selects. */
     public array $sortModeChoice = [];
 
@@ -206,7 +211,7 @@ new class extends Component
 
     public function newProduct(?string $category = null): void
     {
-        $this->reset(['editingProductId', 'formName', 'formDescription', 'formIncludedItems', 'formPrice', 'formTaxableAmount', 'formPerUnitPrice', 'formPerUnitLabel', 'formImage', 'existingImagePath', 'newVariantName', 'newVariantPrice', 'formIncludedProducts', 'formContainerAllowance', 'formUrnAllowance', 'formHideOptionsBelowAllowance', 'formLocationPrices']);
+        $this->reset(['editingProductId', 'formName', 'formDescription', 'formIncludedItems', 'formPrice', 'formTaxableAmount', 'formPerUnitPrice', 'formPerUnitLabel', 'formImage', 'existingImagePath', 'newVariantName', 'newVariantPrice', 'newVariantDescription', 'editingVariantId', 'formIncludedProducts', 'formContainerAllowance', 'formUrnAllowance', 'formHideOptionsBelowAllowance', 'formLocationPrices']);
         $this->formCategory = $category ?? ProductCategory::Package->value;
         $this->formIsTaxable = true;
         $this->formIsRequired = false;
@@ -254,6 +259,7 @@ new class extends Component
         $this->formAvailableForPreNeed = $product->available_for_pre_need;
         $this->formImage = null;
         $this->existingImagePath = $product->image_path;
+        $this->resetVariantForm();
         $this->resetValidation();
 
         Flux::modal('product-form')->show();
@@ -295,7 +301,7 @@ new class extends Component
             ProductCategory::Container->value,
             ProductCategory::Urn->value,
         ], true);
-        $hasPerUnitPrice = ! $isSlotCategory && trim($this->formPerUnitPrice) !== '';
+        $hasPerUnitPrice = ! $isSlotCategory && $validated['formCategory'] !== ProductCategory::Choice->value && trim($this->formPerUnitPrice) !== '';
 
         $taxableAmountCents = $isPackage ? (int) round(((float) $this->formTaxableAmount) * 100) : null;
 
@@ -372,7 +378,6 @@ new class extends Component
         return $this->currentStore->products()
             ->whereIn('category', [
                 ProductCategory::Addon->value,
-                ProductCategory::Service->value,
                 ProductCategory::Keepsake->value,
             ])
             ->orderBy('category')
@@ -441,19 +446,56 @@ new class extends Component
             return;
         }
 
-        ProductVariant::create([
-            'product_id' => $this->editingProductId,
-            'name' => $this->newVariantName,
-            'price_delta_cents' => (int) round(((float) $this->newVariantPrice) * 100),
-        ]);
+        $this->validate(
+            ['newVariantDescription' => ['nullable', 'string', 'max:2000']],
+            attributes: ['newVariantDescription' => 'option description'],
+        );
 
-        $this->newVariantName = '';
-        $this->newVariantPrice = '0.00';
+        $attributes = [
+            'name' => $this->newVariantName,
+            'description' => trim($this->newVariantDescription) ?: null,
+            'price_delta_cents' => (int) round(((float) $this->newVariantPrice) * 100),
+        ];
+
+        if ($this->editingVariantId) {
+            ProductVariant::whereKey($this->editingVariantId)->where('product_id', $this->editingProductId)->update($attributes);
+        } else {
+            ProductVariant::create(['product_id' => $this->editingProductId, ...$attributes]);
+        }
+
+        $this->resetVariantForm();
+    }
+
+    /**
+     * Load an existing option into the option form so it can be changed.
+     */
+    public function editVariant(int $variantId): void
+    {
+        $variant = ProductVariant::whereKey($variantId)->where('product_id', $this->editingProductId)->first();
+
+        if (! $variant) {
+            return;
+        }
+
+        $this->editingVariantId = $variant->id;
+        $this->newVariantName = $variant->name;
+        $this->newVariantDescription = $variant->description ?? '';
+        $this->newVariantPrice = number_format($variant->price_delta_cents / 100, 2, '.', '');
+    }
+
+    public function resetVariantForm(): void
+    {
+        $this->reset(['editingVariantId', 'newVariantName', 'newVariantPrice', 'newVariantDescription']);
+        $this->resetValidation('newVariantDescription');
     }
 
     public function removeVariant(int $variantId): void
     {
         ProductVariant::whereKey($variantId)->where('product_id', $this->editingProductId)->delete();
+
+        if ($this->editingVariantId === $variantId) {
+            $this->resetVariantForm();
+        }
     }
 
     public function editingVariants(): Collection
@@ -479,7 +521,7 @@ new class extends Component
         @php($isCustomSort = $currentStore->productSortMode($category) === ProductSortMode::Custom)
         <div class="mt-8">
             <div class="flex flex-wrap items-center justify-between gap-2">
-                <flux:heading size="lg">{{ $category->label() }}s</flux:heading>
+                <flux:heading size="lg">{{ $category->pluralLabel() }}</flux:heading>
                 <div class="flex items-center gap-2">
                     <flux:select size="sm" wire:model.live="sortModeChoice.{{ $category->value }}" class="w-44">
                         @foreach (ProductSortMode::cases() as $mode)
@@ -543,7 +585,9 @@ new class extends Component
                                     @endif
                                 </div>
                                 @if ($product->variants->isNotEmpty())
-                                    <p class="mt-1 text-[11px] text-zinc-400">{{ __(':count variants', ['count' => $product->variants->count()]) }}</p>
+                                    <p class="mt-1 text-[11px] text-zinc-400">{{ $product->category === ProductCategory::Choice
+                                        ? __(':count options (choose one)', ['count' => $product->variants->count()])
+                                        : __(':count variants', ['count' => $product->variants->count()]) }}</p>
                                 @endif
                                 <div class="mt-2 flex flex-wrap gap-x-2 gap-y-1">
                                     <button type="button" class="text-xs text-zinc-500 underline hover:text-brand-700 dark:text-zinc-400" wire:click="editProduct({{ $product->id }})">{{ __('Edit') }}</button>
@@ -596,12 +640,12 @@ new class extends Component
             </flux:field>
 
             <flux:field>
-                <flux:label>{{ trim($formPerUnitPrice) !== '' && ! in_array($formCategory, ['package', 'container', 'urn'], true) ? __('Base price (USD, charged once)') : __('Price (USD)') }}</flux:label>
+                <flux:label>{{ trim($formPerUnitPrice) !== '' && ! in_array($formCategory, ['package', 'container', 'urn', 'choice'], true) ? __('Base price (USD, charged once)') : __('Price (USD)') }}</flux:label>
                 <flux:input type="number" step="0.01" min="0" wire:model.live.debounce.400ms="formPrice" />
                 <flux:error name="formPrice" />
             </flux:field>
 
-            @unless (in_array($formCategory, ['package', 'container', 'urn'], true))
+            @unless (in_array($formCategory, ['package', 'container', 'urn', 'choice'], true))
                 <div class="grid grid-cols-2 gap-3">
                     <flux:field>
                         <flux:label>{{ __('Additional price per unit (USD)') }}</flux:label>
@@ -716,14 +760,55 @@ new class extends Component
                     <flux:checkbox wire:model="formIsTaxable" :label="__('Taxable')" />
                 @endunless
                 @unless (in_array($formCategory, ['package', 'container', 'urn'], true))
-                    <flux:checkbox wire:model="formIsRequired" :label="__('Pre-selected (customer cannot remove)')" />
+                    <flux:checkbox wire:model="formIsRequired" :label="$formCategory === ProductCategory::Choice->value ? __('Required (customer must choose an option)') : __('Pre-selected (customer cannot remove)')" />
                 @endunless
-                <flux:checkbox wire:model="formAllowMultipleQuantity" :label="__('Allow quantity > 1')" />
+                @unless ($formCategory === ProductCategory::Choice->value)
+                    <flux:checkbox wire:model="formAllowMultipleQuantity" :label="__('Allow quantity > 1')" />
+                @endunless
                 <flux:checkbox wire:model="formAvailableForImmediate" :label="__('Available for immediate need')" />
                 <flux:checkbox wire:model="formAvailableForPreNeed" :label="__('Available for pre-need planning')" />
             </div>
 
-            @if ($editingProductId)
+            @if ($formCategory === ProductCategory::Choice->value)
+                <div class="border-t border-zinc-100 pt-4 dark:border-zinc-700">
+                    <flux:heading size="sm" class="text-zinc-500">{{ __('Options (customer chooses one)') }}</flux:heading>
+                    <p class="mt-1 text-xs text-zinc-500">{{ __('E.g. pick up, ship, or courier delivery. Each option\'s price is added to the price above, so set that to 0 to price each option on its own. Shown at the bottom of the Add-ons & Services step, once it has at least one option.') }}</p>
+                    @if ($editingProductId)
+                        <ul class="mt-2 space-y-1">
+                            @foreach ($this->editingVariants() as $variant)
+                                <li @class(['flex items-start justify-between gap-3 text-sm', 'rounded bg-zinc-50 dark:bg-zinc-700/40' => $editingVariantId === $variant->id]) wire:key="option-{{ $variant->id }}">
+                                    <div class="min-w-0">
+                                        <span>{{ $variant->name }} <span class="text-zinc-500">(${{ number_format(((float) $formPrice * 100 + $variant->price_delta_cents) / 100, 2) }})</span></span>
+                                        @if ($variant->description)
+                                            <p class="truncate text-xs text-zinc-400">{{ $variant->description }}</p>
+                                        @endif
+                                    </div>
+                                    <div class="flex shrink-0 gap-2">
+                                        <button type="button" class="text-xs text-zinc-400 underline hover:text-brand-700" wire:click="editVariant({{ $variant->id }})">{{ __('Edit') }}</button>
+                                        <button type="button" class="text-xs text-zinc-400 underline hover:text-red-600" wire:click="removeVariant({{ $variant->id }})">{{ __('Remove') }}</button>
+                                    </div>
+                                </li>
+                            @endforeach
+                        </ul>
+                        <div class="mt-2 space-y-2">
+                            <div class="flex gap-2">
+                                <flux:input size="sm" wire:model="newVariantName" placeholder="{{ __('Option name') }}" />
+                                <flux:input size="sm" type="number" step="0.01" wire:model="newVariantPrice" placeholder="{{ __('Price') }}" class="w-28" :aria-label="__('Option price')" />
+                            </div>
+                            <flux:textarea size="sm" rows="2" wire:model="newVariantDescription" placeholder="{{ __('Description (optional), shown when the customer clicks Show detail') }}" :aria-label="__('Option description')" />
+                            <flux:error name="newVariantDescription" />
+                            <div class="flex justify-end gap-2">
+                                @if ($editingVariantId)
+                                    <flux:button size="sm" type="button" variant="ghost" wire:click="resetVariantForm">{{ __('Cancel') }}</flux:button>
+                                @endif
+                                <flux:button size="sm" type="button" wire:click="addVariant">{{ $editingVariantId ? __('Save option') : __('Add option') }}</flux:button>
+                            </div>
+                        </div>
+                    @else
+                        <p class="mt-2 text-xs text-zinc-400">{{ __('Save this product first, then edit it to add options.') }}</p>
+                    @endif
+                </div>
+            @elseif ($editingProductId)
                 <div class="border-t border-zinc-100 pt-4 dark:border-zinc-700">
                     <flux:heading size="sm" class="text-zinc-500">{{ __('Variants (e.g. size, finish)') }}</flux:heading>
                     <ul class="mt-2 space-y-1">

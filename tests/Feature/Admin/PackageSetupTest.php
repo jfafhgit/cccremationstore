@@ -11,7 +11,7 @@ beforeEach(function () {
 
     $this->store = Store::factory()->create();
     $this->package = Product::factory()->for($this->store)->create(['price_cents' => 300000, 'taxable_amount_cents' => 0]);
-    $this->certificates = Product::factory()->for($this->store)->category(ProductCategory::Service)->create();
+    $this->certificates = Product::factory()->for($this->store)->category(ProductCategory::Addon)->create();
     $this->keepsake = Product::factory()->for($this->store)->category(ProductCategory::Keepsake)->create();
 });
 
