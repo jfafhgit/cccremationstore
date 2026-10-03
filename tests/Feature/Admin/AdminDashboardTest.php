@@ -388,3 +388,17 @@ test('an admin can point a store at its own vital statistics form', function () 
 
     expect($store->fresh()->vital_statistics_url)->toBe('https://riverside.example/vital-statistics');
 });
+
+test('an admin can set the funeral home website', function () {
+    $store = Store::factory()->create();
+
+    Livewire::test('pages::admin.stores.show', ['store' => $store])
+        ->set('websiteUrl', 'riverside')
+        ->call('save')
+        ->assertHasErrors('websiteUrl')
+        ->set('websiteUrl', 'https://riverside.example')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($store->fresh()->website_url)->toBe('https://riverside.example');
+});

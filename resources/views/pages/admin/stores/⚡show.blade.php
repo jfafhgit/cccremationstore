@@ -55,6 +55,9 @@ new class extends Component
     #[Validate('nullable|email|max:255')]
     public string $generalEmail = '';
 
+    /** The funeral home's own website, linked from the storefront header. */
+    public string $websiteUrl = '';
+
     #[Validate('nullable|string|max:30')]
     public string $contactPhone = '';
 
@@ -119,6 +122,7 @@ new class extends Component
         $this->contactEmail = $store->contact_email ?? '';
         $this->contactPhone = $store->contact_phone ?? '';
         $this->generalEmail = $store->general_email ?? '';
+        $this->websiteUrl = $store->website_url ?? '';
         $this->timezone = $store->timezone;
         $this->brandPrimaryColor = $store->brand_primary_color ?? '';
         $this->platformFeeModel = $store->platform_fee_model->value;
@@ -149,6 +153,7 @@ new class extends Component
             'contactEmail' => ['nullable', 'email', 'max:255'],
             'contactPhone' => ['nullable', 'string', 'max:30'],
             'generalEmail' => ['nullable', 'email', 'max:255'],
+            'websiteUrl' => ['nullable', 'url:http,https', 'max:2048'],
             'timezone' => ['required', 'string', 'max:255'],
             'brandPrimaryColor' => ['nullable', 'string', 'regex:'.Store::BRAND_COLOR_PATTERN],
             'generalPriceListFile' => ['nullable', 'file', 'mimes:pdf', 'mimetypes:application/pdf', 'max:10240'],
@@ -177,6 +182,7 @@ new class extends Component
             'contact_email' => $validated['contactEmail'] ?: null,
             'contact_phone' => $validated['contactPhone'] ?: null,
             'general_email' => $validated['generalEmail'] ?: null,
+            'website_url' => $validated['websiteUrl'] ?: null,
             'timezone' => $validated['timezone'],
             'brand_primary_color' => $validated['brandPrimaryColor'] ?: null,
             'platform_fee_model' => PlatformFeeModel::from($validated['platformFeeModel']),
@@ -560,6 +566,12 @@ new class extends Component
                                 <flux:input type="email" wire:model="generalEmail" placeholder="info@example.com" />
                                 <flux:description>{{ __('Family replies go here, and it gets new order alerts along with staff logins.') }}</flux:description>
                                 <flux:error name="generalEmail" />
+                            </flux:field>
+                            <flux:field class="sm:col-span-2">
+                                <flux:label>{{ __('Funeral home website') }}</flux:label>
+                                <flux:input type="url" wire:model="websiteUrl" placeholder="https://www.example.com" />
+                                <flux:description>{{ __('Linked from the storefront header, and offered to families once they finish their Vital Statistics. Not shown when the store is embedded on that site.') }}</flux:description>
+                                <flux:error name="websiteUrl" />
                             </flux:field>
                         </div>
                     </section>

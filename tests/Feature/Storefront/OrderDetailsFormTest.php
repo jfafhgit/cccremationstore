@@ -234,3 +234,21 @@ describe('a store with its own vital statistics form', function () {
         expect($this->order->detail()->exists())->toBeFalse();
     });
 });
+
+test('once submitted, the family is offered a way back to the funeral home website', function () {
+    $this->store->update(['website_url' => 'https://riverside.example']);
+
+    vitalStatisticsForm($this->order)
+        ->assertDontSee('Go back to main site')
+        ->call('submit')
+        ->assertSee('Go back to main site')
+        ->assertSeeHtml('href="https://riverside.example"');
+});
+
+test('there is no way back to a website the store has not set', function () {
+    $this->store->update(['website_url' => null]);
+
+    vitalStatisticsForm($this->order)
+        ->call('submit')
+        ->assertDontSee('Go back to main site');
+});

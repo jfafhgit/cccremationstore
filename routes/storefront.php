@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Storefront\EmbedSessionCheckController;
 use Illuminate\Support\Facades\Route;
 
 Route::livewire('/', 'pages::storefront.checkout')->name('storefront.start');
@@ -7,6 +8,7 @@ Route::livewire('/', 'pages::storefront.checkout')->name('storefront.start');
 // A frameless variant of the same wizard, meant to be embedded on a funeral
 // home's own website via the embed.js snippet (see resources/js/embed.js).
 Route::livewire('embed', 'pages::storefront.embed')->name('storefront.embed');
+Route::get('embed/session-check', EmbedSessionCheckController::class)->name('storefront.embed.session-check');
 
 // This signed link is also Stripe's payment return_url, and Stripe appends its
 // own query parameters when it redirects back after e.g. a bank authorization.

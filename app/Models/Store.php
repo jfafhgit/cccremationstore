@@ -35,6 +35,7 @@ use Illuminate\Support\Facades\Storage;
  * @property string|null $contact_email
  * @property string|null $contact_phone
  * @property string|null $general_email
+ * @property string|null $website_url
  * @property string $timezone
  * @property string|null $brand_primary_color
  * @property string|null $brand_logo_path
@@ -90,6 +91,7 @@ class Store extends Model
         'contact_email',
         'contact_phone',
         'general_email',
+        'website_url',
         'timezone',
         'brand_primary_color',
         'brand_logo_path',

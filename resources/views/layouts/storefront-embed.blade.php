@@ -25,7 +25,24 @@
              children's margins inside it). No min-h-screen on the body for
              the same reason: it would pin the height to the iframe's. --}}
         <div id="tm-embed-content" class="flow-root">
-            {{ $slot }}
+            {{-- Shown in place of the store when the browser won't keep our
+                 session cookie inside another site's page (see the script below). --}}
+            <div id="tm-cookie-fallback" hidden class="mx-auto my-10 max-w-xl px-4 sm:px-6">
+                <div class="rounded-2xl border border-brand-100 bg-white p-6 text-center shadow-sm sm:p-8">
+                    <flux:heading size="lg" class="font-serif">{{ __('Please open our store in its own window') }}</flux:heading>
+                    <flux:text class="mt-2">{{ __('Your browser\'s privacy settings don\'t let our store save your selections while it\'s shown inside this page. Everything works normally in a new window.') }}</flux:text>
+                    <a href="{{ route('storefront.start', ['store' => $store?->slug]) }}" target="_blank" rel="noopener" class="mt-5 inline-block rounded-lg bg-store px-5 py-3 text-sm font-semibold text-store-foreground transition hover:bg-store-hover">
+                        {{ __('Open our store in a new window') }}
+                    </a>
+                    @if ($store?->contact_phone)
+                        <flux:text class="mt-4 text-xs">{{ __('Or call us at :phone.', ['phone' => $store->contact_phone]) }}</flux:text>
+                    @endif
+                </div>
+            </div>
+
+            <div id="tm-embed-app">
+                {{ $slot }}
+            </div>
 
             @if ($store?->generalPriceListUrl())
                 <p class="pb-4 text-center text-xs text-zinc-500">
@@ -101,6 +118,38 @@
                 window.addEventListener('load', reportHeight);
                 observe();
                 reportHeight();
+            })();
+
+            // Some browsers (notably Safari) block cookies for a site shown in
+            // another site's iframe, and the cart can't work without one. Ask
+            // the server which session this browser actually sent back: a
+            // different token than the page was rendered with means the
+            // cookie was dropped, so offer the store in its own window.
+            (function () {
+                if (window.self === window.top || !window.fetch) {
+                    return;
+                }
+
+                var renderedToken = @js(csrf_token());
+
+                fetch(@js(route('storefront.embed.session-check', ['store' => $store?->slug])), {
+                    credentials: 'same-origin',
+                    headers: { Accept: 'application/json' },
+                })
+                    .then(function (response) {
+                        return response.ok ? response.json() : null;
+                    })
+                    .then(function (data) {
+                        if (!data || data.token === renderedToken) {
+                            return;
+                        }
+
+                        document.getElementById('tm-cookie-fallback').hidden = false;
+                        document.getElementById('tm-embed-app').hidden = true;
+                    })
+                    .catch(function () {
+                        // A network hiccup isn't evidence of blocked cookies.
+                    });
             })();
         </script>
     </body>

@@ -366,3 +366,33 @@ test('starting over from the embedded cart stays inside the embed', function () 
         ->call('startOver')
         ->assertRedirect(route('storefront.embed', ['store' => $this->store->slug]));
 });
+
+test('the embed session check reports the token of the session the browser sent', function () {
+    $this->withSession(['_token' => 'kept-session-token'])
+        ->getJson(route('storefront.embed.session-check', ['store' => $this->store->slug]))
+        ->assertOk()
+        ->assertExactJson(['token' => 'kept-session-token'])
+        ->assertHeader('Cache-Control', 'no-store, private');
+});
+
+test('the embedded storefront can fall back to its own window when cookies are blocked', function () {
+    $this->get(route('storefront.embed', ['store' => $this->store->slug]))
+        ->assertOk()
+        ->assertSeeHtml('id="tm-cookie-fallback" hidden')
+        ->assertSee('Open our store in a new window')
+        ->assertSeeHtml('href="'.route('storefront.start', ['store' => $this->store->slug]).'" target="_blank"')
+        ->assertSee('\/embed\/session-check', escape: false);
+});
+
+test('the storefront header links back to the funeral home website, but the embed does not', function () {
+    $this->store->update(['website_url' => 'https://riverside.example']);
+
+    $this->get(route('storefront.start', ['store' => $this->store->slug]))
+        ->assertOk()
+        ->assertSee('Back to main site')
+        ->assertSeeHtml('href="https://riverside.example"');
+
+    $this->get(route('storefront.embed', ['store' => $this->store->slug]))
+        ->assertOk()
+        ->assertDontSee('Back to main site');
+});

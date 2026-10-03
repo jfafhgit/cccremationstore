@@ -559,7 +559,15 @@ new #[Layout('layouts::storefront')] class extends Component
                 <flux:icon.check-circle class="mx-auto size-8 text-store" />
                 <p class="mt-3 font-medium text-brand-900">{{ __('Thank you — your Vital Statistics have been sent to :store.', ['store' => $currentOrder->store->name]) }}</p>
                 <p class="mt-1 text-sm text-zinc-500">{{ __('A member of our staff will be in touch if anything further is needed.') }}</p>
-                <flux:button variant="ghost" class="mt-4" wire:click="$set('submitted', false)">{{ __('Make changes') }}</flux:button>
+                <div class="mt-4 flex flex-wrap items-center justify-center gap-2">
+                    @if ($currentOrder->store->website_url)
+                        {{-- target="_top" so it leaves the iframe too when the store is embedded. --}}
+                        <flux:button :href="$currentOrder->store->website_url" target="_top" variant="primary" class="!bg-store hover:!bg-store-hover !text-store-foreground">
+                            {{ __('Go back to main site') }}
+                        </flux:button>
+                    @endif
+                    <flux:button variant="ghost" wire:click="$set('submitted', false)">{{ __('Make changes') }}</flux:button>
+                </div>
             </div>
         @else
             <form wire:submit="submit" class="mt-6 space-y-6">

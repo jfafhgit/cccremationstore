@@ -29,6 +29,14 @@
                     </a>
 
                     <div class="flex items-center gap-4">
+                        @if ($store?->website_url)
+                            <a href="{{ $store->website_url }}" target="_top" class="flex items-center gap-1 text-sm text-zinc-600 hover:text-brand-700">
+                                <flux:icon.arrow-left class="size-4" />
+                                <span class="hidden sm:inline">{{ __('Back to main site') }}</span>
+                                <span class="sm:hidden">{{ __('Main site') }}</span>
+                            </a>
+                        @endif
+
                         @if ($store?->contact_phone)
                             <a href="tel:{{ $store->contact_phone }}" class="hidden text-sm text-zinc-600 hover:text-brand-700 sm:block">
                                 {{ __('Need help?') }} <span class="font-medium">{{ $store->contact_phone }}</span>
