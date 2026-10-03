@@ -146,8 +146,16 @@ new class extends Component
         </div>
     </div>
 
+    @if ($currentOrder->paid_at && ! $currentStore->usesExternalVitalStatistics())
+        <div class="mt-6 flex justify-end">
+            <flux:button size="sm" :href="$currentOrder->detailsUrl()" target="_blank" icon:trailing="arrow-top-right-on-square">
+                {{ __('Open Vital Statistics form') }}
+            </flux:button>
+        </div>
+    @endif
+
     @if ($currentOrder->detail)
-        <x-vital-statistics :detail="$currentOrder->detail" :revealed-ssn="$revealedSsn" class="mt-6 dark:bg-zinc-800" />
+        <x-vital-statistics :detail="$currentOrder->detail" :revealed-ssn="$revealedSsn" class="mt-3 dark:bg-zinc-800" />
     @endif
 
     <div class="mt-6 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-800">

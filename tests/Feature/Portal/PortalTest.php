@@ -108,6 +108,30 @@ test('staff see Vital Statistics with the Social Security number masked until th
         ->assertSee('123-45-6789');
 });
 
+test('staff can open the Vital Statistics form from a paid order, even after it was submitted', function () {
+    Auth::guard('store')->login($this->staff);
+    $order = Order::factory()->create(['store_id' => $this->store->id, 'paid_at' => now()]);
+    OrderDetail::factory()->for($order)->submitted()->create();
+
+    Livewire::test('pages::portal.order-detail', ['order' => $order->id])
+        ->assertSee('Open Vital Statistics form')
+        ->assertSee($order->detailsUrl(), escape: true);
+});
+
+test('the Vital Statistics form link is hidden for unpaid orders and stores using their own form', function () {
+    Auth::guard('store')->login($this->staff);
+    $unpaidOrder = Order::factory()->create(['store_id' => $this->store->id, 'paid_at' => null]);
+
+    Livewire::test('pages::portal.order-detail', ['order' => $unpaidOrder->id])
+        ->assertDontSee('Open Vital Statistics form');
+
+    $this->store->update(['vital_statistics_url' => 'https://example.com/vital-statistics']);
+    $paidOrder = Order::factory()->create(['store_id' => $this->store->id, 'paid_at' => now()]);
+
+    Livewire::test('pages::portal.order-detail', ['order' => $paidOrder->id])
+        ->assertDontSee('Open Vital Statistics form');
+});
+
 test('order items show their regular price with the package discount on its own line', function () {
     Auth::guard('store')->login($this->staff);
     $order = Order::factory()->create(['store_id' => $this->store->id, 'paid_at' => now()]);

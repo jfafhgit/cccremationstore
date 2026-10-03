@@ -131,10 +131,18 @@ new #[Layout('layouts::portal')] class extends Component
         </div>
     </div>
 
+    @if ($currentOrder->paid_at && ! $currentOrder->store->usesExternalVitalStatistics())
+        <div class="mt-6 flex justify-end">
+            <flux:button size="sm" :href="$currentOrder->detailsUrl()" target="_blank" icon:trailing="arrow-top-right-on-square">
+                {{ __('Open Vital Statistics form') }}
+            </flux:button>
+        </div>
+    @endif
+
     @if ($currentOrder->detail)
-        <x-vital-statistics :detail="$currentOrder->detail" :revealed-ssn="$revealedSsn" class="mt-6" />
+        <x-vital-statistics :detail="$currentOrder->detail" :revealed-ssn="$revealedSsn" class="mt-3" />
     @else
-        <div class="mt-6 rounded-xl border border-dashed border-zinc-200 p-5 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+        <div class="mt-3 rounded-xl border border-dashed border-zinc-200 p-5 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
             {{ $currentOrder->store->usesExternalVitalStatistics()
                 ? __('Vital Statistics are collected on the form on your website, so they are not shown here.')
                 : __("The family hasn't started the Vital Statistics form yet.") }}
