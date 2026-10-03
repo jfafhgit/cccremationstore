@@ -196,7 +196,6 @@ new class extends Component
 
         if ($this->timing) {
             $this->ensureBasePackage();
-            $this->cart()->ensureRequiredLines();
         }
 
         $this->syncFromCart();
@@ -397,7 +396,6 @@ new class extends Component
         $this->timing = $timing;
         $this->cart()->setTiming(OrderTiming::from($timing));
         $this->ensureBasePackage();
-        $this->cart()->ensureRequiredLines();
         $this->dispatch('cart-updated');
     }
 
@@ -545,7 +543,6 @@ new class extends Component
         }
 
         $this->ensureBasePackage();
-        $this->cart()->ensureRequiredLines();
         $this->preselectIncludedOptions();
         $this->syncFromCart();
 
@@ -579,7 +576,6 @@ new class extends Component
     public function goToAddons(): void
     {
         $this->ensureBasePackage();
-        $this->cart()->ensureRequiredLines();
 
         if (! $this->cart()->hasPackage()) {
             $this->addError('package', __('Please choose a package to continue.'));
@@ -598,6 +594,10 @@ new class extends Component
 
             return;
         }
+
+        $this->cart()->ensureRequiredLines();
+        $this->syncFromCart();
+        $this->dispatch('cart-updated');
 
         $this->step = 'addons';
     }
@@ -972,22 +972,24 @@ new class extends Component
                         @php($includedQty = $this->includedQuantity($product->id))
                         @php($isSelected = $qty > 0 || $includedQty > 0 || $product->is_required)
                         @php($canToggle = $this->canToggleExtra($product))
-                        {{-- Each card spans five rows of the shared grid (image, name, description, price, quantity) so those rows line up across cards even when some content is missing. --}}
+                        {{-- Each card spans four rows of the shared grid (name, description, price, quantity) so those rows line up across cards even when some content is missing. --}}
                         <div wire:key="extra-{{ $product->id }}" @class([
-                            'relative row-span-5 grid grid-rows-subgrid gap-0 overflow-hidden rounded-xl transition',
+                            'relative row-span-4 grid grid-rows-subgrid gap-0 overflow-hidden rounded-xl transition',
                             'border-2 border-brand-600 bg-brand-50 ring-2 ring-brand-600/30' => $isSelected,
                             'border border-zinc-200 hover:border-brand-300' => ! $isSelected,
                         ])>
                             @if ($canToggle)
                                 <button type="button" wire:click="toggleExtra({{ $product->id }})" class="absolute inset-0 z-10 rounded-xl focus-visible:outline-2 focus-visible:outline-brand-600" aria-pressed="{{ $isSelected ? 'true' : 'false' }}" aria-label="{{ $isSelected ? __('Remove :name', ['name' => $product->name]) : __('Select :name', ['name' => $product->name]) }}"></button>
                             @endif
-                            <x-product-image :src="$product->imageUrl()" :alt="$product->name" :category="$product->category->value" class="aspect-square w-full" />
-                            @if ($isSelected)
-                                <span class="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-store px-2 py-0.5 text-xs font-semibold text-store-foreground shadow">
-                                    <flux:icon.check class="size-3.5" />{{ __('Selected') }}
-                                </span>
-                            @endif
-                            <p class="px-3 pt-3 text-sm font-medium text-zinc-800">{{ $product->name }}</p>
+                            <div class="flex items-start justify-between gap-2 px-3 pt-3">
+                                <p class="text-sm font-medium text-zinc-800">{{ $product->name }}</p>
+                                @if ($isSelected)
+                                    <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-store text-store-foreground" title="{{ __('Selected') }}">
+                                        <flux:icon.check class="size-3.5" />
+                                        <span class="sr-only">{{ __('Selected') }}</span>
+                                    </span>
+                                @endif
+                            </div>
                             <p class="px-3 pt-1 text-xs text-zinc-500">{{ $product->description }}</p>
                             <div class="px-3 pt-1 pb-3">
                                 <p class="text-sm text-brand-700">{{ $includedQty > 0 ? $this->includedNote($product, $includedQty) : $product->priceLabel() }}</p>

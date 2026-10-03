@@ -313,6 +313,8 @@ test('required add-ons cannot be deselected', function () {
     Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
         ->call('selectTiming', 'immediate')
         ->call('selectPackage', $this->package->id)
+        ->call('goToContainers')
+        ->call('goToAddons')
         ->call('toggleExtra', $addon->id);
 
     expect((new Cart($this->store))->allLines()->has($addon->id.'-0'))->toBeTrue();

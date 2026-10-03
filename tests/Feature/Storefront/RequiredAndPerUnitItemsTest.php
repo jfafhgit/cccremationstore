@@ -61,9 +61,17 @@ test('the base fee is snapshotted on the order item', function () {
         ->and($order->subtotal_cents)->toBe(29500);
 });
 
-test('required items are pre-selected when the customer picks a timing', function () {
+test('required items are added to the cart only once the customer reaches the add-ons step', function () {
+    $package = Product::factory()->for($this->store)->category(ProductCategory::Package)->create();
+
     $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
-        ->call('selectTiming', 'immediate');
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $package->id)
+        ->call('goToContainers');
+
+    expect((new Cart($this->store))->allLines()->keys()->all())->not->toContain($this->certificates->id.'-0');
+
+    $component->call('goToAddons');
 
     expect((new Cart($this->store))->allLines()->keys()->all())->toContain($this->certificates->id.'-0');
 });
