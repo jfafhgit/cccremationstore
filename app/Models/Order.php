@@ -198,4 +198,15 @@ class Order extends Model
             'order' => $this,
         ]);
     }
+
+    /**
+     * Where the family fills in Vital Statistics: the funeral home's own
+     * form when it has one, otherwise ours.
+     */
+    public function vitalStatisticsUrl(): string
+    {
+        return $this->store->usesExternalVitalStatistics()
+            ? $this->store->vital_statistics_url
+            : $this->detailsUrl();
+    }
 }

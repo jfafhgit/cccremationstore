@@ -194,3 +194,28 @@ describe('the staff alert', function () {
             ->toContain('**Pat**');
     });
 });
+
+describe('a store with its own vital statistics form', function () {
+    beforeEach(function () {
+        $this->store->update(['vital_statistics_url' => 'https://riverside.example/vital-statistics']);
+    });
+
+    test('the family receipt links to that form', function () {
+        $html = (string) (new OrderPaidNotification($this->order->fresh()))->toMail($this->order)->render();
+
+        expect($html)
+            ->toContain('https://riverside.example/vital-statistics')
+            ->not->toContain(e($this->order->detailsUrl()))
+            ->not->toContain('this link doesn');
+    });
+
+    test('the staff alert does not promise a follow-up email', function () {
+        $staff = StoreUser::factory()->forStore($this->store)->create();
+
+        $html = (string) (new NewOrderNotification($this->order->fresh()))->toMail($staff)->render();
+
+        expect($html)
+            ->toContain('Vital Statistics form on your website')
+            ->not->toContain('once they submit it');
+    });
+});

@@ -39,6 +39,7 @@ use Illuminate\Support\Facades\Storage;
  * @property string|null $brand_primary_color
  * @property string|null $brand_logo_path
  * @property string|null $general_price_list_path
+ * @property string|null $vital_statistics_url
  * @property string|null $stripe_account_id
  * @property bool $stripe_details_submitted
  * @property bool $stripe_charges_enabled
@@ -93,6 +94,7 @@ class Store extends Model
         'brand_primary_color',
         'brand_logo_path',
         'general_price_list_path',
+        'vital_statistics_url',
         'platform_fee_bps',
         'platform_fee_model',
         'platform_fee_flat_cents',
@@ -240,6 +242,15 @@ class Store extends Model
         return $this->general_price_list_path
             ? Storage::disk('public')->url($this->general_price_list_path)
             : null;
+    }
+
+    /**
+     * Whether families fill in Vital Statistics on a form on the funeral
+     * home's own website instead of ours.
+     */
+    public function usesExternalVitalStatistics(): bool
+    {
+        return filled($this->vital_statistics_url);
     }
 
     /**

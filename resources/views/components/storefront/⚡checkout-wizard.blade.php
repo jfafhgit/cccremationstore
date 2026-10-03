@@ -767,7 +767,19 @@ new class extends Component
     }
 }; ?>
 
-<div class="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+{{-- A new step should start at its top: on our own page scroll back up to
+     it, and inside an embed let the layout ask the host page to do so. --}}
+<div
+    class="mx-auto max-w-5xl px-4 py-10 sm:px-6"
+    x-data
+    x-init="$watch('$wire.step', () => {
+        if (window.self !== window.top) {
+            window.dispatchEvent(new CustomEvent('tm-cremation-store:step-changed'));
+        } else if ($el.getBoundingClientRect().top < 0) {
+            $el.scrollIntoView({ behavior: 'smooth' });
+        }
+    })"
+>
     <nav class="mb-8 flex flex-wrap items-center justify-center gap-2 text-xs font-medium text-zinc-400" aria-label="{{ __('Checkout steps') }}">
         @foreach (['Timing & Package', 'Container & Urn', 'Add-ons & Services', 'Keepsakes', 'Your Information', 'Payment'] as $index => $label)
             <span class="flex items-center gap-2">

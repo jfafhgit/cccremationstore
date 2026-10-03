@@ -101,17 +101,30 @@
         }
 
         window.addEventListener('message', function (event) {
-            if (!event.data || event.data.type !== 'tm-cremation-store:resize') {
+            if (!event.data) {
                 return;
             }
 
             for (var j = 0; j < iframes.length; j++) {
-                // Only trust a height reported by one of *our own* iframes,
-                // never just because the message claims the right "type".
-                if (event.source === iframes[j].contentWindow) {
-                    iframes[j].style.height = Math.ceil(event.data.height) + 'px';
-                    break;
+                // Only trust messages from one of *our own* iframes, never
+                // just because the message claims the right "type".
+                if (event.source !== iframes[j].contentWindow) {
+                    continue;
                 }
+
+                if (event.data.type === 'tm-cremation-store:resize') {
+                    // The content's own height, so the frame shrinks on short
+                    // steps as well as growing on long ones.
+                    iframes[j].style.minHeight = '0';
+                    iframes[j].style.height = Math.ceil(event.data.height) + 'px';
+                } else if (event.data.type === 'tm-cremation-store:scroll-into-view'
+                    && iframes[j].getBoundingClientRect().top < 0) {
+                    // A new checkout step began, but the visitor is scrolled
+                    // past the top of the store; bring it back into view.
+                    iframes[j].scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+
+                break;
             }
         });
     }

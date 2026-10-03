@@ -49,6 +49,7 @@ class NewOrderNotification extends Notification implements ShouldQueue
                 'timing' => $order->timing?->staffLabel(),
                 'summary' => $this->orderSummary($order),
                 'portalUrl' => route('portal.order-detail', ['store' => $store->slug, 'order' => $order->id]),
+                'usesExternalForm' => $store->usesExternalVitalStatistics(),
             ]);
 
         if ($order->purchaser_email) {

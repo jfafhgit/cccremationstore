@@ -135,7 +135,9 @@ new #[Layout('layouts::portal')] class extends Component
         <x-vital-statistics :detail="$currentOrder->detail" :revealed-ssn="$revealedSsn" class="mt-6" />
     @else
         <div class="mt-6 rounded-xl border border-dashed border-zinc-200 p-5 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-            {{ __("The family hasn't started the Vital Statistics form yet.") }}
+            {{ $currentOrder->store->usesExternalVitalStatistics()
+                ? __('Vital Statistics are collected on the form on your website, so they are not shown here.')
+                : __("The family hasn't started the Vital Statistics form yet.") }}
         </div>
     @endif
 </div>

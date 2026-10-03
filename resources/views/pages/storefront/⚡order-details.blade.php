@@ -255,6 +255,11 @@ new #[Layout('layouts::storefront')] class extends Component
         return ! $this->currentOrder->paid_at && ! $this->isPaymentProcessing();
     }
 
+    public function usesExternalForm(): bool
+    {
+        return $this->currentOrder->store->usesExternalVitalStatistics();
+    }
+
     public function isImmediate(): bool
     {
         return $this->currentOrder->timing === OrderTiming::Immediate;
@@ -426,6 +431,9 @@ new #[Layout('layouts::storefront')] class extends Component
 
     private function persist(bool $submitting): void
     {
+        // Stores using their own form never show ours.
+        abort_if($this->usesExternalForm(), 404);
+
         $attributes = [
             'next_of_kin_name' => $this->nextOfKinName ?: null,
             'next_of_kin_relationship' => $this->nextOfKinRelationship ?: null,
@@ -517,11 +525,36 @@ new #[Layout('layouts::storefront')] class extends Component
                 @else
                     {{ __('Your payment for order :number is complete.', ['number' => $currentOrder->order_number]) }}
                 @endif
-                {{ __('Next, we need some information for official records, such as the death certificate. You can save your progress and come back to this page anytime using the link in your email.') }}
+                @if ($this->usesExternalForm())
+                    {{ __('Next, we need some information for official records, such as the death certificate.') }}
+                @else
+                    {{ __('Next, we need some information for official records, such as the death certificate. You can save your progress and come back to this page anytime using the link in your email.') }}
+                @endif
             </flux:subheading>
         </div>
 
-        @if ($submitted)
+        @if ($this->usesExternalForm())
+            @php($externalFormUrl = $currentOrder->store->vital_statistics_url)
+            <div class="mt-6 rounded-2xl border border-brand-200 bg-brand-50 p-6 text-center">
+                <p class="font-medium text-brand-900">{{ __('Please continue to the Vital Statistics form on :store\'s website.', ['store' => $currentOrder->store->name]) }}</p>
+                <p class="mt-1 text-sm text-zinc-500" data-redirect-note hidden>{{ __('Taking you there in a few seconds…') }}</p>
+                {{-- target="_top" so an embedded storefront opens the form in the
+                     full window instead of nesting their site inside the iframe. --}}
+                <flux:button :href="$externalFormUrl" target="_top" rel="noopener" variant="primary" class="mt-4 !bg-store hover:!bg-store-hover !text-store-foreground">
+                    {{ __('Continue to Vital Statistics form') }}
+                </flux:button>
+                <p class="mt-3 text-xs text-zinc-400">{{ __('The link is also in your confirmation email.') }}</p>
+            </div>
+            {{-- Redirect automatically on our own site. Inside an embed, browsers
+                 only let the frame take over the page from a click, so there
+                 the button above is the way through. --}}
+            <script>
+                if (window.self === window.top) {
+                    document.querySelector('[data-redirect-note]').hidden = false;
+                    setTimeout(() => window.location.assign(@js($externalFormUrl)), 3000);
+                }
+            </script>
+        @elseif ($submitted)
             <div class="mt-6 rounded-2xl border border-brand-200 bg-brand-50 p-6 text-center">
                 <flux:icon.check-circle class="mx-auto size-8 text-store" />
                 <p class="mt-3 font-medium text-brand-900">{{ __('Thank you — your Vital Statistics have been sent to :store.', ['store' => $currentOrder->store->name]) }}</p>

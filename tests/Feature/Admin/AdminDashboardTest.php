@@ -374,3 +374,17 @@ test('an admin can add and edit an option description on a choose-one item', fun
         ->and($option->fresh()->description)->toBeNull()
         ->and($option->fresh()->price_delta_cents)->toBe(7500);
 });
+
+test('an admin can point a store at its own vital statistics form', function () {
+    $store = Store::factory()->create();
+
+    Livewire::test('pages::admin.stores.show', ['store' => $store])
+        ->set('vitalStatisticsUrl', 'not a link')
+        ->call('save')
+        ->assertHasErrors('vitalStatisticsUrl')
+        ->set('vitalStatisticsUrl', 'https://riverside.example/vital-statistics')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($store->fresh()->vital_statistics_url)->toBe('https://riverside.example/vital-statistics');
+});

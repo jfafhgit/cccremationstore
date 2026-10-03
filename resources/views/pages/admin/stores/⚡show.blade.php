@@ -43,6 +43,9 @@ new class extends Component
 
     public bool $requiresUrn = false;
 
+    /** The funeral home's own Vital Statistics form, used instead of ours when set. */
+    public string $vitalStatisticsUrl = '';
+
     #[Validate('nullable|string|max:255')]
     public string $contactName = '';
 
@@ -111,6 +114,7 @@ new class extends Component
         $this->checkoutPath = $store->checkout_path->value;
         $this->requiresContainer = $store->requires_container;
         $this->requiresUrn = $store->requires_urn;
+        $this->vitalStatisticsUrl = $store->vital_statistics_url ?? '';
         $this->contactName = $store->contact_name ?? '';
         $this->contactEmail = $store->contact_email ?? '';
         $this->contactPhone = $store->contact_phone ?? '';
@@ -140,6 +144,7 @@ new class extends Component
             'checkoutPath' => ['required', Rule::enum(StorePath::class)],
             'requiresContainer' => ['boolean'],
             'requiresUrn' => ['boolean'],
+            'vitalStatisticsUrl' => ['nullable', 'url:http,https', 'max:2048'],
             'contactName' => ['nullable', 'string', 'max:255'],
             'contactEmail' => ['nullable', 'email', 'max:255'],
             'contactPhone' => ['nullable', 'string', 'max:30'],
@@ -167,6 +172,7 @@ new class extends Component
             'checkout_path' => StorePath::from($validated['checkoutPath']),
             'requires_container' => $validated['requiresContainer'],
             'requires_urn' => $validated['requiresUrn'],
+            'vital_statistics_url' => $validated['vitalStatisticsUrl'] ?: null,
             'contact_name' => $validated['contactName'] ?: null,
             'contact_email' => $validated['contactEmail'] ?: null,
             'contact_phone' => $validated['contactPhone'] ?: null,
@@ -656,6 +662,12 @@ new class extends Component
                                 <flux:checkbox wire:model="requiresUrn" :label="__('Urn')" />
                             </div>
                             <flux:description>{{ __('Customers must choose one to complete their order. Only applies if the store offers products in that category.') }}</flux:description>
+                        </flux:field>
+                        <flux:field>
+                            <flux:label>{{ __('Vital Statistics form (optional)') }}</flux:label>
+                            <flux:input type="url" wire:model="vitalStatisticsUrl" placeholder="https://www.example.com/vital-statistics" />
+                            <flux:description>{{ __('Leave blank to use our built-in form. If the funeral home already has a form on its website, enter its link: families are sent there after paying, and their receipt email links to it.') }}</flux:description>
+                            <flux:error name="vitalStatisticsUrl" />
                         </flux:field>
                     </section>
 

@@ -8,7 +8,11 @@ Your payment for {{ $deceasedName }}'s arrangements with {{ $storeName }} has be
 @endif
 
 <x-mail::panel>
+@if ($usesExternalForm)
+**One more step, when you're ready.** Please complete the Vital Statistics form on our website: the information we need for official records, such as the death certificate.
+@else
 **One more step, when you're ready.** Please complete the Vital Statistics form: the information we need for official records, such as the death certificate. You can save your progress and come back to it anytime — this link doesn't expire.
+@endif
 </x-mail::panel>
 
 <x-mail::button :url="$detailsUrl">

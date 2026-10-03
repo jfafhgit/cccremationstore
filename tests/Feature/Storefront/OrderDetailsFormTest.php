@@ -211,3 +211,26 @@ test('an order belonging to a different store cannot be opened', function () {
         ->assertDontSee('Rosalind')
         ->assertDontSee($orderFromOtherStore->order_number);
 });
+
+describe('a store with its own vital statistics form', function () {
+    beforeEach(function () {
+        $this->store->update(['vital_statistics_url' => 'https://riverside.example/vital-statistics']);
+    });
+
+    test('sends the family on to it instead of showing our form', function () {
+        vitalStatisticsForm($this->order)
+            ->assertSee('Continue to Vital Statistics form')
+            ->assertSeeHtml('href="https://riverside.example/vital-statistics"')
+            ->assertSeeHtml('target="_top"')
+            ->assertDontSee('Save and finish later');
+    });
+
+    test('does not accept our form', function () {
+        vitalStatisticsForm($this->order)
+            ->set('deceasedFirstName', 'Pat')
+            ->call('saveDraft')
+            ->assertNotFound();
+
+        expect($this->order->detail()->exists())->toBeFalse();
+    });
+});

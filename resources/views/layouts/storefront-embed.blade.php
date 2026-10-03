@@ -18,43 +18,88 @@
             }
         </style>
     </head>
-    <body class="min-h-screen bg-transparent text-zinc-900 antialiased">
-        {{ $slot }}
+    <body class="bg-transparent text-zinc-900 antialiased">
+        {{-- Everything the parent needs to make room for. The iframe's own
+             document can never measure shorter than the iframe currently is,
+             so the height is taken from this wrapper instead (flow-root keeps
+             children's margins inside it). No min-h-screen on the body for
+             the same reason: it would pin the height to the iframe's. --}}
+        <div id="tm-embed-content" class="flow-root">
+            {{ $slot }}
 
-        @if ($store?->generalPriceListUrl())
-            <p class="pb-4 text-center text-xs text-zinc-500">
-                <a href="{{ $store->generalPriceListUrl() }}" target="_blank" rel="noopener" class="underline hover:text-brand-700">{{ __('View our General Price List') }}</a>
-            </p>
-        @endif
+            @if ($store?->generalPriceListUrl())
+                <p class="pb-4 text-center text-xs text-zinc-500">
+                    <a href="{{ $store->generalPriceListUrl() }}" target="_blank" rel="noopener" class="underline hover:text-brand-700">{{ __('View our General Price List') }}</a>
+                </p>
+            @endif
+        </div>
 
         @fluxScripts
 
         {{-- Tells the parent page (via embed.js) how tall we are, so it can
              size its iframe to fit — the wizard's height changes at every
              step, and there's no other way for the parent to know that
-             across origins. See public/embed.js for the receiving side. --}}
+             across origins. Also asks it to bring the top of the store into
+             view when the checkout moves to a new step. See public/embed.js
+             for the receiving side. --}}
         <script>
             (function () {
                 if (window.self === window.top) {
                     return; // not embedded in an iframe — nothing to report.
                 }
 
+                var lastHeight = 0;
+
+                function content() {
+                    return document.getElementById('tm-embed-content');
+                }
+
                 function reportHeight() {
-                    window.parent.postMessage({
-                        type: 'tm-cremation-store:resize',
-                        height: document.documentElement.scrollHeight,
-                    }, '*');
+                    var element = content();
+
+                    if (!element) {
+                        return;
+                    }
+
+                    var height = Math.ceil(element.getBoundingClientRect().height);
+
+                    if (height === lastHeight) {
+                        return;
+                    }
+
+                    lastHeight = height;
+                    window.parent.postMessage({ type: 'tm-cremation-store:resize', height: height }, '*');
                 }
 
-                if ('ResizeObserver' in window) {
-                    new ResizeObserver(reportHeight).observe(document.documentElement);
-                } else {
+                var observer = null;
+
+                function observe() {
+                    if (!('ResizeObserver' in window) || !content()) {
+                        return;
+                    }
+
+                    observer = observer || new ResizeObserver(reportHeight);
+                    observer.disconnect();
+                    observer.observe(content());
+                }
+
+                if (!('ResizeObserver' in window)) {
                     window.addEventListener('resize', reportHeight);
-                    setInterval(reportHeight, 1000);
+                    setInterval(reportHeight, 500);
                 }
 
-                document.addEventListener('livewire:navigated', reportHeight);
+                window.addEventListener('tm-cremation-store:step-changed', function () {
+                    window.parent.postMessage({ type: 'tm-cremation-store:scroll-into-view' }, '*');
+                });
+
+                // wire:navigate swaps the body, so observe the new wrapper too.
+                document.addEventListener('livewire:navigated', function () {
+                    lastHeight = 0;
+                    observe();
+                    reportHeight();
+                });
                 window.addEventListener('load', reportHeight);
+                observe();
                 reportHeight();
             })();
         </script>
