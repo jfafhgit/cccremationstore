@@ -21,4 +21,12 @@ class ProductVariantFactory extends Factory
             'price_delta_cents' => 0,
         ];
     }
+
+    /**
+     * The option pre-selected for the customer on a "choose one" product.
+     */
+    public function default(): static
+    {
+        return $this->state(fn (array $attributes) => ['is_default' => true]);
+    }
 }

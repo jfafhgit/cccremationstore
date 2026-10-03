@@ -349,8 +349,17 @@ new class extends Component
             return;
         }
 
+        $this->resetErrorBag(["options.{$productId}", 'options']);
         $this->syncFromCart();
         $this->dispatch('cart-updated');
+    }
+
+    /**
+     * Whether the customer answered an optional "choose one" item with "No thanks".
+     */
+    public function declinedOption(int $productId): bool
+    {
+        return $this->cart()->hasDeclinedOption($productId);
     }
 
     /**
@@ -642,18 +651,29 @@ new class extends Component
         }
 
         $this->cart()->ensureRequiredLines();
+        $this->cart()->preselectDefaultOptions();
         $this->syncFromCart();
         $this->dispatch('cart-updated');
 
         $this->step = 'addons';
     }
 
+    /**
+     * Every "choose one" item needs an answer, an option or "No thanks",
+     * before the customer moves on. Each unanswered item gets its own error.
+     */
     public function goToKeepsakes(): void
     {
-        $missing = $this->cart()->missingRequiredOptions()->first();
+        $unanswered = $this->cart()->unansweredOptions();
 
-        if ($missing) {
-            $this->addError('options', __('Please choose an option for :name to continue.', ['name' => $missing->name]));
+        if ($unanswered->isNotEmpty()) {
+            foreach ($unanswered as $product) {
+                $this->addError("options.{$product->id}", $product->is_required
+                    ? __('Please choose an option for :name.', ['name' => $product->name])
+                    : __('Please choose an option for :name, or No thanks.', ['name' => $product->name]));
+            }
+
+            $this->addError('options', trans_choice('Please make a selection for the item marked above to continue.|Please make a selection for each item marked above to continue.', $unanswered->count()));
 
             return;
         }
@@ -824,7 +844,7 @@ new class extends Component
                             </flux:select>
                         </flux:field>
                     @endif
-                    @error('location') <flux:error class="sm:col-span-2">{{ $message }}</flux:error> @enderror
+                    <flux:error name="location" :deep="false" class="sm:col-span-2" />
                 </div>
             @endif
 
@@ -839,7 +859,7 @@ new class extends Component
                         <span class="text-sm text-zinc-700">{{ $option->label() }}</span>
                     </label>
                 @endforeach
-                @error('timing') <flux:error class="sm:col-span-2">{{ $message }}</flux:error> @enderror
+                <flux:error name="timing" :deep="false" class="sm:col-span-2" />
             </div>
 
             @if ($timing && $this->hasLocation())
@@ -888,7 +908,7 @@ new class extends Component
                             <p class="text-sm text-zinc-500">{{ __('No packages are available for this option yet. Please call us for assistance.') }}</p>
                         @endforelse
                     </div>
-                    @error('package') <flux:error class="mt-2">{{ $message }}</flux:error> @enderror
+                    <flux:error name="package" :deep="false" class="mt-2" />
                 </div>
 
                 <div class="mt-8 flex justify-end">
@@ -951,7 +971,7 @@ new class extends Component
                     @if ($containerId && ! $this->storeModel()->requires_container)
                         <button type="button" wire:click="clearContainer" class="mt-2 text-xs text-zinc-400 underline hover:text-red-600">{{ __('Clear selection') }}</button>
                     @endif
-                    @error('container') <flux:error class="mt-2">{{ $message }}</flux:error> @enderror
+                    <flux:error name="container" :deep="false" class="mt-2" />
                 </div>
             @endif
 
@@ -1000,7 +1020,7 @@ new class extends Component
                     @if ($urnId && ! $this->storeModel()->requires_urn)
                         <button type="button" wire:click="clearUrn" class="mt-2 text-xs text-zinc-400 underline hover:text-red-600">{{ __('Clear selection') }}</button>
                     @endif
-                    @error('urn') <flux:error class="mt-2">{{ $message }}</flux:error> @enderror
+                    <flux:error name="urn" :deep="false" class="mt-2" />
                 </div>
             @endif
 
@@ -1031,7 +1051,7 @@ new class extends Component
             <flux:subheading class="mt-1">{{ __('Add anything else you need for the service.') }}</flux:subheading>
 
             @if (($extras = $this->extras())->isNotEmpty())
-                <div class="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <div class="mt-6 space-y-3">
                     @foreach ($extras as $product)
                         @php($qty = (int) ($keepsakeQty[$product->id.'-0'] ?? 0))
                         @php($includedQty = $this->includedQuantity($product->id))
@@ -1039,41 +1059,49 @@ new class extends Component
                         @php($selectedOptionId = $hasOptions ? $this->selectedOptionId($product->id) : null)
                         @php($isSelected = $hasOptions ? $selectedOptionId !== null : ($qty > 0 || $includedQty > 0 || $product->is_required))
                         @php($canToggle = $this->canToggleExtra($product))
-                        {{-- Each card spans four rows of the shared grid (name, description, price, quantity) so those rows line up across cards even when some content is missing. --}}
+                        @php($needsAnswer = $errors->has("options.{$product->id}"))
                         <div wire:key="extra-{{ $product->id }}" @class([
-                            'relative row-span-4 grid grid-rows-subgrid gap-0 overflow-hidden rounded-xl transition',
-                            'col-span-full' => $hasOptions,
+                            'relative overflow-hidden rounded-xl transition',
                             'border-2 border-brand-600 bg-brand-50 ring-2 ring-brand-600/30' => $isSelected,
-                            'border border-zinc-200 hover:border-brand-300' => ! $isSelected,
+                            'border-2 border-red-500' => ! $isSelected && $needsAnswer,
+                            'border border-zinc-200 hover:border-brand-300' => ! $isSelected && ! $needsAnswer,
                         ])>
                             @if ($canToggle)
                                 <button type="button" wire:click="toggleExtra({{ $product->id }})" class="absolute inset-0 z-10 rounded-xl focus-visible:outline-2 focus-visible:outline-brand-600" aria-pressed="{{ $isSelected ? 'true' : 'false' }}" aria-label="{{ $isSelected ? __('Remove :name', ['name' => $product->name]) : __('Select :name', ['name' => $product->name]) }}"></button>
                             @endif
-                            <div class="flex items-start justify-between gap-2 px-3 pt-3">
-                                <p class="text-sm font-medium text-zinc-800">{{ $product->name }}</p>
+                            <div class="flex items-start gap-3 p-3">
                                 @if ($isSelected)
-                                    <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-store text-store-foreground" title="{{ __('Selected') }}">
+                                    <span class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-store text-store-foreground" title="{{ __('Selected') }}">
                                         <flux:icon.check class="size-3.5" />
                                         <span class="sr-only">{{ __('Selected') }}</span>
                                     </span>
+                                @else
+                                    <span class="mt-0.5 size-5 shrink-0 rounded-full border-2 border-zinc-300" aria-hidden="true"></span>
                                 @endif
+                                <div class="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                                    <div class="min-w-0">
+                                        <p class="text-sm font-medium text-zinc-800">{{ $product->name }}</p>
+                                        @if ($product->description)
+                                            <p class="mt-1 text-xs text-zinc-500">{{ $product->description }}</p>
+                                        @endif
+                                    </div>
+                                    <div class="shrink-0 sm:text-right">
+                                        <p class="text-sm text-brand-700">{{ match (true) {
+                                            $hasOptions => __('Choose one'),
+                                            $includedQty > 0 => $this->includedNote($product, $includedQty),
+                                            default => $product->priceLabel(),
+                                        } }}</p>
+                                        @if ($includedQty > 0)
+                                            <span class="mt-1 inline-block rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Included with your package') }}</span>
+                                        @elseif ($product->is_required)
+                                            <span class="mt-1 inline-block rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Required') }}</span>
+                                        @endif
+                                    </div>
+                                </div>
                             </div>
-                            <p class="px-3 pt-1 text-xs text-zinc-500">{{ $product->description }}</p>
-                            <div class="px-3 pt-1 pb-3">
-                                <p class="text-sm text-brand-700">{{ match (true) {
-                                    $hasOptions => __('Choose one'),
-                                    $includedQty > 0 => $this->includedNote($product, $includedQty),
-                                    default => $product->priceLabel(),
-                                } }}</p>
-                                @if ($includedQty > 0)
-                                    <span class="mt-2 inline-block rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Included with your package') }}</span>
-                                @elseif ($product->is_required)
-                                    <span class="mt-2 inline-block rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Required') }}</span>
-                                @endif
-                            </div>
-                            <div class="self-end">
+                            <div>
                                 @if ($hasOptions)
-                                    <fieldset class="space-y-1 border-t border-brand-200 px-3 py-2">
+                                    <fieldset class="space-y-1 border-t border-brand-200 py-2 pr-3 pl-11">
                                         <legend class="sr-only">{{ __('Options for :name', ['name' => $product->name]) }}</legend>
                                         @foreach ($product->variants as $option)
                                             <div wire:key="extra-{{ $product->id }}-option-{{ $option->id }}" @if ($option->description) x-data="{ detail: false }" @endif>
@@ -1096,14 +1124,15 @@ new class extends Component
                                         @endforeach
                                         @unless ($product->is_required)
                                             <label class="flex cursor-pointer items-start gap-2 text-sm text-zinc-500">
-                                                <input type="radio" name="extra-option-{{ $product->id }}" value="" @checked($selectedOptionId === null) wire:click="selectExtraOption({{ $product->id }}, null)" class="mt-1 accent-[var(--color-brand-700)]" />
+                                                <input type="radio" name="extra-option-{{ $product->id }}" value="" @checked($selectedOptionId === null && $this->declinedOption($product->id)) wire:click="selectExtraOption({{ $product->id }}, null)" class="mt-1 accent-[var(--color-brand-700)]" />
                                                 <span>{{ __('No thanks') }}</span>
                                             </label>
                                         @endunless
+                                        <flux:error :name="'options.'.$product->id" class="pt-1" />
                                     </fieldset>
                                 @elseif ($this->showsQuantitySelector($product) && $isSelected)
                                     @php($minimumQty = max($includedQty, $product->is_required ? 1 : 0))
-                                    <div class="relative z-20 flex flex-wrap items-center justify-between gap-2 border-t border-brand-200 px-3 py-2">
+                                    <div class="relative z-20 flex flex-wrap items-center justify-between gap-2 border-t border-brand-200 py-2 pr-3 pl-11">
                                         <div class="flex items-center gap-2">
                                             <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-300 bg-white text-sm disabled:opacity-40" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ $qty - 1 }})" @disabled($qty <= $minimumQty) aria-label="{{ __('Decrease quantity of :name', ['name' => $product->name]) }}">&minus;</button>
                                             <span class="w-6 text-center text-sm">{{ $qty }}</span>
@@ -1119,7 +1148,7 @@ new class extends Component
             @else
                 <p class="mt-6 text-sm text-zinc-500">{{ __('No services or add-ons are available for this option — you can continue to the next step.') }}</p>
             @endif
-            @error('options') <flux:error class="mt-2">{{ $message }}</flux:error> @enderror
+            <flux:error name="options" :deep="false" class="mt-2" />
 
             <div class="mt-8 flex items-center justify-between">
                 <flux:button variant="ghost" wire:click="backTo('containers')">{{ __('Back') }}</flux:button>

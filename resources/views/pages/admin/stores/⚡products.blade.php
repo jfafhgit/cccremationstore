@@ -107,6 +107,9 @@ new class extends Component
 
     public string $newVariantDescription = '';
 
+    /** Whether the option in the option form is pre-selected for customers. */
+    public bool $newVariantIsDefault = false;
+
     /** The option being edited in the option form, or null when adding a new one. */
     public ?int $editingVariantId = null;
 
@@ -211,7 +214,7 @@ new class extends Component
 
     public function newProduct(?string $category = null): void
     {
-        $this->reset(['editingProductId', 'formName', 'formDescription', 'formIncludedItems', 'formPrice', 'formTaxableAmount', 'formPerUnitPrice', 'formPerUnitLabel', 'formImage', 'existingImagePath', 'newVariantName', 'newVariantPrice', 'newVariantDescription', 'editingVariantId', 'formIncludedProducts', 'formContainerAllowance', 'formUrnAllowance', 'formHideOptionsBelowAllowance', 'formLocationPrices']);
+        $this->reset(['editingProductId', 'formName', 'formDescription', 'formIncludedItems', 'formPrice', 'formTaxableAmount', 'formPerUnitPrice', 'formPerUnitLabel', 'formImage', 'existingImagePath', 'newVariantName', 'newVariantPrice', 'newVariantDescription', 'newVariantIsDefault', 'editingVariantId', 'formIncludedProducts', 'formContainerAllowance', 'formUrnAllowance', 'formHideOptionsBelowAllowance', 'formLocationPrices']);
         $this->formCategory = $category ?? ProductCategory::Package->value;
         $this->formIsTaxable = true;
         $this->formIsRequired = false;
@@ -457,6 +460,13 @@ new class extends Component
             'price_delta_cents' => (int) round(((float) $this->newVariantPrice) * 100),
         ];
 
+        if ($this->newVariantIsDefault) {
+            // Only one option can be pre-selected.
+            ProductVariant::where('product_id', $this->editingProductId)->update(['is_default' => false]);
+        }
+
+        $attributes['is_default'] = $this->newVariantIsDefault;
+
         if ($this->editingVariantId) {
             ProductVariant::whereKey($this->editingVariantId)->where('product_id', $this->editingProductId)->update($attributes);
         } else {
@@ -481,11 +491,12 @@ new class extends Component
         $this->newVariantName = $variant->name;
         $this->newVariantDescription = $variant->description ?? '';
         $this->newVariantPrice = number_format($variant->price_delta_cents / 100, 2, '.', '');
+        $this->newVariantIsDefault = $variant->is_default;
     }
 
     public function resetVariantForm(): void
     {
-        $this->reset(['editingVariantId', 'newVariantName', 'newVariantPrice', 'newVariantDescription']);
+        $this->reset(['editingVariantId', 'newVariantName', 'newVariantPrice', 'newVariantDescription', 'newVariantIsDefault']);
         $this->resetValidation('newVariantDescription');
     }
 
@@ -779,6 +790,9 @@ new class extends Component
                                 <li @class(['flex items-start justify-between gap-3 text-sm', 'rounded bg-zinc-50 dark:bg-zinc-700/40' => $editingVariantId === $variant->id]) wire:key="option-{{ $variant->id }}">
                                     <div class="min-w-0">
                                         <span>{{ $variant->name }} <span class="text-zinc-500">(${{ number_format(((float) $formPrice * 100 + $variant->price_delta_cents) / 100, 2) }})</span></span>
+                                        @if ($variant->is_default)
+                                            <flux:badge size="sm" color="green" class="ml-1">{{ __('Pre-selected') }}</flux:badge>
+                                        @endif
                                         @if ($variant->description)
                                             <p class="truncate text-xs text-zinc-400">{{ $variant->description }}</p>
                                         @endif
@@ -797,6 +811,7 @@ new class extends Component
                             </div>
                             <flux:textarea size="sm" rows="2" wire:model="newVariantDescription" placeholder="{{ __('Description (optional), shown when the customer clicks Show detail') }}" :aria-label="__('Option description')" />
                             <flux:error name="newVariantDescription" />
+                            <flux:checkbox wire:model="newVariantIsDefault" :label="__('Pre-select this option for customers')" :description="__('Leave every option unchecked to make customers choose one themselves.')" />
                             <div class="flex justify-end gap-2">
                                 @if ($editingVariantId)
                                     <flux:button size="sm" type="button" variant="ghost" wire:click="resetVariantForm">{{ __('Cancel') }}</flux:button>

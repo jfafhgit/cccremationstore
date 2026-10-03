@@ -87,6 +87,7 @@ class Cart
             'container' => null,
             'urn' => null,
             'lines' => [], // repeatable keepsakes / add-ons / services
+            'declined_options' => [], // ids of "choose one" products answered with "No thanks"
             'pending_order_id' => null,
         ];
     }
@@ -333,11 +334,13 @@ class Cart
     {
         $this->forgetProductLines($product->id);
         $this->state['lines'][$this->lineKey($product, $variant)] = $this->lineFor($product, $variant, 1);
+        $this->state['declined_options'] = array_values(array_diff($this->declinedOptionIds(), [$product->id]));
         $this->persist();
     }
 
     /**
-     * Clear the chosen option of an optional "choose one" product.
+     * Answer an optional "choose one" product with "No thanks", clearing
+     * any option chosen before.
      */
     public function clearOption(Product $product): void
     {
@@ -346,6 +349,7 @@ class Cart
         }
 
         $this->forgetProductLines($product->id);
+        $this->state['declined_options'] = array_values(array_unique([...$this->declinedOptionIds(), $product->id]));
         $this->persist();
     }
 
@@ -358,6 +362,22 @@ class Cart
     }
 
     /**
+     * Whether the customer answered this "choose one" product with "No thanks".
+     */
+    public function hasDeclinedOption(int $productId): bool
+    {
+        return in_array($productId, $this->declinedOptionIds(), true);
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function declinedOptionIds(): array
+    {
+        return $this->state['declined_options'] ?? [];
+    }
+
+    /**
      * Required "choose one" products (for the current timing) the customer
      * hasn't picked an option for yet.
      *
@@ -365,13 +385,41 @@ class Cart
      */
     public function missingRequiredOptions(): Collection
     {
-        $query = $this->store->products()->active()->ofCategory(ProductCategory::Choice)->where('is_required', true)->has('variants');
+        return $this->unansweredOptions()->where('is_required', true)->values();
+    }
+
+    /**
+     * "Choose one" products (for the current timing) the customer hasn't
+     * answered yet: no option picked and, for optional ones, no "No thanks".
+     *
+     * @return Collection<int, Product>
+     */
+    public function unansweredOptions(): Collection
+    {
+        $query = $this->store->products()->active()->ofCategory(ProductCategory::Choice)->has('variants')->with('variants');
 
         if ($this->state['timing']) {
             $query->availableForTiming($this->state['timing']);
         }
 
-        return $query->get()->reject(fn (Product $product) => $this->selectedVariantId($product->id) !== null)->values();
+        return $query->orderBy('sort_order')->get()
+            ->reject(fn (Product $product) => $this->selectedVariantId($product->id) !== null
+                || (! $product->is_required && $this->hasDeclinedOption($product->id)))
+            ->values();
+    }
+
+    /**
+     * Pick the store's default option for each "choose one" product the
+     * customer hasn't answered yet. Once they choose something else, or
+     * "No thanks", their answer stands.
+     */
+    public function preselectDefaultOptions(): void
+    {
+        foreach ($this->unansweredOptions() as $product) {
+            if ($default = $product->variants->firstWhere('is_default', true)) {
+                $this->selectOption($product, $default);
+            }
+        }
     }
 
     private function forgetProductLines(int $productId): void

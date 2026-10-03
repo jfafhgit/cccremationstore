@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $name
  * @property string|null $description
  * @property int $price_delta_cents
+ * @property bool $is_default
  * @property string|null $sku
  */
 class ProductVariant extends Model
@@ -25,6 +26,7 @@ class ProductVariant extends Model
         'name',
         'description',
         'price_delta_cents',
+        'is_default',
         'sku',
         'sort_order',
     ];
@@ -33,6 +35,7 @@ class ProductVariant extends Model
     {
         return [
             'price_delta_cents' => 'integer',
+            'is_default' => 'boolean',
             'sort_order' => 'integer',
         ];
     }

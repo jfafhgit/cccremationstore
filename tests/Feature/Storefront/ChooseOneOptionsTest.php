@@ -55,7 +55,8 @@ test('a required option is not pre-selected and must be chosen to continue', fun
     expect((new Cart($this->store))->allLines()->where('product_id', $this->handling->id))->toBeEmpty();
 
     $component->call('goToKeepsakes')
-        ->assertHasErrors('options')
+        ->assertHasErrors(['options', "options.{$this->handling->id}"])
+        ->assertSee('Please choose an option for Handling of cremated remains.')
         ->assertSet('step', 'addons');
 
     $component->call('selectExtraOption', $this->handling->id, $this->pickUp->id)
@@ -79,6 +80,43 @@ test('an optional option can be cleared', function () {
         ->call('selectExtraOption', $this->handling->id, null)
         ->call('goToKeepsakes')
         ->assertSet('step', 'keepsakes');
+
+    expect((new Cart($this->store))->selectedVariantId($this->handling->id))->toBeNull();
+});
+
+test('an optional item must be answered, with an option or No thanks, to continue', function () {
+    $this->handling->update(['is_required' => false]);
+
+    $component = wizardAtAddons($this->package)
+        ->call('goToKeepsakes')
+        ->assertHasErrors("options.{$this->handling->id}")
+        ->assertSee('Please choose an option for Handling of cremated remains, or No thanks.')
+        ->assertSet('step', 'addons');
+
+    $component->call('selectExtraOption', $this->handling->id, null)
+        ->assertHasNoErrors()
+        ->call('goToKeepsakes')
+        ->assertSet('step', 'keepsakes');
+});
+
+test('the store\'s default option is pre-selected', function () {
+    $this->ship->update(['is_default' => true]);
+
+    wizardAtAddons($this->package)
+        ->call('goToKeepsakes')
+        ->assertSet('step', 'keepsakes');
+
+    expect((new Cart($this->store))->selectedVariantId($this->handling->id))->toBe($this->ship->id);
+});
+
+test('No thanks is not overridden by the default option on a return visit', function () {
+    $this->handling->update(['is_required' => false]);
+    $this->ship->update(['is_default' => true]);
+
+    wizardAtAddons($this->package)
+        ->call('selectExtraOption', $this->handling->id, null)
+        ->call('backTo', 'containers')
+        ->call('goToAddons');
 
     expect((new Cart($this->store))->selectedVariantId($this->handling->id))->toBeNull();
 });

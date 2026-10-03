@@ -4,6 +4,7 @@ use App\Enums\ProductCategory;
 use App\Enums\StoreUserRole;
 use App\Models\Order;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Models\Store;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
@@ -373,6 +374,23 @@ test('an admin can add and edit an option description on a choose-one item', fun
     expect($handling->variants()->count())->toBe(1)
         ->and($option->fresh()->description)->toBeNull()
         ->and($option->fresh()->price_delta_cents)->toBe(7500);
+});
+
+test('an admin can pre-select one option on a choose-one item', function () {
+    $store = Store::factory()->create();
+    $handling = Product::factory()->for($store)->category(ProductCategory::Choice)->create(['price_cents' => 0]);
+    $pickUp = ProductVariant::factory()->for($handling)->default()->create(['name' => 'Pick up']);
+    $ship = ProductVariant::factory()->for($handling)->create(['name' => 'Ship']);
+
+    Livewire::test('pages::admin.stores.products', ['store' => $store->id])
+        ->call('editProduct', $handling->id)
+        ->call('editVariant', $ship->id)
+        ->set('newVariantIsDefault', true)
+        ->call('addVariant')
+        ->assertHasNoErrors();
+
+    expect($ship->fresh()->is_default)->toBeTrue()
+        ->and($pickUp->fresh()->is_default)->toBeFalse();
 });
 
 test('an admin can point a store at its own vital statistics form', function () {
