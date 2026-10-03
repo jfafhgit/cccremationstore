@@ -292,3 +292,60 @@ test('an a la carte store does not mark its base package as selected', function 
         ->assertSet('packageId', $this->package->id)
         ->assertDontSee('Selected');
 });
+
+test('clicking an add-on card selects it and clicking again deselects it', function () {
+    $addon = Product::factory()->for($this->store)->category(ProductCategory::Addon)->create(['price_cents' => 2500]);
+
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $this->package->id);
+
+    $component->call('toggleExtra', $addon->id);
+    expect((new Cart($this->store))->allLines()->get($addon->id.'-0')['quantity'])->toBe(1);
+
+    $component->call('toggleExtra', $addon->id);
+    expect((new Cart($this->store))->allLines()->has($addon->id.'-0'))->toBeFalse();
+});
+
+test('required add-ons cannot be deselected', function () {
+    $addon = Product::factory()->for($this->store)->category(ProductCategory::Addon)->create(['is_required' => true]);
+
+    Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $this->package->id)
+        ->call('toggleExtra', $addon->id);
+
+    expect((new Cart($this->store))->allLines()->has($addon->id.'-0'))->toBeTrue();
+});
+
+test('only add-ons that allow multiple quantity show a quantity selector', function () {
+    $single = Product::factory()->for($this->store)->category(ProductCategory::Addon)->create(['name' => 'Viewing', 'allow_multiple_quantity' => false]);
+    $multiple = Product::factory()->for($this->store)->category(ProductCategory::Addon)->create(['name' => 'Flag case', 'allow_multiple_quantity' => true]);
+
+    Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $this->package->id)
+        ->call('toggleExtra', $single->id)
+        ->call('toggleExtra', $multiple->id)
+        ->call('goToContainers')
+        ->call('goToAddons')
+        ->assertDontSee('Increase quantity of Viewing')
+        ->assertSee('Increase quantity of Flag case');
+});
+
+test('an add-on with a quantity selector shows its live total', function () {
+    $addon = Product::factory()->for($this->store)->category(ProductCategory::Addon)->create([
+        'price_cents' => 2500,
+        'allow_multiple_quantity' => true,
+    ]);
+
+    Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $this->package->id)
+        ->call('goToContainers')
+        ->call('goToAddons')
+        ->call('toggleExtra', $addon->id)
+        ->assertSee('Total: $25.00')
+        ->call('setKeepsakeQty', $addon->id, null, 3)
+        ->assertSee('Total: $75.00');
+});

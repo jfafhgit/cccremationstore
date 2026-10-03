@@ -291,6 +291,36 @@ new class extends Component
     }
 
     /**
+     * Whether a service / add-on card shows a quantity selector rather than
+     * acting as a simple selected / not-selected choice.
+     */
+    public function showsQuantitySelector(Product $product): bool
+    {
+        return $product->allow_multiple_quantity;
+    }
+
+    /**
+     * Whether the customer can deselect a service / add-on — required and
+     * package-included items always stay on the order.
+     */
+    public function canToggleExtra(Product $product): bool
+    {
+        return ! $product->is_required && $this->includedQuantity($product->id) === 0;
+    }
+
+    /**
+     * What a selected service / add-on currently adds to the order at its
+     * chosen quantity, after anything the package covers.
+     */
+    public function extraTotal(int $productId): string
+    {
+        $line = $this->cart()->allLines()->get($productId.'-0');
+        $totalCents = $line ? $this->cart()->lineTotalCents($line) : 0;
+
+        return '$'.number_format($totalCents / 100, 2);
+    }
+
+    /**
      * How many units of a product the selected package includes.
      */
     public function includedQuantity(int $productId): int
@@ -487,6 +517,23 @@ new class extends Component
         }
 
         $this->dispatch('cart-updated');
+    }
+
+    /**
+     * Select or deselect a service / add-on card, like choosing a container
+     * or urn.
+     */
+    public function toggleExtra(int $productId): void
+    {
+        $product = $this->extras()->firstWhere('id', $productId);
+
+        if (! $product || ! $this->canToggleExtra($product)) {
+            return;
+        }
+
+        $isSelected = ($this->keepsakeQty[$productId.'-0'] ?? 0) > 0;
+
+        $this->setKeepsakeQty($productId, null, $isSelected ? 0 : 1);
     }
 
     public function goToContainers(): void
@@ -918,55 +965,57 @@ new class extends Component
             <flux:heading size="xl" class="font-serif">{{ __('Services & add-ons') }}</flux:heading>
             <flux:subheading class="mt-1">{{ __('Add anything else you need for the service.') }}</flux:subheading>
 
-            <div class="mt-6 grid gap-3 sm:grid-cols-2">
-                @forelse (($extras = $this->extras()) as $product)
-                    @php($key = $product->id.'-0')
-                    @php($qty = (int) ($keepsakeQty[$key] ?? 0))
-                    <div class="flex gap-3 overflow-hidden rounded-xl border border-zinc-200 p-3" wire:key="extra-{{ $product->id }}">
-                        <x-product-image :src="$product->imageUrl()" :category="$product->category->value" class="size-16 shrink-0 rounded-lg" />
-                        <div class="min-w-0 flex-1">
-                            <p class="text-sm font-medium text-zinc-800">{{ $product->name }}</p>
-                            @if ($product->description)
-                                <p class="text-xs text-zinc-500">{{ $product->description }}</p>
+            @if (($extras = $this->extras())->isNotEmpty())
+                <div class="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    @foreach ($extras as $product)
+                        @php($qty = (int) ($keepsakeQty[$product->id.'-0'] ?? 0))
+                        @php($includedQty = $this->includedQuantity($product->id))
+                        @php($isSelected = $qty > 0 || $includedQty > 0 || $product->is_required)
+                        @php($canToggle = $this->canToggleExtra($product))
+                        {{-- Each card spans five rows of the shared grid (image, name, description, price, quantity) so those rows line up across cards even when some content is missing. --}}
+                        <div wire:key="extra-{{ $product->id }}" @class([
+                            'relative row-span-5 grid grid-rows-subgrid gap-0 overflow-hidden rounded-xl transition',
+                            'border-2 border-brand-600 bg-brand-50 ring-2 ring-brand-600/30' => $isSelected,
+                            'border border-zinc-200 hover:border-brand-300' => ! $isSelected,
+                        ])>
+                            @if ($canToggle)
+                                <button type="button" wire:click="toggleExtra({{ $product->id }})" class="absolute inset-0 z-10 rounded-xl focus-visible:outline-2 focus-visible:outline-brand-600" aria-pressed="{{ $isSelected ? 'true' : 'false' }}" aria-label="{{ $isSelected ? __('Remove :name', ['name' => $product->name]) : __('Select :name', ['name' => $product->name]) }}"></button>
                             @endif
-                            @php($includedQty = $this->includedQuantity($product->id))
-                            <p class="mt-1 text-sm text-brand-700">{{ $includedQty > 0 ? $this->includedNote($product, $includedQty) : $product->priceLabel() }}</p>
-
-                            @if ($includedQty > 0)
-                                <span class="mt-2 inline-block rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Included with your package') }}</span>
-                                @if ($this->canAddBeyondIncluded($product))
-                                    <div class="mt-2 flex items-center gap-2">
-                                        <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-200 text-sm disabled:opacity-40" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ $qty - 1 }})" @disabled($qty <= $includedQty)>&minus;</button>
-                                        <span class="w-4 text-center text-sm">{{ $qty }}</span>
-                                        <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-200 text-sm" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ $qty + 1 }})">+</button>
-                                        @if ($product->hasPerUnitPricing() && $product->per_unit_label)
-                                            <span class="text-xs text-zinc-400">{{ $product->per_unit_label }}{{ $qty === 1 ? '' : 's' }}</span>
-                                        @endif
+                            <x-product-image :src="$product->imageUrl()" :alt="$product->name" :category="$product->category->value" class="aspect-square w-full" />
+                            @if ($isSelected)
+                                <span class="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-store px-2 py-0.5 text-xs font-semibold text-store-foreground shadow">
+                                    <flux:icon.check class="size-3.5" />{{ __('Selected') }}
+                                </span>
+                            @endif
+                            <p class="px-3 pt-3 text-sm font-medium text-zinc-800">{{ $product->name }}</p>
+                            <p class="px-3 pt-1 text-xs text-zinc-500">{{ $product->description }}</p>
+                            <div class="px-3 pt-1 pb-3">
+                                <p class="text-sm text-brand-700">{{ $includedQty > 0 ? $this->includedNote($product, $includedQty) : $product->priceLabel() }}</p>
+                                @if ($includedQty > 0)
+                                    <span class="mt-2 inline-block rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Included with your package') }}</span>
+                                @elseif ($product->is_required)
+                                    <span class="mt-2 inline-block rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Required') }}</span>
+                                @endif
+                            </div>
+                            <div class="self-end">
+                                @if ($this->showsQuantitySelector($product) && $isSelected)
+                                    @php($minimumQty = max($includedQty, $product->is_required ? 1 : 0))
+                                    <div class="relative z-20 flex flex-wrap items-center justify-between gap-2 border-t border-brand-200 px-3 py-2">
+                                        <div class="flex items-center gap-2">
+                                            <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-300 bg-white text-sm disabled:opacity-40" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ $qty - 1 }})" @disabled($qty <= $minimumQty) aria-label="{{ __('Decrease quantity of :name', ['name' => $product->name]) }}">&minus;</button>
+                                            <span class="w-6 text-center text-sm">{{ $qty }}</span>
+                                            <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-300 bg-white text-sm" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ $qty + 1 }})" aria-label="{{ __('Increase quantity of :name', ['name' => $product->name]) }}">+</button>
+                                        </div>
+                                        <p class="text-sm font-semibold text-zinc-800">{{ __('Total') }}: {{ $this->extraTotal($product->id) }}</p>
                                     </div>
                                 @endif
-                            @elseif ($product->is_required && ! $product->hasPerUnitPricing())
-                                <span class="mt-2 inline-block rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Required') }}</span>
-                            @else
-                                @if ($product->is_required)
-                                    <span class="mt-2 inline-block rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Required') }}</span>
-                                @endif
-                                @if ($product->hasPerUnitPricing() || ! $product->is_required)
-                                    <div class="mt-2 flex items-center gap-2">
-                                        <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-200 text-sm" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ $qty - 1 }})">&minus;</button>
-                                        <span class="w-4 text-center text-sm">{{ $qty }}</span>
-                                        <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-200 text-sm" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ $qty + 1 }})">+</button>
-                                        @if ($product->hasPerUnitPricing() && $product->per_unit_label)
-                                            <span class="text-xs text-zinc-400">{{ $product->per_unit_label }}{{ $qty === 1 ? '' : 's' }}</span>
-                                        @endif
-                                    </div>
-                                @endif
-                            @endif
+                            </div>
                         </div>
-                    </div>
-                @empty
-                    <p class="text-sm text-zinc-500">{{ __('No services or add-ons are available for this option — you can continue to the next step.') }}</p>
-                @endforelse
-            </div>
+                    @endforeach
+                </div>
+            @else
+                <p class="mt-6 text-sm text-zinc-500">{{ __('No services or add-ons are available for this option — you can continue to the next step.') }}</p>
+            @endif
 
             <div class="mt-8 flex items-center justify-between">
                 <flux:button variant="ghost" wire:click="backTo('containers')">{{ __('Back') }}</flux:button>
