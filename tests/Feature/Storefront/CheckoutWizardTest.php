@@ -351,3 +351,18 @@ test('an add-on with a quantity selector shows its live total', function () {
         ->call('setKeepsakeQty', $addon->id, null, 3)
         ->assertSee('Total: $75.00');
 });
+
+test('the embedded storefront has its own cart button since it has no header', function () {
+    $this->get(route('storefront.embed', ['store' => $this->store->slug]))
+        ->assertOk()
+        ->assertSee(__('Open cart'))
+        ->assertSeeLivewire('storefront.cart-drawer');
+});
+
+test('starting over from the embedded cart stays inside the embed', function () {
+    (new Cart($this->store))->selectSlot($this->package);
+
+    Livewire::test('storefront.cart-drawer', ['store' => $this->store, 'embedded' => true])
+        ->call('startOver')
+        ->assertRedirect(route('storefront.embed', ['store' => $this->store->slug]));
+});

@@ -11,6 +11,13 @@ new class extends Component {
 
     public bool $open = false;
 
+    /**
+     * Rendered inside an auto-resizing iframe on another site, where the
+     * "viewport" is the whole (often very tall) embed, so the panel opens
+     * at the top as a scrollable card instead of a full-height drawer.
+     */
+    public bool $embedded = false;
+
     /** Keys iterated from Cart::allLines() that are single-select slots — fixed quantity of 1, no stepper, just a remove action. */
     private const SLOT_KEYS = ['package', 'container', 'urn'];
 
@@ -64,7 +71,7 @@ new class extends Component {
         $this->open = false;
         $this->dispatch('cart-updated');
 
-        $this->redirect(route('storefront.start', ['store' => $this->store->slug]), navigate: true);
+        $this->redirect(route($this->embedded ? 'storefront.embed' : 'storefront.start', ['store' => $this->store->slug]), navigate: true);
     }
 
     public function incrementLine(string $key): void
@@ -120,7 +127,7 @@ new class extends Component {
             x-on:click="open = false"
         ></div>
 
-        <div class="pointer-events-none absolute inset-y-0 right-0 flex w-full max-w-full sm:max-w-md">
+        <div @class(['pointer-events-none absolute right-0 flex w-full max-w-full sm:max-w-md', 'inset-y-0' => ! $embedded, 'top-0 sm:top-4 sm:right-4' => $embedded])>
             <div
                 x-show="open"
                 x-transition:enter="transform transition ease-out duration-300"
@@ -129,7 +136,7 @@ new class extends Component {
                 x-transition:leave="transform transition ease-in duration-200"
                 x-transition:leave-start="translate-x-0"
                 x-transition:leave-end="translate-x-full"
-                class="pointer-events-auto flex h-dvh w-full flex-col bg-white shadow-2xl"
+                @class(['pointer-events-auto flex w-full flex-col bg-white shadow-2xl', 'h-dvh' => ! $embedded, 'max-h-[min(42rem,100dvh)] sm:rounded-2xl' => $embedded])
             >
                 <div class="flex shrink-0 items-center justify-between border-b border-zinc-100 px-4 py-4 sm:px-6 sm:py-5">
                     <flux:heading size="lg">{{ __('Your selections') }}</flux:heading>
