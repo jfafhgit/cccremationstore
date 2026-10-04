@@ -12,13 +12,21 @@
     <body class="min-h-screen bg-brand-50/40 text-zinc-900 antialiased">
         <div class="flex min-h-screen flex-col">
             <header class="border-b border-brand-100 bg-white">
-                @if ($store?->website_url)
+                @if ($store?->website_url || $store?->contact_phone)
                     <div class="border-b border-brand-100 bg-brand-50">
-                        <div class="mx-auto max-w-5xl px-4 py-1.5 sm:px-6">
-                            <a href="{{ $store->website_url }}" target="_top" class="inline-flex items-center gap-1 text-xs text-zinc-600 hover:text-brand-700">
-                                <flux:icon.arrow-left class="size-3.5" />
-                                {{ __('Back to :name website', ['name' => $store->name]) }}
-                            </a>
+                        <div class="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-1.5 text-xs text-zinc-600 sm:px-6">
+                            @if ($store->website_url)
+                                <a href="{{ $store->website_url }}" target="_top" class="flex min-w-0 items-center gap-1 hover:text-brand-700">
+                                    <flux:icon.arrow-left class="size-3.5 shrink-0" />
+                                    <span class="truncate">{{ __('Back to :name website', ['name' => $store->name]) }}</span>
+                                </a>
+                            @endif
+
+                            @if ($store->contact_phone)
+                                <a href="tel:{{ $store->contact_phone }}" class="ml-auto shrink-0 hover:text-brand-700">
+                                    <span class="hidden sm:inline">{{ __('Need help?') }}</span> <span class="font-medium">{{ $store->contact_phone }}</span>
+                                </a>
+                            @endif
                         </div>
                     </div>
                 @endif
@@ -39,15 +47,7 @@
                         @endif
                     </a>
 
-                    <div class="flex items-center gap-4">
-                        @if ($store?->contact_phone)
-                            <a href="tel:{{ $store->contact_phone }}" class="hidden text-sm text-zinc-600 hover:text-brand-700 sm:block">
-                                {{ __('Need help?') }} <span class="font-medium">{{ $store->contact_phone }}</span>
-                            </a>
-                        @endif
-
-                        <livewire:storefront.cart-drawer :store="$store" />
-                    </div>
+                    <livewire:storefront.cart-drawer :store="$store" />
                 </div>
             </header>
 
