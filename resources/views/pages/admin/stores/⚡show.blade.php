@@ -2,6 +2,7 @@
 
 use App\Enums\PlatformFeeModel;
 use App\Enums\StorePath;
+use App\Enums\StoreSaleType;
 use App\Enums\StoreStatus;
 use App\Enums\StoreUserRole;
 use App\Models\Store;
@@ -36,6 +37,8 @@ new class extends Component
     public string $slug = '';
 
     public string $status = '';
+
+    public string $saleType = '';
 
     public string $checkoutPath = '';
 
@@ -114,6 +117,7 @@ new class extends Component
         $this->name = $store->name;
         $this->slug = $store->slug;
         $this->status = $store->status->value;
+        $this->saleType = $store->sale_type->value;
         $this->checkoutPath = $store->checkout_path->value;
         $this->requiresContainer = $store->requires_container;
         $this->requiresUrn = $store->requires_urn;
@@ -145,6 +149,7 @@ new class extends Component
             'name' => ['required', 'string', 'max:255'],
             'slug' => ['required', 'string', 'max:255', 'alpha_dash', 'unique:stores,slug,'.$this->currentStore->id],
             'status' => ['required', 'in:draft,active,suspended'],
+            'saleType' => ['required', Rule::enum(StoreSaleType::class)],
             'checkoutPath' => ['required', Rule::enum(StorePath::class)],
             'requiresContainer' => ['boolean'],
             'requiresUrn' => ['boolean'],
@@ -174,6 +179,7 @@ new class extends Component
             'name' => $validated['name'],
             'slug' => $validated['slug'],
             'status' => StoreStatus::from($validated['status']),
+            'sale_type' => StoreSaleType::from($validated['saleType']),
             'checkout_path' => StorePath::from($validated['checkoutPath']),
             'requires_container' => $validated['requiresContainer'],
             'requires_urn' => $validated['requiresUrn'],
@@ -658,6 +664,16 @@ new class extends Component
                             <flux:heading size="sm">{{ __('Checkout') }}</flux:heading>
                             <flux:text class="text-xs">{{ __('How families move through the storefront.') }}</flux:text>
                         </div>
+                        <flux:field>
+                            <flux:label>{{ __('Store type') }}</flux:label>
+                            <flux:radio.group wire:model="saleType" variant="cards" class="max-sm:flex-col">
+                                @foreach (StoreSaleType::cases() as $option)
+                                    <flux:radio :value="$option->value" :label="__($option->label())" :description="__($option->description())" />
+                                @endforeach
+                            </flux:radio.group>
+                            <flux:description>{{ __('Pre-need funds often must be kept apart from at-need funds, so use a separate store, with its own Stripe account, for each.') }}</flux:description>
+                            <flux:error name="saleType" />
+                        </flux:field>
                         <flux:field>
                             <flux:label>{{ __('Storefront path') }}</flux:label>
                             <flux:radio.group wire:model="checkoutPath" variant="cards" class="max-sm:flex-col">

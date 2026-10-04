@@ -6,6 +6,7 @@ use App\Enums\PlatformFeeModel;
 use App\Enums\ProductCategory;
 use App\Enums\ProductSortMode;
 use App\Enums\StorePath;
+use App\Enums\StoreSaleType;
 use App\Enums\StoreStatus;
 use App\Enums\StoreUserRole;
 use App\Services\BrandPalette;
@@ -27,6 +28,7 @@ use Illuminate\Support\Facades\Storage;
  * @property string $name
  * @property string $slug
  * @property StoreStatus $status
+ * @property StoreSaleType $sale_type
  * @property StorePath $checkout_path
  * @property bool $requires_container
  * @property bool $requires_urn
@@ -68,6 +70,7 @@ class Store extends Model
     public const BRAND_COLOR_PATTERN = '/^#[0-9a-fA-F]{6}$/';
 
     protected $attributes = [
+        'sale_type' => 'at_need',
         'checkout_path' => 'packages',
         'requires_container' => false,
         'requires_urn' => false,
@@ -83,6 +86,7 @@ class Store extends Model
         'name',
         'slug',
         'status',
+        'sale_type',
         'checkout_path',
         'requires_container',
         'requires_urn',
@@ -111,6 +115,7 @@ class Store extends Model
     {
         return [
             'status' => StoreStatus::class,
+            'sale_type' => StoreSaleType::class,
             'checkout_path' => StorePath::class,
             'requires_container' => 'boolean',
             'requires_urn' => 'boolean',
@@ -301,6 +306,11 @@ class Store extends Model
         $color = $this->brandColor();
 
         return $color === null ? null : BrandPalette::fromColor($color);
+    }
+
+    public function isPreNeed(): bool
+    {
+        return $this->sale_type === StoreSaleType::PreNeed;
     }
 
     public function isALaCarte(): bool

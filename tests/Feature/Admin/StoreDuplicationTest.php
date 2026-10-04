@@ -3,6 +3,7 @@
 use App\Enums\PlatformFeeModel;
 use App\Enums\ProductCategory;
 use App\Enums\StorePath;
+use App\Enums\StoreSaleType;
 use App\Enums\StoreStatus;
 use App\Enums\UsState;
 use App\Models\Order;
@@ -25,6 +26,7 @@ beforeEach(function () {
         'name' => 'Riverside Cremation',
         'slug' => 'riverside',
         'status' => StoreStatus::Active,
+        'sale_type' => StoreSaleType::PreNeed,
         'checkout_path' => StorePath::ALaCarte,
         'requires_urn' => true,
         'contact_email' => 'owner@riverside.test',
@@ -143,6 +145,7 @@ test('the duplicate is a draft with the source\'s settings but none of its ident
 
     expect($duplicate->name)->toBe('Lakeside Cremation')
         ->and($duplicate->status)->toBe(StoreStatus::Draft)
+        ->and($duplicate->sale_type)->toBe(StoreSaleType::PreNeed)
         ->and($duplicate->checkout_path)->toBe(StorePath::ALaCarte)
         ->and($duplicate->requires_urn)->toBeTrue()
         ->and($duplicate->tax_rate_bps)->toBe(725)

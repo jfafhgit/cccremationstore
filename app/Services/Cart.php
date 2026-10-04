@@ -113,9 +113,21 @@ class Cart
         session()->put($this->sessionKey(), $this->state);
     }
 
+    /**
+     * The timing chosen, limited to those the store offers. A pre-need store
+     * only has the one, so it applies without the family being asked.
+     */
     public function timing(): ?OrderTiming
     {
-        return $this->state['timing'] ? OrderTiming::from($this->state['timing']) : null;
+        $offered = $this->store->sale_type->orderTimings();
+
+        if (count($offered) === 1) {
+            return $offered[0];
+        }
+
+        $timing = OrderTiming::tryFrom($this->state['timing'] ?? '');
+
+        return in_array($timing, $offered, true) ? $timing : null;
     }
 
     public function setTiming(OrderTiming $timing): void
@@ -398,8 +410,8 @@ class Cart
     {
         $query = $this->store->products()->active()->ofCategory(ProductCategory::Choice)->has('variants')->with('variants');
 
-        if ($this->state['timing']) {
-            $query->availableForTiming($this->state['timing']);
+        if ($timing = $this->timing()) {
+            $query->availableForTiming($timing);
         }
 
         return $query->orderBy('sort_order')->get()
@@ -529,8 +541,8 @@ class Cart
                 ProductCategory::Choice->value,
             ]);
 
-        if ($this->state['timing']) {
-            $query->availableForTiming($this->state['timing']);
+        if ($timing = $this->timing()) {
+            $query->availableForTiming($timing);
         }
 
         foreach ($query->orderBy('sort_order')->get() as $product) {

@@ -175,6 +175,19 @@ test('an admin can set a store to a la carte', function () {
     expect($store->fresh()->isALaCarte())->toBeTrue();
 });
 
+test('stores are at-need unless an admin makes them pre-need', function () {
+    $store = Store::factory()->create();
+
+    expect($store->fresh()->isPreNeed())->toBeFalse();
+
+    Livewire::test('pages::admin.stores.show', ['store' => $store])
+        ->set('saleType', 'pre_need')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($store->fresh()->isPreNeed())->toBeTrue();
+});
+
 test('an admin can enable a processing fee', function () {
     $store = Store::factory()->create();
 

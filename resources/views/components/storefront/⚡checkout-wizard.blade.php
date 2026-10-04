@@ -76,6 +76,12 @@ new class extends Component
     public function mount(): void
     {
         $this->syncFromCart();
+
+        // Pre-need stores never ask about timing, so nothing else would apply the base package.
+        if ($this->storeModel()->isPreNeed() && $this->hasLocation()) {
+            $this->ensureBasePackage();
+            $this->syncFromCart();
+        }
     }
 
     /**
@@ -408,8 +414,8 @@ new class extends Component
             ->with('variants')
             ->orderedFor($store->productSortMode($category));
 
-        if ($this->timing) {
-            $query->availableForTiming($this->timing);
+        if ($timing = $this->cart()->timing()) {
+            $query->availableForTiming($timing);
         }
 
         return $query->get();
@@ -448,8 +454,14 @@ new class extends Component
 
     public function selectTiming(string $timing): void
     {
+        $choice = OrderTiming::tryFrom($timing);
+
+        if (! in_array($choice, $this->storeModel()->sale_type->orderTimings(), true)) {
+            return;
+        }
+
         $this->timing = $timing;
-        $this->cart()->setTiming(OrderTiming::from($timing));
+        $this->cart()->setTiming($choice);
         $this->ensureBasePackage();
         $this->dispatch('cart-updated');
     }
@@ -801,7 +813,7 @@ new class extends Component
     })"
 >
     <nav class="mb-8 flex flex-wrap items-center justify-center gap-2 text-xs font-medium text-zinc-400" aria-label="{{ __('Checkout steps') }}">
-        @foreach (['Timing & Package', 'Container & Urn', 'Add-ons & Services', 'Keepsakes', 'Your Information', 'Payment'] as $index => $label)
+        @foreach ([$this->storeModel()->isPreNeed() ? 'Package' : 'Timing & Package', 'Container & Urn', 'Add-ons & Services', 'Keepsakes', 'Your Information', 'Payment'] as $index => $label)
             <span class="flex items-center gap-2">
                 <span @class([
                     'flex size-6 items-center justify-center rounded-full text-[11px]',
@@ -848,8 +860,8 @@ new class extends Component
                 </div>
             @endif
 
-            <div @class(['mt-6 grid gap-3 sm:grid-cols-2', 'hidden' => ! $this->hasLocation()])>
-                @foreach (OrderTiming::cases() as $option)
+            <div @class(['mt-6 grid gap-3 sm:grid-cols-2', 'hidden' => ! $this->hasLocation() || $this->storeModel()->isPreNeed()])>
+                @foreach ($this->storeModel()->sale_type->orderTimings() as $option)
                     <label @class([
                         'flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition',
                         'border-brand-600 bg-brand-50' => $timing === $option->value,
@@ -1378,7 +1390,8 @@ new class extends Component
                     : window.Stripe(publishableKey);
 
                 const elements = stripe.elements({ clientSecret });
-                const paymentElement = elements.create('payment');
+                // No Link: "save my info for faster checkout" doesn't belong here, and it brings its own bank and Klarna options.
+                const paymentElement = elements.create('payment', { wallets: { link: 'never' } });
                 paymentElement.mount('#payment-element');
 
                 const form = document.getElementById('payment-form');

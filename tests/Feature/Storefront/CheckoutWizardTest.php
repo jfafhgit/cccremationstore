@@ -1,7 +1,9 @@
 <?php
 
+use App\Enums\OrderTiming;
 use App\Enums\ProductCategory;
 use App\Enums\StorePath;
+use App\Enums\StoreSaleType;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\Store;
@@ -395,4 +397,40 @@ test('the storefront header links back to the funeral home website, but the embe
     $this->get(route('storefront.embed', ['store' => $this->store->slug]))
         ->assertOk()
         ->assertDontSee('Back to main site');
+});
+
+test('a pre-need store skips the timing question and orders as pre-need', function () {
+    config(['services.stripe.secret' => null]);
+    $this->store->update(['sale_type' => StoreSaleType::PreNeed]);
+
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->assertDontSee(OrderTiming::Immediate->label())
+        ->assertDontSee(OrderTiming::Imminent->label())
+        ->call('selectPackage', $this->package->id)
+        ->call('goToContainers')
+        ->call('goToAddons')
+        ->call('goToKeepsakes')
+        ->call('goToDetails');
+    fillMinimalDetails($component);
+    $component->call('submitDetails');
+
+    expect(Order::where('store_id', $this->store->id)->first()->timing)->toBe(OrderTiming::PreNeed);
+});
+
+test('an at-need store cannot be ordered from as pre-need', function () {
+    Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'pre_need')
+        ->assertSet('timing', null);
+
+    expect((new Cart($this->store))->timing())->toBeNull();
+});
+
+test('only products offered for an imminent passing are shown when one is expected soon', function () {
+    $offered = Product::factory()->for($this->store)->category(ProductCategory::Urn)->create(['available_for_imminent' => true]);
+    $notOffered = Product::factory()->for($this->store)->category(ProductCategory::Urn)->create(['available_for_imminent' => false]);
+
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'imminent');
+
+    expect($component->instance()->urns()->pluck('id')->all())->toBe([$offered->id]);
 });

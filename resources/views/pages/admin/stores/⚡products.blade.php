@@ -87,7 +87,7 @@ new class extends Component
     public bool $formAvailableForImmediate = true;
 
     #[Validate('boolean')]
-    public bool $formAvailableForPreNeed = true;
+    public bool $formAvailableForImminent = true;
 
     /** A newly-chosen upload waiting to replace the product's image. */
     #[Validate('nullable|image|max:5120')]
@@ -221,7 +221,7 @@ new class extends Component
         $this->formIsActive = true;
         $this->formAllowMultipleQuantity = false;
         $this->formAvailableForImmediate = true;
-        $this->formAvailableForPreNeed = true;
+        $this->formAvailableForImminent = true;
         $this->resetValidation();
 
         Flux::modal('product-form')->show();
@@ -259,7 +259,7 @@ new class extends Component
         $this->formIsActive = $product->is_active;
         $this->formAllowMultipleQuantity = $product->allow_multiple_quantity;
         $this->formAvailableForImmediate = $product->available_for_immediate;
-        $this->formAvailableForPreNeed = $product->available_for_pre_need;
+        $this->formAvailableForImminent = $product->available_for_imminent;
         $this->formImage = null;
         $this->existingImagePath = $product->image_path;
         $this->resetVariantForm();
@@ -335,7 +335,7 @@ new class extends Component
             'is_active' => $this->formIsActive,
             'allow_multiple_quantity' => $this->formAllowMultipleQuantity,
             'available_for_immediate' => $this->formAvailableForImmediate,
-            'available_for_pre_need' => $this->formAvailableForPreNeed,
+            'available_for_imminent' => $this->formAvailableForImminent,
         ];
 
         if ($isPackage) {
@@ -776,8 +776,10 @@ new class extends Component
                 @unless ($formCategory === ProductCategory::Choice->value)
                     <flux:checkbox wire:model="formAllowMultipleQuantity" :label="__('Allow quantity > 1')" />
                 @endunless
-                <flux:checkbox wire:model="formAvailableForImmediate" :label="__('Available for immediate need')" />
-                <flux:checkbox wire:model="formAvailableForPreNeed" :label="__('Available for pre-need planning')" />
+                @unless ($currentStore->isPreNeed())
+                    <flux:checkbox wire:model="formAvailableForImmediate" :label="__('Available when the loved one has passed')" />
+                    <flux:checkbox wire:model="formAvailableForImminent" :label="__('Available when passing is expected soon')" />
+                @endunless
             </div>
 
             @if ($formCategory === ProductCategory::Choice->value)

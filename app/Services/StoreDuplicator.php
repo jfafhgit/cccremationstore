@@ -26,6 +26,7 @@ class StoreDuplicator
      * @var list<string>
      */
     public const COPIED_SETTINGS = [
+        'sale_type',
         'checkout_path',
         'requires_container',
         'requires_urn',

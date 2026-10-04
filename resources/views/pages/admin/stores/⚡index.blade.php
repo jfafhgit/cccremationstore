@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\StorePath;
+use App\Enums\StoreSaleType;
 use App\Enums\StoreStatus;
 use App\Models\Store;
 use Flux\Flux;
@@ -22,6 +23,8 @@ new class extends Component
     #[Validate('nullable|email|max:255')]
     public string $contactEmail = '';
 
+    public string $saleType = 'at_need';
+
     public string $checkoutPath = 'packages';
 
     public function updatedName(): void
@@ -37,6 +40,7 @@ new class extends Component
             'name' => ['required', 'string', 'max:255'],
             'slug' => ['required', 'string', 'max:255', 'alpha_dash', 'unique:stores,slug'],
             'contactEmail' => ['nullable', 'email', 'max:255'],
+            'saleType' => ['required', Rule::enum(StoreSaleType::class)],
             'checkoutPath' => ['required', Rule::enum(StorePath::class)],
         ]);
 
@@ -44,13 +48,14 @@ new class extends Component
             'name' => $validated['name'],
             'slug' => $validated['slug'],
             'status' => StoreStatus::Draft,
+            'sale_type' => StoreSaleType::from($validated['saleType']),
             'checkout_path' => StorePath::from($validated['checkoutPath']),
             'contact_email' => $validated['contactEmail'] ?: null,
             'timezone' => 'America/New_York',
             'platform_fee_bps' => 500,
         ]);
 
-        $this->reset(['name', 'slug', 'contactEmail', 'checkoutPath', 'showCreateForm']);
+        $this->reset(['name', 'slug', 'contactEmail', 'saleType', 'checkoutPath', 'showCreateForm']);
 
         Flux::toast(variant: 'success', text: __('Store created — set it up, then mark it active.'));
 
@@ -94,6 +99,15 @@ new class extends Component
                     <flux:label>{{ __('Contact email') }}</flux:label>
                     <flux:input type="email" wire:model="contactEmail" />
                     <flux:error name="contactEmail" />
+                </flux:field>
+                <flux:field class="sm:col-span-2">
+                    <flux:label>{{ __('Store type') }}</flux:label>
+                    <flux:radio.group wire:model="saleType" variant="cards" class="max-sm:flex-col">
+                        @foreach (StoreSaleType::cases() as $option)
+                            <flux:radio :value="$option->value" :label="__($option->label())" :description="__($option->description())" />
+                        @endforeach
+                    </flux:radio.group>
+                    <flux:error name="saleType" />
                 </flux:field>
                 <flux:field class="sm:col-span-2">
                     <flux:label>{{ __('Storefront path') }}</flux:label>

@@ -153,11 +153,14 @@ test('answers to questions that no longer apply are not kept', function () {
     expect($this->order->fresh()->detail->spouse_first_name)->toBeNull();
 });
 
-test('pre-need arrangements do not ask when or where they passed', function () {
-    $this->order->update(['timing' => OrderTiming::PreNeed]);
+test('arrangements made before a death do not ask when or where they passed', function (OrderTiming $timing) {
+    $this->order->update(['timing' => $timing]);
 
     vitalStatisticsForm($this->order)->assertDontSee('Date of passing');
-});
+})->with([
+    'imminent' => [OrderTiming::Imminent],
+    'pre-need' => [OrderTiming::PreNeed],
+]);
 
 describe('the Social Security number', function () {
     test('is stored encrypted and never sent back to the browser', function () {

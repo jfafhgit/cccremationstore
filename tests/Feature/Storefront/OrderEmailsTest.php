@@ -65,6 +65,7 @@ describe('the customer confirmation', function () {
         expect(str_contains($html, 'sorry for your loss'))->toBe($expectsCondolences);
     })->with([
         'at-need' => [OrderTiming::Immediate, true],
+        'imminent' => [OrderTiming::Imminent, false],
         'pre-need' => [OrderTiming::PreNeed, false],
     ]);
 

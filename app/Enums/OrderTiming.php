@@ -5,13 +5,15 @@ namespace App\Enums;
 enum OrderTiming: string
 {
     case Immediate = 'immediate';
+    case Imminent = 'imminent';
     case PreNeed = 'pre_need';
 
     public function label(): string
     {
         return match ($this) {
             self::Immediate => 'Immediately, my loved one has passed',
-            self::PreNeed => 'Soon, I\'m preparing for end-of-life needs',
+            self::Imminent => 'Soon, my loved one is expected to pass in the coming days or weeks',
+            self::PreNeed => 'Planning ahead',
         };
     }
 
@@ -22,6 +24,7 @@ enum OrderTiming: string
     {
         return match ($this) {
             self::Immediate => 'At-need (loved one has passed)',
+            self::Imminent => 'Imminent need (passing expected soon)',
             self::PreNeed => 'Pre-need planning',
         };
     }
