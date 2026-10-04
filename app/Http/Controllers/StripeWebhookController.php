@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\Store;
 use App\Services\CheckoutService;
 use App\Services\PlatformBillingService;
+use App\Services\RefundService;
 use App\Services\StripeConnectService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -16,6 +17,7 @@ use Stripe\Checkout\Session as CheckoutSession;
 use Stripe\Event;
 use Stripe\Exception\SignatureVerificationException;
 use Stripe\PaymentIntent;
+use Stripe\Refund;
 use Stripe\Subscription;
 use Stripe\Webhook;
 
@@ -23,14 +25,15 @@ use Stripe\Webhook;
  * Receives Stripe webhooks at a single URL (route('stripe.webhook')). In the
  * Stripe Dashboard, point two endpoints here:
  *  - "Connected accounts" (STRIPE_WEBHOOK_SECRET): payment_intent.succeeded,
- *    payment_intent.payment_failed, charge.refunded, account.updated.
+ *    payment_intent.payment_failed, charge.refunded, charge.refund.updated,
+ *    account.updated.
  *  - "Your account" (STRIPE_PLATFORM_WEBHOOK_SECRET): checkout.session.completed,
  *    customer.subscription.created, customer.subscription.updated,
  *    customer.subscription.deleted.
  */
 class StripeWebhookController extends Controller
 {
-    public function __invoke(Request $request, CheckoutService $checkout, StripeConnectService $stripeConnect, PlatformBillingService $billing): Response
+    public function __invoke(Request $request, CheckoutService $checkout, StripeConnectService $stripeConnect, PlatformBillingService $billing, RefundService $refunds): Response
     {
         $secrets = array_values(array_filter([
             config('services.stripe.webhook_secret'),
@@ -52,7 +55,8 @@ class StripeWebhookController extends Controller
         match ($event->type) {
             'payment_intent.succeeded',
             'payment_intent.payment_failed' => $this->handlePaymentIntentEvent($event, $checkout),
-            'charge.refunded' => $this->handleChargeRefunded($event, $checkout),
+            'charge.refunded',
+            'charge.refund.updated' => $this->handleRefundEvent($event, $refunds),
             'account.updated' => $this->handleAccountUpdated($event, $stripeConnect),
             'checkout.session.completed' => $this->handleCheckoutCompleted($event, $billing),
             'customer.subscription.created',
@@ -159,17 +163,22 @@ class StripeWebhookController extends Controller
         $checkout->syncPaymentStatus($order);
     }
 
-    private function handleChargeRefunded(Event $event, CheckoutService $checkout): void
+    /**
+     * A refund was issued (from our admin or the store's Stripe dashboard) or
+     * changed status. Re-reads the refunds from Stripe rather than trusting
+     * the payload.
+     */
+    private function handleRefundEvent(Event $event, RefundService $refunds): void
     {
-        /** @var Charge $charge */
-        $charge = $event->data->object;
+        /** @var Charge|Refund $object */
+        $object = $event->data->object;
 
-        if (! $charge->refunded || ! is_string($charge->payment_intent)) {
-            return; // Partial refunds leave the order as-is.
+        if (! is_string($object->payment_intent)) {
+            return;
         }
 
-        if ($order = $this->orderFor($event, $charge->payment_intent)) {
-            $checkout->markRefunded($order);
+        if ($order = $this->orderFor($event, $object->payment_intent)) {
+            $refunds->syncFromStripe($order);
         }
     }
 

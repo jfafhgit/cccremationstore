@@ -9,90 +9,12 @@ use App\Models\Store;
 use App\Models\StoreUser;
 use App\Notifications\NewOrderNotification;
 use App\Notifications\OrderPaidNotification;
+use App\Notifications\RefundIssuedNotification;
 use App\Services\Cart;
 use App\Services\CheckoutService;
 use Illuminate\Support\Facades\Notification;
 use Livewire\Livewire;
 use Stripe\ApiRequestor;
-use Stripe\HttpClient\ClientInterface;
-
-/**
- * Stands in for Stripe's HTTP API so the real SDK code paths run, while
- * letting each test decide what state a PaymentIntent is in.
- */
-function fakeStripe(): object
-{
-    $fake = new class implements ClientInterface
-    {
-        /** @var array<string, array<string, mixed>> */
-        public array $intents = [];
-
-        /** @var array<int, array{method: string, path: string, params: array<string, mixed>}> */
-        public array $requests = [];
-
-        public function request($method, $absUrl, $headers, $params, $hasFile, $apiMode = 'v1', $maxNetworkRetries = null)
-        {
-            $path = parse_url($absUrl, PHP_URL_PATH);
-            $params = is_array($params) ? $params : [];
-            $this->requests[] = ['method' => $method, 'path' => $path, 'params' => $params];
-
-            if ($method === 'post' && $path === '/v1/payment_intents') {
-                $id = 'pi_'.count($this->intents);
-                $this->intents[$id] = [
-                    'id' => $id,
-                    'object' => 'payment_intent',
-                    'status' => 'requires_payment_method',
-                    'client_secret' => "{$id}_secret",
-                    'amount_received' => 0,
-                    ...$params,
-                ];
-            } else {
-                $id = basename($path);
-
-                if ($method === 'post') {
-                    $this->intents[$id] = [...$this->intents[$id], ...$params];
-                }
-            }
-
-            return [json_encode($this->intents[$id]), 200, []];
-        }
-
-        public function intent(string $id, array $attributes): void
-        {
-            $this->intents[$id] = [
-                'id' => $id,
-                'object' => 'payment_intent',
-                'currency' => 'usd',
-                'client_secret' => "{$id}_secret",
-                'amount_received' => 0,
-                ...$attributes,
-            ];
-        }
-
-        public function updatesTo(string $id): array
-        {
-            return array_values(array_filter(
-                $this->requests,
-                fn (array $request): bool => $request['method'] === 'post' && $request['path'] === "/v1/payment_intents/{$id}",
-            ));
-        }
-    };
-
-    ApiRequestor::setHttpClient($fake);
-
-    return $fake;
-}
-
-function stripeEvent(string $type, string $account, array $object): array
-{
-    return [
-        'id' => 'evt_test',
-        'object' => 'event',
-        'type' => $type,
-        'account' => $account,
-        'data' => ['object' => $object],
-    ];
-}
 
 beforeEach(function () {
     config([
@@ -327,17 +249,41 @@ test('the webhook rejects unsigned events outside local development', function (
     expect($this->stripe->requests)->toBeEmpty();
 });
 
-test('a full refund from the stripe dashboard marks the order refunded', function () {
+test('refunds from the stripe dashboard are recorded, and a full one marks the order refunded', function (int $refundedCents, OrderStatus $expectedStatus) {
     $this->order->update(['status' => OrderStatus::Paid, 'paid_at' => now()]);
+    $this->stripe->refund('re_dashboard', 'pi_existing', $refundedCents);
 
     $this->postJson(route('stripe.webhook'), stripeEvent('charge.refunded', $this->store->stripe_account_id, [
         'id' => 'ch_test',
         'object' => 'charge',
         'payment_intent' => 'pi_existing',
-        'refunded' => true,
     ]))->assertOk();
 
-    expect($this->order->fresh()->status)->toBe(OrderStatus::Refunded);
+    $order = $this->order->fresh();
+
+    expect($order->status)->toBe($expectedStatus)
+        ->and($order->refunds()->sole())
+        ->stripe_refund_id->toBe('re_dashboard')
+        ->amount_cents->toBe($refundedCents)
+        ->refunded_by_user_id->toBeNull();
+
+    Notification::assertSentToTimes($this->order, RefundIssuedNotification::class, 1);
+})->with([
+    'full' => [150000, OrderStatus::Refunded],
+    'partial' => [50000, OrderStatus::Paid],
+]);
+
+test('a refund that later fails no longer counts against the order', function () {
+    $this->order->update(['status' => OrderStatus::Paid, 'paid_at' => now()]);
+    $this->stripe->refund('re_dashboard', 'pi_existing', 50000, 'failed');
+
+    $this->postJson(route('stripe.webhook'), stripeEvent('charge.refund.updated', $this->store->stripe_account_id, [
+        'id' => 're_dashboard',
+        'object' => 'refund',
+        'payment_intent' => 'pi_existing',
+    ]))->assertOk();
+
+    expect($this->order->fresh()->refundableCents())->toBe(150000);
 });
 
 test('the payment step lists everything in the cart alongside the payment form', function () {

@@ -128,6 +128,36 @@ class Order extends Model
     }
 
     /**
+     * @return HasMany<OrderRefund, $this>
+     */
+    public function refunds(): HasMany
+    {
+        return $this->hasMany(OrderRefund::class);
+    }
+
+    public function refundedCents(): int
+    {
+        return (int) $this->refunds()->counted()->sum('amount_cents');
+    }
+
+    public function platformFeeReturnedCents(): int
+    {
+        return (int) $this->refunds()->sum('application_fee_refunded_cents');
+    }
+
+    /**
+     * What's left of the payment that can still be refunded.
+     */
+    public function refundableCents(): int
+    {
+        if (! $this->paid_at || ! $this->stripe_payment_intent_id) {
+            return 0;
+        }
+
+        return max(0, $this->total_cents - $this->refundedCents());
+    }
+
+    /**
      * @return HasOne<OrderDetail, $this>
      */
     public function detail(): HasOne

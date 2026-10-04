@@ -95,6 +95,17 @@ test('staff can see their own store incomplete orders as leads, never another st
         ->and($leads->first()->id)->toBe($mine->id);
 });
 
+test('staff see an order\'s refunds but cannot issue one', function () {
+    Auth::guard('store')->login($this->staff);
+    $order = Order::factory()->for($this->store)->paid()->create(['total_cents' => 150000]);
+    $order->refunds()->create(['stripe_refund_id' => 're_test', 'amount_cents' => 25050, 'status' => 'succeeded', 'reason' => 'Urn returned']);
+
+    Livewire::test('pages::portal.order-detail', ['order' => $order->id])
+        ->assertSee('Refunded $250.50 of $1,500.00.')
+        ->assertSee('Urn returned')
+        ->assertDontSee('Issue refund');
+});
+
 test('staff see Vital Statistics with the Social Security number masked until they reveal it', function () {
     Auth::guard('store')->login($this->staff);
     $order = Order::factory()->create(['store_id' => $this->store->id, 'paid_at' => now()]);

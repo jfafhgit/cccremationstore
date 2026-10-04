@@ -3,10 +3,13 @@
 use App\Enums\OrderStatus;
 use App\Models\Order;
 use App\Models\Store;
+use App\Services\RefundService;
 use Flux\Flux;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
+use Stripe\Exception\ApiErrorException;
 
 new class extends Component
 {
@@ -46,9 +49,79 @@ new class extends Component
     public function mount(Store $store, int|string $order): void
     {
         $this->currentStore = $store;
-        $this->currentOrder = $store->orders()->with(['items', 'detail'])->findOrFail($order);
+        $this->currentOrder = $store->orders()->with(['items', 'detail', 'refunds.refundedBy'])->findOrFail($order);
         $this->status = $this->currentOrder->status->value;
         $this->internalNotes = $this->currentOrder->internal_notes ?? '';
+    }
+
+    /** "full", "minus_fee", or "custom". */
+    public string $refundOption = 'full';
+
+    public string $refundAmount = '';
+
+    public string $refundReason = '';
+
+    /**
+     * Everything left to refund, less the processing fee the family paid,
+     * or null when the order had no processing fee (or it'd leave nothing).
+     */
+    public function refundableMinusFeeCents(): ?int
+    {
+        $fee = $this->currentOrder->processing_fee_cents;
+        $amount = $this->currentOrder->refundableCents() - $fee;
+
+        return $fee > 0 && $amount > 0 ? $amount : null;
+    }
+
+    public function issueRefund(RefundService $refunds): void
+    {
+        $refundableCents = $this->currentOrder->refundableCents();
+
+        $this->validate([
+            'refundOption' => ['required', Rule::in(['full', 'minus_fee', 'custom'])],
+            'refundAmount' => [Rule::requiredIf($this->refundOption === 'custom'), 'nullable', 'numeric', 'gt:0', 'lte:'.($refundableCents / 100)],
+            'refundReason' => ['nullable', 'string', 'max:1000'],
+        ], [
+            'refundAmount.lte' => __('The refund can\'t be more than the $:amount left to refund.', ['amount' => number_format($refundableCents / 100, 2)]),
+        ]);
+
+        $amountCents = match ($this->refundOption) {
+            'full' => $refundableCents,
+            'minus_fee' => $this->refundableMinusFeeCents() ?? 0,
+            'custom' => (int) round(((float) $this->refundAmount) * 100),
+        };
+
+        // The platform fee goes back too, unless only part of the payment is being refunded.
+        $returnPlatformFee = $this->refundOption !== 'custom';
+
+        try {
+            $refund = $refunds->refund($this->currentOrder, $amountCents, $this->refundReason, auth()->user(), $returnPlatformFee);
+        } catch (\InvalidArgumentException $e) {
+            $this->addError('refundAmount', $e->getMessage());
+
+            return;
+        } catch (ApiErrorException|\RuntimeException $e) {
+            Log::error('Could not issue a refund in Stripe.', [
+                'order_id' => $this->currentOrder->id,
+                'message' => $e->getMessage(),
+            ]);
+
+            $this->addError('refundAmount', __('Stripe could not issue the refund: :message', ['message' => $e->getMessage()]));
+
+            return;
+        }
+
+        $this->currentOrder->refresh();
+        $this->status = $this->currentOrder->status->value;
+        $this->reset(['refundOption', 'refundAmount', 'refundReason']);
+
+        Flux::modal('issue-refund')->close();
+
+        if ($returnPlatformFee && $this->currentOrder->platformFeeReturnedCents() < $this->currentOrder->platform_fee_cents) {
+            Flux::toast(variant: 'warning', text: __('Refunded $:amount, but the platform fee could not be returned. Return it from the Stripe dashboard.', ['amount' => $refund->amountInDollars()]));
+        } else {
+            Flux::toast(variant: 'success', text: __('Refunded $:amount.', ['amount' => $refund->amountInDollars()]));
+        }
     }
 
     public function updateStatus(): void
@@ -145,6 +218,55 @@ new class extends Component
             </div>
         </div>
     </div>
+
+    @if ($currentOrder->paid_at && $currentOrder->stripe_payment_intent_id)
+        @php
+            $refundableCents = $currentOrder->refundableCents();
+        @endphp
+        <x-order-refunds :order="$currentOrder" show-admin-name class="mt-6">
+            @if ($refundableCents > 0)
+                <x-slot:actions>
+                    <flux:modal.trigger name="issue-refund">
+                        <flux:button size="sm" icon="arrow-uturn-left">{{ __('Issue refund') }}</flux:button>
+                    </flux:modal.trigger>
+                </x-slot:actions>
+            @endif
+        </x-order-refunds>
+
+        <flux:modal name="issue-refund" class="md:w-md">
+            <form wire:submit="issueRefund" class="space-y-5">
+                <div>
+                    <flux:heading size="lg">{{ __('Issue a refund') }}</flux:heading>
+                    <flux:text class="mt-2">{{ __('Refunds go back to the card the family paid with, from :store\'s Stripe account. This can\'t be undone.', ['store' => $currentStore->name]) }}</flux:text>
+                </div>
+
+                <flux:radio.group wire:model.live="refundOption" :label="__('Amount')">
+                    @php
+                        $feeNote = $currentOrder->platform_fee_cents > 0 ? __('The platform fee is returned to :store too.', ['store' => $currentStore->name]) : null;
+                    @endphp
+                    <flux:radio value="full" :label="__('Full amount ($:amount)', ['amount' => number_format($refundableCents / 100, 2)])" :description="$feeNote" />
+                    @if ($minusFeeCents = $this->refundableMinusFeeCents())
+                        <flux:radio value="minus_fee" :label="__('Full amount minus the processing fee ($:amount)', ['amount' => number_format($minusFeeCents / 100, 2)])" :description="$feeNote" />
+                    @endif
+                    <flux:radio value="custom" :label="__('Custom amount')" :description="$feeNote ? __('The platform fee is kept.') : null" />
+                </flux:radio.group>
+
+                @if ($refundOption === 'custom')
+                    <flux:input wire:model="refundAmount" type="number" step="0.01" min="0.01" :max="$refundableCents / 100" icon="currency-dollar" :label="__('Refund amount')" :description="__('Up to $:amount.', ['amount' => number_format($refundableCents / 100, 2)])" />
+                @endif
+                <flux:error name="refundAmount" />
+
+                <flux:textarea wire:model="refundReason" rows="2" :label="__('Reason (optional)')" />
+
+                <div class="flex justify-end gap-2">
+                    <flux:modal.close>
+                        <flux:button variant="ghost">{{ __('Cancel') }}</flux:button>
+                    </flux:modal.close>
+                    <flux:button type="submit" variant="danger">{{ __('Refund') }}</flux:button>
+                </div>
+            </form>
+        </flux:modal>
+    @endif
 
     @if ($currentOrder->paid_at && ! $currentStore->usesExternalVitalStatistics())
         <div class="mt-6 flex justify-end">

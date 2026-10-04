@@ -40,7 +40,7 @@ new #[Layout('layouts::portal')] class extends Component
     public function mount(int|string $order): void
     {
         $this->currentOrder = Store::current()->orders()
-            ->with(['items', 'detail'])
+            ->with(['items', 'detail', 'refunds'])
             ->findOrFail($order);
     }
 }; ?>
@@ -130,6 +130,10 @@ new #[Layout('layouts::portal')] class extends Component
             </div>
         </div>
     </div>
+
+    @if ($currentOrder->refunds->isNotEmpty())
+        <x-order-refunds :order="$currentOrder" class="mt-6" />
+    @endif
 
     @if ($currentOrder->paid_at && ! $currentOrder->store->usesExternalVitalStatistics())
         <div class="mt-6 flex justify-end">

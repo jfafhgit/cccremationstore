@@ -335,14 +335,4 @@ class CheckoutService
 
         return $changed;
     }
-
-    /**
-     * Reflect a full refund issued from the store's own Stripe dashboard.
-     */
-    public function markRefunded(Order $order): void
-    {
-        if ($order->paid_at && $order->status !== OrderStatus::Refunded) {
-            $order->update(['status' => OrderStatus::Refunded]);
-        }
-    }
 }
