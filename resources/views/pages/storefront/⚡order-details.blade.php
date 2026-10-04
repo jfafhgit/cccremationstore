@@ -162,8 +162,8 @@ new #[Layout('layouts::storefront')] class extends Component
 
         if ($detail = $this->currentOrder->detail) {
             $this->fillFrom($detail);
-        } else {
-            // Usually the person who paid is the next of kin.
+        } elseif ($this->currentOrder->relationship_to_deceased !== 'Self') {
+            // Usually the person who paid is the next of kin, unless they're planning for themselves.
             $this->nextOfKinName = $this->currentOrder->purchaserName();
             $this->nextOfKinRelationship = $this->currentOrder->relationship_to_deceased ?? '';
             $this->nextOfKinPhone = $this->currentOrder->purchaser_phone ?? '';
@@ -611,7 +611,7 @@ new #[Layout('layouts::storefront')] class extends Component
                 {{-- Death certificate information --}}
                 <section class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
                     <flux:heading size="lg">{{ __('Death certificate information') }}</flux:heading>
-                    <flux:text class="mt-1">{{ __('About your loved one, exactly as it should appear on official records.') }}</flux:text>
+                    <flux:text class="mt-1">{{ $currentOrder->timing === OrderTiming::PreNeed ? __('About the person this arrangement is for, exactly as it should appear on official records.') : __('About your loved one, exactly as it should appear on official records.') }}</flux:text>
                     <div class="mt-5 grid gap-4 sm:grid-cols-6">
                         <flux:field class="sm:col-span-2">
                             <flux:label>{{ __('First name') }}</flux:label>

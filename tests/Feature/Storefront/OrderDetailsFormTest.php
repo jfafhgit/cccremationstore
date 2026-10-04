@@ -70,6 +70,15 @@ test('the next of kin starts out as the person who paid', function () {
         ->assertSet('nextOfKinEmail', 'sam@example.com');
 });
 
+test('someone planning their own arrangements is not made their own next of kin', function () {
+    $this->order->update(['timing' => OrderTiming::PreNeed, 'relationship_to_deceased' => 'Self']);
+
+    vitalStatisticsForm($this->order)
+        ->assertSet('nextOfKinName', '')
+        ->assertSet('nextOfKinRelationship', '')
+        ->assertSet('nextOfKinEmail', '');
+});
+
 test('a family can save part of the form and come back without staff being emailed', function () {
     vitalStatisticsForm($this->order)
         ->set('dateOfBirth', '1948-03-14')

@@ -54,6 +54,9 @@ new class extends Component
 
     public string $relationshipToDeceased = '';
 
+    /** Pre-need only: whether the purchaser is planning for "self" or "someone_else". */
+    public string $arrangementFor = '';
+
     public string $deceasedFirstName = '';
 
     public string $deceasedMiddleName = '';
@@ -709,15 +712,34 @@ new class extends Component
      */
     protected function detailsRules(): array
     {
-        return [
-            'deceasedFirstName' => ['required', 'string', 'max:255'],
-            'deceasedLastName' => ['required', 'string', 'max:255'],
-            'relationshipToDeceased' => ['required', 'string', 'max:255'],
+        $rules = [
             'purchaserFirstName' => ['required', 'string', 'max:255'],
             'purchaserLastName' => ['required', 'string', 'max:255'],
             'purchaserEmail' => ['required', 'email', 'max:255'],
             'purchaserPhone' => ['required', 'string', 'max:30'],
         ];
+
+        if ($this->storeModel()->isPreNeed()) {
+            $rules['arrangementFor'] = ['required', 'in:self,someone_else'];
+        }
+
+        // Someone planning for themselves is the person the arrangement is for.
+        if (! $this->isPlanningForSelf()) {
+            $rules['deceasedFirstName'] = ['required', 'string', 'max:255'];
+            $rules['deceasedLastName'] = ['required', 'string', 'max:255'];
+            $rules['relationshipToDeceased'] = ['required', 'string', 'max:255'];
+        }
+
+        return $rules;
+    }
+
+    /**
+     * Whether a pre-need purchaser is arranging their own cremation, in
+     * which case they are also the person the arrangement is for.
+     */
+    public function isPlanningForSelf(): bool
+    {
+        return $this->storeModel()->isPreNeed() && $this->arrangementFor === 'self';
     }
 
     public function submitDetails(CheckoutService $checkout): void
@@ -742,6 +764,14 @@ new class extends Component
         $this->paymentError = null;
 
         $cart = $this->cart();
+
+        if ($this->isPlanningForSelf()) {
+            $this->deceasedFirstName = $this->purchaserFirstName;
+            $this->deceasedMiddleName = '';
+            $this->deceasedLastName = $this->purchaserLastName;
+            $this->deceasedSuffix = '';
+            $this->relationshipToDeceased = 'Self';
+        }
 
         $details = [
             'purchaser_first_name' => $this->purchaserFirstName,
@@ -1238,17 +1268,28 @@ new class extends Component
             <flux:subheading class="mt-1">{{ __("Just the essentials for now — we'll ask for more after your payment is secured.") }}</flux:subheading>
 
             <form wire:submit="submitDetails" class="mt-6 space-y-6">
-                <div>
-                    <flux:heading size="sm" class="mb-3 text-zinc-500">{{ __('Your loved one') }}</flux:heading>
+                @if ($this->storeModel()->isPreNeed())
+                    <flux:field>
+                        <flux:label>{{ __('Who is this arrangement for?') }}</flux:label>
+                        <flux:radio.group wire:model.live="arrangementFor" variant="cards" class="max-sm:flex-col">
+                            <flux:radio value="self" :label="__('Myself')" :description="__('I\'m planning my own arrangements.')" />
+                            <flux:radio value="someone_else" :label="__('Someone else')" :description="__('I\'m planning for a family member or someone in my care.')" />
+                        </flux:radio.group>
+                        <flux:error name="arrangementFor" />
+                    </flux:field>
+                @endif
+
+                <div @class(['hidden' => $this->storeModel()->isPreNeed() && $arrangementFor !== 'someone_else'])>
+                    <flux:heading size="sm" class="mb-3 text-zinc-500">{{ $this->storeModel()->isPreNeed() ? __('The person this arrangement is for') : __('Your loved one') }}</flux:heading>
                     <div class="grid gap-4 sm:grid-cols-2">
                         <flux:field>
                             <flux:label>{{ __('First name') }}</flux:label>
-                            <flux:input wire:model="deceasedFirstName" required />
+                            <flux:input wire:model="deceasedFirstName" />
                             <flux:error name="deceasedFirstName" />
                         </flux:field>
                         <flux:field>
                             <flux:label>{{ __('Last name') }}</flux:label>
-                            <flux:input wire:model="deceasedLastName" required />
+                            <flux:input wire:model="deceasedLastName" />
                             <flux:error name="deceasedLastName" />
                         </flux:field>
                     </div>
@@ -1277,9 +1318,9 @@ new class extends Component
                             <flux:input type="tel" wire:model="purchaserPhone" required />
                             <flux:error name="purchaserPhone" />
                         </flux:field>
-                        <flux:field class="sm:col-span-2">
-                            <flux:label>{{ __('Your relationship to the deceased') }}</flux:label>
-                            <flux:select wire:model="relationshipToDeceased" required>
+                        <flux:field @class(['sm:col-span-2', 'hidden' => $this->isPlanningForSelf()])>
+                            <flux:label>{{ $this->storeModel()->isPreNeed() ? __('Your relationship to them') : __('Your relationship to the deceased') }}</flux:label>
+                            <flux:select wire:model="relationshipToDeceased">
                                 <option value="">{{ __('Select') }}</option>
                                 @foreach (['Spouse', 'Domestic partner', 'Adult child', 'Parent', 'Adult sibling', 'Other family member', 'Legal representative', 'Other'] as $relationship)
                                     <option value="{{ $relationship }}">{{ $relationship }}</option>

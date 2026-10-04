@@ -8,6 +8,7 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\Store;
 use App\Services\Cart;
+use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 
 beforeEach(function () {
@@ -33,6 +34,16 @@ function fillMinimalDetails($component): void
         ->set('purchaserLastName', 'Rivera')
         ->set('purchaserEmail', 'sam@example.com')
         ->set('purchaserPhone', '555-0100');
+}
+
+function preNeedDetailsStep(Product $package): Testable
+{
+    return Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectPackage', $package->id)
+        ->call('goToContainers')
+        ->call('goToAddons')
+        ->call('goToKeepsakes')
+        ->call('goToDetails');
 }
 
 test('the wizard walks through every step in order', function () {
@@ -391,30 +402,68 @@ test('the storefront header links back to the funeral home website, but the embe
 
     $this->get(route('storefront.start', ['store' => $this->store->slug]))
         ->assertOk()
-        ->assertSee('Back to main site')
+        ->assertSee("Back to {$this->store->name} website")
         ->assertSeeHtml('href="https://riverside.example"');
 
     $this->get(route('storefront.embed', ['store' => $this->store->slug]))
         ->assertOk()
-        ->assertDontSee('Back to main site');
+        ->assertDontSee("Back to {$this->store->name} website");
 });
 
-test('a pre-need store skips the timing question and orders as pre-need', function () {
-    config(['services.stripe.secret' => null]);
-    $this->store->update(['sale_type' => StoreSaleType::PreNeed]);
+describe('a pre-need store', function () {
+    beforeEach(function () {
+        config(['services.stripe.secret' => null]);
+        $this->store->update(['sale_type' => StoreSaleType::PreNeed]);
+    });
 
-    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
-        ->assertDontSee(OrderTiming::Immediate->label())
-        ->assertDontSee(OrderTiming::Imminent->label())
-        ->call('selectPackage', $this->package->id)
-        ->call('goToContainers')
-        ->call('goToAddons')
-        ->call('goToKeepsakes')
-        ->call('goToDetails');
-    fillMinimalDetails($component);
-    $component->call('submitDetails');
+    test('skips the timing question and orders as pre-need', function () {
+        Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+            ->assertDontSee(OrderTiming::Immediate->label())
+            ->assertDontSee(OrderTiming::Imminent->label());
 
-    expect(Order::where('store_id', $this->store->id)->first()->timing)->toBe(OrderTiming::PreNeed);
+        $component = preNeedDetailsStep($this->package)->set('arrangementFor', 'someone_else');
+        fillMinimalDetails($component);
+        $component->call('submitDetails');
+
+        expect(Order::where('store_id', $this->store->id)->first())
+            ->timing->toBe(OrderTiming::PreNeed)
+            ->deceased_first_name->toBe('Pat')
+            ->relationship_to_deceased->toBe('Adult child');
+    });
+
+    test('asks who the arrangement is for', function () {
+        $component = preNeedDetailsStep($this->package);
+        fillMinimalDetails($component);
+
+        $component->call('submitDetails')->assertHasErrors(['arrangementFor' => 'required']);
+    });
+
+    test('someone planning for themselves only gives their own details', function () {
+        preNeedDetailsStep($this->package)
+            ->set('arrangementFor', 'self')
+            ->set('purchaserFirstName', 'Sam')
+            ->set('purchaserLastName', 'Rivera')
+            ->set('purchaserEmail', 'sam@example.com')
+            ->set('purchaserPhone', '555-0100')
+            ->call('submitDetails')
+            ->assertHasNoErrors();
+
+        expect(Order::where('store_id', $this->store->id)->first())
+            ->deceased_first_name->toBe('Sam')
+            ->deceased_last_name->toBe('Rivera')
+            ->relationship_to_deceased->toBe('Self');
+    });
+
+    test('someone planning for another person must say who and how they are related', function () {
+        preNeedDetailsStep($this->package)
+            ->set('arrangementFor', 'someone_else')
+            ->set('purchaserFirstName', 'Sam')
+            ->set('purchaserLastName', 'Rivera')
+            ->set('purchaserEmail', 'sam@example.com')
+            ->set('purchaserPhone', '555-0100')
+            ->call('submitDetails')
+            ->assertHasErrors(['deceasedFirstName', 'deceasedLastName', 'relationshipToDeceased']);
+    });
 });
 
 test('an at-need store cannot be ordered from as pre-need', function () {

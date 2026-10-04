@@ -12,6 +12,17 @@
     <body class="min-h-screen bg-brand-50/40 text-zinc-900 antialiased">
         <div class="flex min-h-screen flex-col">
             <header class="border-b border-brand-100 bg-white">
+                @if ($store?->website_url)
+                    <div class="border-b border-brand-100 bg-brand-50">
+                        <div class="mx-auto max-w-5xl px-4 py-1.5 sm:px-6">
+                            <a href="{{ $store->website_url }}" target="_top" class="inline-flex items-center gap-1 text-xs text-zinc-600 hover:text-brand-700">
+                                <flux:icon.arrow-left class="size-3.5" />
+                                {{ __('Back to :name website', ['name' => $store->name]) }}
+                            </a>
+                        </div>
+                    </div>
+                @endif
+
                 <div class="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
                     <a href="{{ route('storefront.start', ['store' => $store?->slug]) }}" wire:navigate class="flex min-w-0 items-center gap-3">
                         @if ($store?->brandLogoUrl())
@@ -29,14 +40,6 @@
                     </a>
 
                     <div class="flex items-center gap-4">
-                        @if ($store?->website_url)
-                            <a href="{{ $store->website_url }}" target="_top" class="flex items-center gap-1 text-sm text-zinc-600 hover:text-brand-700">
-                                <flux:icon.arrow-left class="size-4" />
-                                <span class="hidden sm:inline">{{ __('Back to main site') }}</span>
-                                <span class="sm:hidden">{{ __('Main site') }}</span>
-                            </a>
-                        @endif
-
                         @if ($store?->contact_phone)
                             <a href="tel:{{ $store->contact_phone }}" class="hidden text-sm text-zinc-600 hover:text-brand-700 sm:block">
                                 {{ __('Need help?') }} <span class="font-medium">{{ $store->contact_phone }}</span>
