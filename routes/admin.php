@@ -15,11 +15,11 @@ Route::middleware(['auth', ValidateSessionWithWorkOS::class])->group(function ()
         Route::redirect('/', '/admin/stores');
 
         Route::livewire('stores', 'pages::admin.stores.index')->name('stores.index');
-        Route::livewire('stores/{store}', 'pages::admin.stores.show')->name('stores.show');
+        Route::livewire('stores/{store}', 'pages::admin.stores.show')->withTrashed()->name('stores.show');
         Route::livewire('stores/{store}/products', 'pages::admin.stores.products')->name('stores.products');
         Route::livewire('stores/{store}/locations', 'pages::admin.stores.locations')->name('stores.locations');
-        Route::livewire('stores/{store}/orders', 'pages::admin.stores.orders')->name('stores.orders');
-        Route::livewire('stores/{store}/orders/{order}', 'pages::admin.stores.order-detail')->name('stores.order-detail');
+        Route::livewire('stores/{store}/orders', 'pages::admin.stores.orders')->withTrashed()->name('stores.orders');
+        Route::livewire('stores/{store}/orders/{order}', 'pages::admin.stores.order-detail')->withTrashed()->name('stores.order-detail');
         Route::livewire('leads', 'pages::admin.leads')->name('leads');
 
         Route::livewire('users', 'pages::admin.users')->middleware('can:manage-admins')->name('users');

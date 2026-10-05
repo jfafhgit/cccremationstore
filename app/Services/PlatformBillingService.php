@@ -203,6 +203,23 @@ class PlatformBillingService
         return $store;
     }
 
+    /**
+     * End the store's subscription right away, for a store that is being
+     * archived or deleted, so the funeral home is never billed again.
+     */
+    public function cancelSubscription(Store $store): Store
+    {
+        if (! $store->hasLiveSubscription()) {
+            return $store;
+        }
+
+        $subscription = $this->client()->subscriptions->cancel($store->stripe_subscription_id);
+
+        $store->forceFill(['subscription_status' => $subscription->status])->save();
+
+        return $store;
+    }
+
     private function retrieveSubscription(Store $store): Subscription
     {
         return $this->client()->subscriptions->retrieve($store->stripe_subscription_id);

@@ -243,3 +243,17 @@ test('moving a subscribed store to another fee model cancels at the end of the p
     expect($this->stripe->lastRequestTo('post', '/v1/subscriptions/sub_test')['params'])
         ->toBe(['cancel_at_period_end' => 'true']); // Stripe's wire format for booleans
 });
+
+test('removing a store cancels its subscription right away', function () {
+    subscribeStore($this->store);
+    $this->stripe->subscriptionFor('sub_test', 'active', 9900);
+    $this->actingAs(User::factory()->create());
+
+    Livewire::test('pages::admin.stores.show', ['store' => $this->store])
+        ->set('removeConfirmation', $this->store->name)
+        ->call('removeStore')
+        ->assertHasNoErrors();
+
+    expect($this->stripe->lastRequestTo('delete', '/v1/subscriptions/sub_test'))->not->toBeNull()
+        ->and(Store::withTrashed()->find($this->store->id))->toBeNull();
+});

@@ -5,14 +5,19 @@ use App\Enums\StoreSaleType;
 use App\Enums\StoreStatus;
 use App\Models\Store;
 use Flux\Flux;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
+use Livewire\Attributes\Url;
 use Livewire\Attributes\Validate;
 use Livewire\Component;
 
 new class extends Component
 {
     public bool $showCreateForm = false;
+
+    #[Url(except: '')]
+    public string $search = '';
 
     #[Validate('required|string|max:255')]
     public string $name = '';
@@ -64,7 +69,32 @@ new class extends Component
 
     public function stores(): Collection
     {
-        return Store::withCount(['products', 'orders'])->latest()->get();
+        return Store::withCount(['products', 'orders'])->tap($this->applySearch(...))->latest()->get();
+    }
+
+    /**
+     * Stores taken off the platform that are kept for their paid orders.
+     */
+    public function archivedStores(): Collection
+    {
+        return Store::onlyTrashed()->withCount('orders')->tap($this->applySearch(...))->latest('deleted_at')->get();
+    }
+
+    /**
+     * Match the search against the store's name, subdomain, or contact email.
+     */
+    private function applySearch(Builder $query): void
+    {
+        $search = trim($this->search);
+
+        if ($search === '') {
+            return;
+        }
+
+        $query->where(fn (Builder $query) => $query
+            ->whereLike('name', "%{$search}%")
+            ->orWhereLike('slug', "%{$search}%")
+            ->orWhereLike('contact_email', "%{$search}%"));
     }
 }; ?>
 
@@ -126,7 +156,9 @@ new class extends Component
         </div>
     @endif
 
-    <div class="mt-6 overflow-x-auto rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
+    <flux:input wire:model.live.debounce.300ms="search" icon="magnifying-glass" :placeholder="__('Search by name, subdomain, or email')" clearable class="mt-6 max-w-md" :aria-label="__('Search stores')" />
+
+    <div class="mt-4 overflow-x-auto rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
         <table class="w-full text-sm">
             <thead class="border-b border-zinc-100 text-left text-xs uppercase tracking-wide text-zinc-400 dark:border-zinc-700">
                 <tr>
@@ -164,10 +196,41 @@ new class extends Component
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="5" class="px-4 py-8 text-center text-zinc-500 dark:text-zinc-400">{{ __('No stores yet.') }}</td>
+                        <td colspan="5" class="px-4 py-8 text-center text-zinc-500 dark:text-zinc-400">{{ trim($search) !== '' ? __('No stores match ":search".', ['search' => $search]) : __('No stores yet.') }}</td>
                     </tr>
                 @endforelse
             </tbody>
         </table>
     </div>
+
+    @if (($archivedStores = $this->archivedStores())->isNotEmpty())
+        <div class="mt-10">
+            <flux:heading size="lg">{{ __('Archived stores') }}</flux:heading>
+            <flux:subheading>{{ __('Offline, kept for their paid orders. Open one to view its orders or restore it.') }}</flux:subheading>
+
+            <div class="mt-4 overflow-x-auto rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
+                <table class="w-full text-sm">
+                    <thead class="border-b border-zinc-100 text-left text-xs uppercase tracking-wide text-zinc-400 dark:border-zinc-700">
+                        <tr>
+                            <th class="px-4 py-3">{{ __('Store') }}</th>
+                            <th class="px-4 py-3">{{ __('Archived') }}</th>
+                            <th class="px-4 py-3 text-right">{{ __('Orders') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-zinc-100 dark:divide-zinc-700">
+                        @foreach ($archivedStores as $store)
+                            <tr wire:key="archived-store-{{ $store->id }}" class="hover:bg-zinc-50 dark:hover:bg-zinc-700/50">
+                                <td class="px-4 py-3">
+                                    <flux:link :href="route('admin.stores.show', $store)" wire:navigate class="font-medium">{{ $store->name }}</flux:link>
+                                    <p class="text-xs text-zinc-400">{{ $store->slug }}.{{ config('app.root_domain') }}</p>
+                                </td>
+                                <td class="px-4 py-3 text-zinc-500">{{ $store->deleted_at->format('M j, Y') }}</td>
+                                <td class="px-4 py-3 text-right">{{ $store->orders_count }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    @endif
 </div>

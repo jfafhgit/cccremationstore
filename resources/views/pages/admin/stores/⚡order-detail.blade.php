@@ -133,6 +133,19 @@ new class extends Component
 
         Flux::toast(variant: 'success', text: __('Order updated.'));
     }
+
+    /**
+     * Permanently delete the order with its items, details, and refund
+     * records, e.g. a test order. Nothing is changed in Stripe.
+     */
+    public function deleteOrder(): void
+    {
+        $this->currentOrder->delete();
+
+        Flux::toast(variant: 'success', text: __('Order :number deleted.', ['number' => $this->currentOrder->order_number]));
+
+        $this->redirect(route('admin.stores.orders', $this->currentStore), navigate: true);
+    }
 }; ?>
 
 <div>
@@ -145,7 +158,19 @@ new class extends Component
             <flux:heading size="xl">{{ __('Order :number', ['number' => $currentOrder->order_number]) }}</flux:heading>
             <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{{ $currentStore->name }} &middot; {{ $currentOrder->created_at->format('F j, Y \a\t g:i A') }}</p>
         </div>
-        <flux:badge>{{ $currentOrder->status->label() }}</flux:badge>
+        <div class="flex items-center gap-2">
+            <flux:badge>{{ $currentOrder->status->label() }}</flux:badge>
+            <flux:button
+                size="sm"
+                variant="ghost"
+                icon="trash"
+                class="!text-red-600"
+                wire:click="deleteOrder"
+                wire:confirm="{{ $currentOrder->paid_at
+                    ? __('Permanently delete order :number? It was paid, so its payment stays in Stripe, but this order, the family\'s details, and its refund history are erased here. Only do this for test orders.', ['number' => $currentOrder->order_number])
+                    : __('Permanently delete order :number? This cannot be undone.', ['number' => $currentOrder->order_number]) }}"
+            >{{ __('Delete') }}</flux:button>
+        </div>
     </div>
 
     <div class="mt-8 grid gap-6 sm:grid-cols-2">

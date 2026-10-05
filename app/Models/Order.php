@@ -116,7 +116,8 @@ class Order extends Model
      */
     public function store(): BelongsTo
     {
-        return $this->belongsTo(Store::class);
+        // An archived store keeps its orders, which still need their store (e.g. for refunds).
+        return $this->belongsTo(Store::class)->withTrashed();
     }
 
     /**

@@ -12,6 +12,7 @@ use Flux\Flux;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Http\UploadedFile;
 use App\Services\PlatformBillingService;
+use App\Services\StoreDeleter;
 use App\Services\StoreDuplicator;
 use App\Services\StripeConnectService;
 use Illuminate\Support\Facades\Hash;
@@ -112,6 +113,9 @@ new class extends Component
     public string $duplicateName = '';
 
     public string $duplicateSlug = '';
+
+    /** The store's name, typed to confirm deleting or archiving it. */
+    public string $removeConfirmation = '';
 
     public function mount(Store $store): void
     {
@@ -376,6 +380,50 @@ new class extends Component
     }
 
     /**
+     * Whether removing this store archives it (it has paid orders) rather
+     * than deleting it.
+     */
+    public function removalArchives(): bool
+    {
+        return app(StoreDeleter::class)->archives($this->currentStore);
+    }
+
+    public function removeStore(StoreDeleter $deleter): void
+    {
+        $this->validate(
+            ['removeConfirmation' => ['required', Rule::in([$this->currentStore->name])]],
+            ['removeConfirmation.in' => __('Type the store name exactly as shown to confirm.')],
+            ['removeConfirmation' => __('store name')],
+        );
+
+        try {
+            $archived = $deleter->remove($this->currentStore);
+        } catch (ApiErrorException|\RuntimeException $e) {
+            Log::error('Could not cancel the platform subscription while removing a store.', [
+                'store_id' => $this->currentStore->id,
+                'message' => $e->getMessage(),
+            ]);
+
+            $this->addError('removeConfirmation', __('Could not cancel this store\'s subscription in Stripe, so nothing was removed. Please try again in a moment.'));
+
+            return;
+        }
+
+        Flux::toast(variant: 'success', text: $archived
+            ? __(':store was archived. Its orders are kept under Archived stores.', ['store' => $this->currentStore->name])
+            : __(':store was deleted.', ['store' => $this->currentStore->name]));
+
+        $this->redirect(route('admin.stores.index'), navigate: true);
+    }
+
+    public function restoreStore(StoreDeleter $deleter): void
+    {
+        $deleter->restore($this->currentStore);
+
+        Flux::toast(variant: 'success', text: __('Store restored. It is suspended until you set it active again.'));
+    }
+
+    /**
      * Email a new invitation link, which also cancels any link sent before it.
      */
     public function sendStaffInvitation(int $storeUserId): void
@@ -479,15 +527,58 @@ new class extends Component
     <div class="mt-4 flex items-center justify-between">
         <flux:heading size="xl">{{ $currentStore->name }}</flux:heading>
         <div class="flex gap-2">
-            <flux:button :href="route('admin.stores.products', $currentStore)" wire:navigate variant="ghost">{{ __('Products') }}</flux:button>
-            <flux:button :href="route('admin.stores.locations', $currentStore)" wire:navigate variant="ghost">{{ __('Locations') }}</flux:button>
-            <flux:button :href="route('admin.stores.orders', $currentStore)" wire:navigate variant="ghost">{{ __('Orders') }}</flux:button>
-            <flux:button href="https://{{ $currentStore->slug }}.{{ config('app.root_domain') }}" target="_blank" variant="ghost">{{ __('View store') }}</flux:button>
-            <flux:modal.trigger name="duplicate-store">
-                <flux:button variant="ghost" icon="document-duplicate">{{ __('Duplicate') }}</flux:button>
-            </flux:modal.trigger>
+            @if ($currentStore->trashed())
+                <flux:button :href="route('admin.stores.orders', $currentStore)" wire:navigate variant="ghost">{{ __('Orders') }}</flux:button>
+                <flux:button variant="primary" icon="arrow-uturn-left" wire:click="restoreStore">{{ __('Restore store') }}</flux:button>
+            @else
+                <flux:button :href="route('admin.stores.products', $currentStore)" wire:navigate variant="ghost">{{ __('Products') }}</flux:button>
+                <flux:button :href="route('admin.stores.locations', $currentStore)" wire:navigate variant="ghost">{{ __('Locations') }}</flux:button>
+                <flux:button :href="route('admin.stores.orders', $currentStore)" wire:navigate variant="ghost">{{ __('Orders') }}</flux:button>
+                <flux:button href="https://{{ $currentStore->slug }}.{{ config('app.root_domain') }}" target="_blank" variant="ghost">{{ __('View store') }}</flux:button>
+                <flux:modal.trigger name="duplicate-store">
+                    <flux:button variant="ghost" icon="document-duplicate">{{ __('Duplicate') }}</flux:button>
+                </flux:modal.trigger>
+                <flux:modal.trigger name="remove-store">
+                    <flux:button variant="ghost" icon="trash" class="!text-red-600">{{ __('Delete') }}</flux:button>
+                </flux:modal.trigger>
+            @endif
         </div>
     </div>
+
+    @if ($currentStore->trashed())
+        <flux:callout variant="warning" icon="archive-box" class="mt-4" :heading="__('This store was archived on :date.', ['date' => $currentStore->deleted_at->format('F j, Y')])">
+            <flux:callout.text>{{ __('Its storefront and staff portal are offline, and its orders are kept for your records. Restoring it brings it back as suspended, so it is not live again until you set it active.') }}</flux:callout.text>
+        </flux:callout>
+    @endif
+
+    <flux:modal name="remove-store" class="md:w-md">
+        <form wire:submit="removeStore" class="space-y-5">
+            @if ($this->removalArchives())
+                <div>
+                    <flux:heading size="lg">{{ __('Archive :store?', ['store' => $currentStore->name]) }}</flux:heading>
+                    <flux:text class="mt-2">{{ __('Families have paid for orders here, so this store will be archived instead of deleted. Its storefront and staff portal go offline right away, and its subscription is canceled. Its orders, payments, and refunds are kept, and you can restore the store later from Archived stores.') }}</flux:text>
+                </div>
+            @else
+                <div>
+                    <flux:heading size="lg">{{ __('Delete :store?', ['store' => $currentStore->name]) }}</flux:heading>
+                    <flux:text class="mt-2">{{ __('This store has no paid orders, so it will be permanently deleted with its products, locations, unpaid orders, files, and any staff logins that only belong to it. Its subscription is canceled. This cannot be undone.') }}</flux:text>
+                </div>
+            @endif
+
+            <flux:field>
+                <flux:label>{{ __('Type :name to confirm', ['name' => $currentStore->name]) }}</flux:label>
+                <flux:input wire:model="removeConfirmation" autocomplete="off" />
+                <flux:error name="removeConfirmation" />
+            </flux:field>
+
+            <div class="flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button variant="ghost">{{ __('Cancel') }}</flux:button>
+                </flux:modal.close>
+                <flux:button type="submit" variant="danger">{{ $this->removalArchives() ? __('Archive store') : __('Delete store') }}</flux:button>
+            </div>
+        </form>
+    </flux:modal>
 
     <flux:modal name="duplicate-store" class="md:w-md">
         <form wire:submit="duplicateStore" class="space-y-5">
