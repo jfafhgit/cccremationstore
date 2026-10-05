@@ -213,16 +213,15 @@ test('the cart shows regular prices with the package discount on its own line', 
         ->assertSeeInOrder(['$280.00', '2 included with package', '−$280.00']);
 });
 
-test('the wizard pre-selects the first urn the allowance fully covers', function () {
+test('an urn the allowance fully covers is not pre-selected unless the store pre-selects urns', function () {
     $this->premium->update(['urn_allowance_cents' => 20000]);
-    Product::factory()->for($this->store)->category(ProductCategory::Urn)->create(['price_cents' => 35000, 'sort_order' => 1]);
-    $coveredUrn = Product::factory()->for($this->store)->category(ProductCategory::Urn)->create(['price_cents' => 20000, 'sort_order' => 2]);
+    Product::factory()->for($this->store)->category(ProductCategory::Urn)->create(['price_cents' => 20000]);
 
     Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
         ->call('selectTiming', 'immediate')
         ->call('selectPackage', $this->premium->id)
         ->call('goToContainers')
-        ->assertSet('urnId', $coveredUrn->id);
+        ->assertSet('urnId', null);
 });
 
 test('a package can hide urns priced below its allowance', function () {

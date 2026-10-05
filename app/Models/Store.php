@@ -36,6 +36,9 @@ use Illuminate\Support\Facades\Storage;
  * @property bool $requires_container
  * @property bool $requires_urn
  * @property bool $requires_urn_vault
+ * @property bool $preselect_container
+ * @property bool $preselect_urn
+ * @property bool $preselect_urn_vault
  * @property bool $location_pricing_enabled
  * @property string|null $contact_name
  * @property string|null $contact_email
@@ -80,6 +83,9 @@ class Store extends Model
         'requires_container' => false,
         'requires_urn' => false,
         'requires_urn_vault' => false,
+        'preselect_container' => false,
+        'preselect_urn' => false,
+        'preselect_urn_vault' => false,
         'location_pricing_enabled' => false,
         'processing_fee_enabled' => false,
         'processing_fee_bps' => 350,
@@ -97,6 +103,9 @@ class Store extends Model
         'requires_container',
         'requires_urn',
         'requires_urn_vault',
+        'preselect_container',
+        'preselect_urn',
+        'preselect_urn_vault',
         'location_pricing_enabled',
         'contact_name',
         'contact_email',
@@ -129,6 +138,9 @@ class Store extends Model
             'requires_container' => 'boolean',
             'requires_urn' => 'boolean',
             'requires_urn_vault' => 'boolean',
+            'preselect_container' => 'boolean',
+            'preselect_urn' => 'boolean',
+            'preselect_urn_vault' => 'boolean',
             'location_pricing_enabled' => 'boolean',
             'stripe_details_submitted' => 'boolean',
             'stripe_charges_enabled' => 'boolean',

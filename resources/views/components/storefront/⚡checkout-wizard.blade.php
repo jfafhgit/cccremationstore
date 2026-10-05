@@ -648,32 +648,33 @@ new class extends Component
         }
 
         $this->ensureBasePackage();
-        $this->preselectIncludedOptions();
+        $this->preselectFirstOptions();
         $this->syncFromCart();
 
         $this->step = 'containers';
     }
 
     /**
-     * Container and urn options fully covered by the package (priced at $0.00
-     * or within its allowance) are the ones included in the package, so
-     * pre-select the first of each when nothing is chosen yet. Urn vaults have
-     * no allowance, so a $0.00 one (e.g. "No Burial") is pre-selected.
+     * For each category the store has chosen to pre-select, pick its first
+     * option (in the store's sort order) when nothing is chosen yet.
      */
-    private function preselectIncludedOptions(): void
+    private function preselectFirstOptions(): void
     {
         $cart = $this->cart();
+        $store = $this->storeModel();
 
-        foreach (['container' => $this->containers(), 'urn' => $this->urns(), 'urn_vault' => $this->urnVaults()] as $slot => $options) {
-            if ($cart->state()[$slot]) {
+        $preselectedSlots = array_filter([
+            'container' => $store->preselect_container ? $this->containers() : null,
+            'urn' => $store->preselect_urn ? $this->urns() : null,
+            'urn_vault' => $store->preselect_urn_vault ? $this->urnVaults() : null,
+        ]);
+
+        foreach ($preselectedSlots as $slot => $options) {
+            if ($cart->state()[$slot] || $options->isEmpty()) {
                 continue;
             }
 
-            $included = $options->firstWhere('price_cents', '<=', $cart->packageAllowanceCents($slot));
-
-            if ($included) {
-                $cart->selectSlot($included);
-            }
+            $cart->selectSlot($options->first());
         }
 
         $this->dispatch('cart-updated');

@@ -459,3 +459,16 @@ test('an admin can require an urn vault selection for a store', function () {
 
     expect($store->fresh()->requires_urn_vault)->toBeTrue();
 });
+
+test('an admin can choose which categories pre-select their first item', function () {
+    $store = Store::factory()->create();
+
+    Livewire::test('pages::admin.stores.show', ['store' => $store->id])
+        ->set('preselectContainer', true)
+        ->set('preselectUrnVault', true)
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($store->fresh()->only(['preselect_container', 'preselect_urn', 'preselect_urn_vault']))
+        ->toBe(['preselect_container' => true, 'preselect_urn' => false, 'preselect_urn_vault' => true]);
+});

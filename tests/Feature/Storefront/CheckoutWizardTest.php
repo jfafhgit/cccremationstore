@@ -580,18 +580,50 @@ test('an order cannot be created without a required urn vault', function () {
     ]);
 })->throws(RuntimeException::class, 'An urn vault selection is required');
 
-test('a $0.00 urn vault such as No Burial is pre-selected, but a choice already made stands', function () {
-    $vault = Product::factory()->for($this->store)->category(ProductCategory::UrnVault)->create(['price_cents' => 45000, 'sort_order' => 1]);
-    $noBurial = Product::factory()->for($this->store)->category(ProductCategory::UrnVault)->create(['price_cents' => 0, 'sort_order' => 2]);
+test('the first item in each category the store pre-selects is chosen, whatever its price', function () {
+    $this->store->update(['preselect_container' => true, 'preselect_urn' => true, 'preselect_urn_vault' => true]);
+    Product::factory()->for($this->store)->category(ProductCategory::Container)->create(['price_cents' => 0, 'sort_order' => 2]);
+    $firstContainer = Product::factory()->for($this->store)->category(ProductCategory::Container)->create(['price_cents' => 30000, 'sort_order' => 1]);
+    $firstUrn = Product::factory()->for($this->store)->category(ProductCategory::Urn)->create(['price_cents' => 25000, 'sort_order' => 1]);
+    Product::factory()->for($this->store)->category(ProductCategory::Urn)->create(['price_cents' => 0, 'sort_order' => 2]);
+    $noBurial = Product::factory()->for($this->store)->category(ProductCategory::UrnVault)->create(['price_cents' => 0, 'sort_order' => 1]);
+    Product::factory()->for($this->store)->category(ProductCategory::UrnVault)->create(['price_cents' => 45000, 'sort_order' => 2]);
 
-    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+    Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
         ->call('selectTiming', 'immediate')
         ->call('selectPackage', $this->package->id)
-        ->call('goToContainers');
+        ->call('goToContainers')
+        ->assertSet('containerId', $firstContainer->id)
+        ->assertSet('urnId', $firstUrn->id)
+        ->assertSet('urnVaultId', $noBurial->id);
+});
 
-    $component->assertSet('urnVaultId', $noBurial->id);
+test('only the categories the store pre-selects are chosen for the family', function () {
+    $this->store->update(['preselect_urn_vault' => true]);
+    Product::factory()->for($this->store)->category(ProductCategory::Container)->create(['price_cents' => 0]);
+    Product::factory()->for($this->store)->category(ProductCategory::Urn)->create(['price_cents' => 0]);
+    $vault = Product::factory()->for($this->store)->category(ProductCategory::UrnVault)->create();
 
-    $component->call('selectUrnVault', $vault->id)->call('backTo', 'timing')->call('goToContainers');
+    Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $this->package->id)
+        ->call('goToContainers')
+        ->assertSet('containerId', null)
+        ->assertSet('urnId', null)
+        ->assertSet('urnVaultId', $vault->id);
+});
 
-    $component->assertSet('urnVaultId', $vault->id);
+test('a choice the family already made stands over the pre-selection', function () {
+    $this->store->update(['preselect_urn_vault' => true]);
+    Product::factory()->for($this->store)->category(ProductCategory::UrnVault)->create(['sort_order' => 1]);
+    $vault = Product::factory()->for($this->store)->category(ProductCategory::UrnVault)->create(['sort_order' => 2]);
+
+    Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $this->package->id)
+        ->call('goToContainers')
+        ->call('selectUrnVault', $vault->id)
+        ->call('backTo', 'timing')
+        ->call('goToContainers')
+        ->assertSet('urnVaultId', $vault->id);
 });

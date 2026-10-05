@@ -50,6 +50,12 @@ new class extends Component
 
     public bool $requiresUrnVault = false;
 
+    public bool $preselectContainer = false;
+
+    public bool $preselectUrn = false;
+
+    public bool $preselectUrnVault = false;
+
     /** The funeral home's own Vital Statistics form, used instead of ours when set. */
     public string $vitalStatisticsUrl = '';
 
@@ -129,6 +135,9 @@ new class extends Component
         $this->requiresContainer = $store->requires_container;
         $this->requiresUrn = $store->requires_urn;
         $this->requiresUrnVault = $store->requires_urn_vault;
+        $this->preselectContainer = $store->preselect_container;
+        $this->preselectUrn = $store->preselect_urn;
+        $this->preselectUrnVault = $store->preselect_urn_vault;
         $this->vitalStatisticsUrl = $store->vital_statistics_url ?? '';
         $this->contactName = $store->contact_name ?? '';
         $this->contactEmail = $store->contact_email ?? '';
@@ -162,6 +171,9 @@ new class extends Component
             'requiresContainer' => ['boolean'],
             'requiresUrn' => ['boolean'],
             'requiresUrnVault' => ['boolean'],
+            'preselectContainer' => ['boolean'],
+            'preselectUrn' => ['boolean'],
+            'preselectUrnVault' => ['boolean'],
             'vitalStatisticsUrl' => ['nullable', 'url:http,https', 'max:2048'],
             'contactName' => ['nullable', 'string', 'max:255'],
             'contactEmail' => ['nullable', 'email', 'max:255'],
@@ -193,6 +205,9 @@ new class extends Component
             'requires_container' => $validated['requiresContainer'],
             'requires_urn' => $validated['requiresUrn'],
             'requires_urn_vault' => $validated['requiresUrnVault'],
+            'preselect_container' => $validated['preselectContainer'],
+            'preselect_urn' => $validated['preselectUrn'],
+            'preselect_urn_vault' => $validated['preselectUrnVault'],
             'vital_statistics_url' => $validated['vitalStatisticsUrl'] ?: null,
             'contact_name' => $validated['contactName'] ?: null,
             'contact_email' => $validated['contactEmail'] ?: null,
@@ -808,6 +823,15 @@ new class extends Component
                                 <flux:checkbox wire:model="requiresUrnVault" :label="__('Urn vault')" />
                             </div>
                             <flux:description>{{ __('Customers must choose one to complete their order. Only applies if the store offers products in that category.') }}</flux:description>
+                        </flux:field>
+                        <flux:field>
+                            <flux:label>{{ __('Preselect the first item in these categories') }}</flux:label>
+                            <div class="mt-1 flex flex-wrap gap-x-6 gap-y-2">
+                                <flux:checkbox wire:model="preselectContainer" :label="__('Cremation container')" />
+                                <flux:checkbox wire:model="preselectUrn" :label="__('Urn')" />
+                                <flux:checkbox wire:model="preselectUrnVault" :label="__('Urn vault')" />
+                            </div>
+                            <flux:description>{{ __('The first active item, in the order set on the Products page, is already selected when the family reaches that step. They can still choose another.') }}</flux:description>
                         </flux:field>
                         <flux:field>
                             <flux:label>{{ __('Vital Statistics form (optional)') }}</flux:label>

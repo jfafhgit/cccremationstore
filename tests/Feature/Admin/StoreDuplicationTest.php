@@ -33,6 +33,7 @@ beforeEach(function () {
         'sale_type' => StoreSaleType::PreNeed,
         'checkout_path' => StorePath::ALaCarte,
         'requires_urn' => true,
+        'preselect_urn_vault' => true,
         'contact_email' => 'owner@riverside.test',
         'brand_primary_color' => '#123456',
         'tax_rate_bps' => 725,
@@ -152,6 +153,7 @@ test('the duplicate is a draft with the source\'s settings but none of its ident
         ->and($duplicate->sale_type)->toBe(StoreSaleType::PreNeed)
         ->and($duplicate->checkout_path)->toBe(StorePath::ALaCarte)
         ->and($duplicate->requires_urn)->toBeTrue()
+        ->and($duplicate->preselect_urn_vault)->toBeTrue()
         ->and($duplicate->tax_rate_bps)->toBe(725)
         ->and($duplicate->processing_fee_enabled)->toBeTrue()
         ->and($duplicate->platform_fee_model)->toBe(PlatformFeeModel::Subscription)
