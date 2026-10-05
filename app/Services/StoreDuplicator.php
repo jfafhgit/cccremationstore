@@ -30,6 +30,7 @@ class StoreDuplicator
         'checkout_path',
         'requires_container',
         'requires_urn',
+        'requires_urn_vault',
         'location_pricing_enabled',
         'timezone',
         'platform_fee_model',

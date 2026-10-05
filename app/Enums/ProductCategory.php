@@ -11,6 +11,7 @@ enum ProductCategory: string
     case Package = 'package';
     case Container = 'container';
     case Urn = 'urn';
+    case UrnVault = 'urn_vault';
     case Addon = 'addon';
     case Choice = 'choice';
     case Keepsake = 'keepsake';
@@ -21,6 +22,7 @@ enum ProductCategory: string
             self::Package => 'Package',
             self::Container => 'Cremation Container',
             self::Urn => 'Urn',
+            self::UrnVault => 'Urn Vault',
             self::Addon => 'Add-on / Service',
             self::Choice => 'Choose-One Item',
             self::Keepsake => 'Keepsake',

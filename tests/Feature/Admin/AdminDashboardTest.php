@@ -433,3 +433,29 @@ test('an admin can set the funeral home website', function () {
 
     expect($store->fresh()->website_url)->toBe('https://riverside.example');
 });
+
+test('an admin can add an urn vault, listed between urns and add-ons', function () {
+    $store = Store::factory()->create();
+
+    $component = Livewire::test('pages::admin.stores.products', ['store' => $store->id])
+        ->call('newProduct', ProductCategory::UrnVault->value)
+        ->set('formName', 'No Burial')
+        ->set('formPrice', '0.00')
+        ->call('saveProduct');
+
+    $component->assertHasNoErrors()->assertSeeInOrder(['Urns', 'Urn Vaults', 'Add-ons & Services']);
+    expect($store->products()->sole()->only(['name', 'category', 'price_cents']))
+        ->toBe(['name' => 'No Burial', 'category' => ProductCategory::UrnVault, 'price_cents' => 0]);
+});
+
+test('an admin can require an urn vault selection for a store', function () {
+    $store = Store::factory()->create();
+
+    Livewire::test('pages::admin.stores.show', ['store' => $store->id])
+        ->assertSet('requiresUrnVault', false)
+        ->set('requiresUrnVault', true)
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($store->fresh()->requires_urn_vault)->toBeTrue();
+});

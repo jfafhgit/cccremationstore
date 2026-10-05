@@ -32,6 +32,7 @@ use Illuminate\Support\Facades\Storage;
  * @property StorePath $checkout_path
  * @property bool $requires_container
  * @property bool $requires_urn
+ * @property bool $requires_urn_vault
  * @property bool $location_pricing_enabled
  * @property string|null $contact_name
  * @property string|null $contact_email
@@ -74,6 +75,7 @@ class Store extends Model
         'checkout_path' => 'packages',
         'requires_container' => false,
         'requires_urn' => false,
+        'requires_urn_vault' => false,
         'location_pricing_enabled' => false,
         'processing_fee_enabled' => false,
         'processing_fee_bps' => 350,
@@ -90,6 +92,7 @@ class Store extends Model
         'checkout_path',
         'requires_container',
         'requires_urn',
+        'requires_urn_vault',
         'location_pricing_enabled',
         'contact_name',
         'contact_email',
@@ -119,6 +122,7 @@ class Store extends Model
             'checkout_path' => StorePath::class,
             'requires_container' => 'boolean',
             'requires_urn' => 'boolean',
+            'requires_urn_vault' => 'boolean',
             'location_pricing_enabled' => 'boolean',
             'stripe_details_submitted' => 'boolean',
             'stripe_charges_enabled' => 'boolean',

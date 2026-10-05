@@ -13,21 +13,23 @@ use Illuminate\Support\Collection;
 /**
  * A session-backed shopping cart for one store's storefront.
  *
- * The package, container, and urn are single-select "slots" (choosing a new
- * one replaces the old one), matching how cremation packages are actually
- * sold. Keepsakes and add-ons are repeatable line items with quantities.
+ * The package, container, urn, and urn vault are single-select "slots"
+ * (choosing a new one replaces the old one), matching how cremation packages
+ * are actually sold. Keepsakes and add-ons are repeatable line items with
+ * quantities.
  */
 class Cart
 {
     /** The fixed keys allLines() uses for the single-select slots. */
-    private const SLOT_KEYS = ['package', 'container', 'urn'];
+    private const SLOT_KEYS = ['package', 'container', 'urn', 'urn_vault'];
 
     /** @var array<string, mixed> */
     private array $state;
 
     public function __construct(private readonly Store $store)
     {
-        $this->state = session()->get($this->sessionKey(), $this->emptyState());
+        // Merged over the empty state so a session cart saved before a slot existed still has its key.
+        $this->state = [...$this->emptyState(), ...session()->get($this->sessionKey(), [])];
         $this->backfillTaxableAmounts();
     }
 
@@ -86,6 +88,7 @@ class Cart
             'package' => null,
             'container' => null,
             'urn' => null,
+            'urn_vault' => null,
             'lines' => [], // repeatable keepsakes / add-ons / services
             'declined_options' => [], // ids of "choose one" products answered with "No thanks"
             'pending_order_id' => null,
@@ -196,6 +199,7 @@ class Cart
             ProductCategory::Package => 'package',
             ProductCategory::Container => 'container',
             ProductCategory::Urn => 'urn',
+            ProductCategory::UrnVault => 'urn_vault',
             default => null,
         };
     }
@@ -319,6 +323,7 @@ class Cart
         return match ($slot) {
             'container' => $this->store->requires_container,
             'urn' => $this->store->requires_urn,
+            'urn_vault' => $this->store->requires_urn_vault,
             default => false,
         };
     }
@@ -490,7 +495,7 @@ class Cart
 
     /**
      * Remove any line by its allLines() key, whether it's a single-select
-     * slot ("package"/"container"/"urn") or a repeatable line
+     * slot ("package"/"container"/"urn"/"urn_vault") or a repeatable line
      * ("{productId}-{variantId}") — the two live in different parts of
      * $state, so the UI (which just iterates allLines() and doesn't know
      * which kind a given key is) can call this without caring.
@@ -538,6 +543,7 @@ class Cart
                 ProductCategory::Package->value,
                 ProductCategory::Container->value,
                 ProductCategory::Urn->value,
+                ProductCategory::UrnVault->value,
                 ProductCategory::Choice->value,
             ]);
 
@@ -663,6 +669,11 @@ class Cart
     public function hasUrn(): bool
     {
         return $this->state['urn'] !== null;
+    }
+
+    public function hasUrnVault(): bool
+    {
+        return $this->state['urn_vault'] !== null;
     }
 
     public function itemCount(): int

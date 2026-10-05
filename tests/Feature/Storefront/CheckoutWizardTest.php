@@ -8,6 +8,7 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\Store;
 use App\Services\Cart;
+use App\Services\CheckoutService;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 
@@ -482,4 +483,115 @@ test('only products offered for an imminent passing are shown when one is expect
         ->call('selectTiming', 'imminent');
 
     expect($component->instance()->urns()->pluck('id')->all())->toBe([$offered->id]);
+});
+
+test('the urn vault section only appears when the store offers urn vaults', function () {
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $this->package->id)
+        ->call('goToContainers');
+
+    $component->assertSee('Container & Urn')->assertDontSee('Urn vault');
+
+    Product::factory()->for($this->store)->category(ProductCategory::UrnVault)->create(['name' => 'No Burial', 'price_cents' => 0]);
+
+    $component->call('goToContainers')
+        ->assertSee('Container, Urn & Vault')
+        ->assertSee('Urn vault')
+        ->assertSee('No Burial');
+});
+
+test('choosing an urn vault adds it to the cart in place of any earlier choice', function () {
+    $noBurial = Product::factory()->for($this->store)->category(ProductCategory::UrnVault)->create(['price_cents' => 0]);
+    $vault = Product::factory()->for($this->store)->category(ProductCategory::UrnVault)->create(['price_cents' => 45000]);
+
+    Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $this->package->id)
+        ->call('goToContainers')
+        ->call('selectUrnVault', $vault->id)
+        ->call('selectUrnVault', $noBurial->id)
+        ->assertSet('urnVaultId', $noBurial->id);
+
+    $lines = (new Cart($this->store))->allLines();
+    expect($lines->get('urn_vault')['product_id'])->toBe($noBurial->id)
+        ->and($lines->where('category', ProductCategory::UrnVault->value))->toHaveCount(1);
+});
+
+test('a required urn vault must be selected before continuing past the container step', function () {
+    $this->store->update(['requires_urn_vault' => true]);
+    $vault = Product::factory()->for($this->store)->category(ProductCategory::UrnVault)->create();
+
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $this->package->id)
+        ->call('goToContainers')
+        ->call('goToAddons');
+
+    $component->assertHasErrors('urn_vault')->assertSet('step', 'containers');
+
+    $component->call('selectUrnVault', $vault->id)->call('goToAddons');
+
+    $component->assertHasNoErrors()->assertSet('step', 'addons');
+});
+
+test('a required urn vault cannot be cleared from the cart', function () {
+    $this->store->update(['requires_urn_vault' => true]);
+    $vault = Product::factory()->for($this->store)->category(ProductCategory::UrnVault)->create();
+    $cart = new Cart($this->store);
+    $cart->selectSlot($vault);
+
+    $cart->removeAny('urn_vault');
+
+    expect($cart->hasUrnVault())->toBeTrue();
+});
+
+test('a cart saved before urn vaults existed still loads', function () {
+    session()->put("cart.{$this->store->id}", [
+        'timing' => 'immediate',
+        'location_id' => null,
+        'package' => null,
+        'container' => null,
+        'urn' => null,
+        'lines' => [],
+        'declined_options' => [],
+        'pending_order_id' => null,
+    ]);
+
+    $cart = new Cart($this->store);
+
+    expect($cart->hasUrnVault())->toBeFalse()
+        ->and($cart->isEmpty())->toBeTrue();
+});
+
+test('an order cannot be created without a required urn vault', function () {
+    $this->store->update(['requires_urn_vault' => true]);
+    Product::factory()->for($this->store)->category(ProductCategory::UrnVault)->create();
+    $cart = new Cart($this->store);
+    $cart->selectSlot($this->package);
+
+    app(CheckoutService::class)->createOrder($this->store, $cart, [
+        'purchaser_first_name' => 'Sam',
+        'purchaser_last_name' => 'Rivera',
+        'purchaser_email' => 'sam@example.com',
+        'relationship_to_deceased' => 'Adult child',
+        'deceased_first_name' => 'Pat',
+        'deceased_last_name' => 'Rivera',
+    ]);
+})->throws(RuntimeException::class, 'An urn vault selection is required');
+
+test('a $0.00 urn vault such as No Burial is pre-selected, but a choice already made stands', function () {
+    $vault = Product::factory()->for($this->store)->category(ProductCategory::UrnVault)->create(['price_cents' => 45000, 'sort_order' => 1]);
+    $noBurial = Product::factory()->for($this->store)->category(ProductCategory::UrnVault)->create(['price_cents' => 0, 'sort_order' => 2]);
+
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $this->package->id)
+        ->call('goToContainers');
+
+    $component->assertSet('urnVaultId', $noBurial->id);
+
+    $component->call('selectUrnVault', $vault->id)->call('backTo', 'timing')->call('goToContainers');
+
+    $component->assertSet('urnVaultId', $vault->id);
 });

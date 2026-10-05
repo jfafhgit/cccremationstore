@@ -17,6 +17,12 @@
                     <path d="M8.5 6h7c1 1.5 3.5 3 3.5 7 0 4-3 7-7 7s-7-3-7-7c0-4 2.5-5.5 3.5-7z" />
                     <path d="M8 21h8" />
                     @break
+                @case('urn_vault')
+                    <path d="M5 10c0-2.5 3-4.5 7-4.5s7 2 7 4.5z" />
+                    <path d="M6 10h12v8H6z" />
+                    <path d="M6 13.5h12" />
+                    <path d="M3 21h18" />
+                    @break
                 @case('keepsake')
                     <path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z" />
                     @break

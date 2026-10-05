@@ -303,6 +303,7 @@ new class extends Component
             ProductCategory::Package->value,
             ProductCategory::Container->value,
             ProductCategory::Urn->value,
+            ProductCategory::UrnVault->value,
         ], true);
         $hasPerUnitPrice = ! $isSlotCategory && $validated['formCategory'] !== ProductCategory::Choice->value && trim($this->formPerUnitPrice) !== '';
 
@@ -651,12 +652,12 @@ new class extends Component
             </flux:field>
 
             <flux:field>
-                <flux:label>{{ trim($formPerUnitPrice) !== '' && ! in_array($formCategory, ['package', 'container', 'urn', 'choice'], true) ? __('Base price (USD, charged once)') : __('Price (USD)') }}</flux:label>
+                <flux:label>{{ trim($formPerUnitPrice) !== '' && ! in_array($formCategory, ['package', 'container', 'urn', 'urn_vault', 'choice'], true) ? __('Base price (USD, charged once)') : __('Price (USD)') }}</flux:label>
                 <flux:input type="number" step="0.01" min="0" wire:model.live.debounce.400ms="formPrice" />
                 <flux:error name="formPrice" />
             </flux:field>
 
-            @unless (in_array($formCategory, ['package', 'container', 'urn', 'choice'], true))
+            @unless (in_array($formCategory, ['package', 'container', 'urn', 'urn_vault', 'choice'], true))
                 <div class="grid grid-cols-2 gap-3">
                     <flux:field>
                         <flux:label>{{ __('Additional price per unit (USD)') }}</flux:label>
@@ -770,7 +771,7 @@ new class extends Component
                 @unless ($formCategory === ProductCategory::Package->value)
                     <flux:checkbox wire:model="formIsTaxable" :label="__('Taxable')" />
                 @endunless
-                @unless (in_array($formCategory, ['package', 'container', 'urn'], true))
+                @unless (in_array($formCategory, ['package', 'container', 'urn', 'urn_vault'], true))
                     <flux:checkbox wire:model="formIsRequired" :label="$formCategory === ProductCategory::Choice->value ? __('Required (customer must choose an option)') : __('Pre-selected (customer cannot remove)')" />
                 @endunless
                 @unless ($formCategory === ProductCategory::Choice->value)

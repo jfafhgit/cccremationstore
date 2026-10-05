@@ -41,6 +41,8 @@ new class extends Component
 
     public ?int $urnVariantId = null;
 
+    public ?int $urnVaultId = null;
+
     /** @var array<string, int> keyed by "{productId}-{variantId}" */
     public array $keepsakeQty = [];
 
@@ -108,6 +110,7 @@ new class extends Component
         $this->containerVariantId = $cart->state()['container']['variant_id'] ?? null;
         $this->urnId = $cart->state()['urn']['product_id'] ?? null;
         $this->urnVariantId = $cart->state()['urn']['variant_id'] ?? null;
+        $this->urnVaultId = $cart->state()['urn_vault']['product_id'] ?? null;
 
         $this->keepsakeQty = [];
 
@@ -220,6 +223,22 @@ new class extends Component
     public function urns(): Collection
     {
         return $this->slotOptions(ProductCategory::Urn, 'urn');
+    }
+
+    /**
+     * Urn vaults have no package allowance, so every active one is offered.
+     */
+    public function urnVaults(): Collection
+    {
+        return $this->productsFor(ProductCategory::UrnVault);
+    }
+
+    /**
+     * The container step's title, naming the vault only when the store offers one.
+     */
+    public function containersStepLabel(): string
+    {
+        return $this->urnVaults()->isNotEmpty() ? __('Container, Urn & Vault') : __('Container & Urn');
     }
 
     /**
@@ -559,6 +578,27 @@ new class extends Component
         $this->dispatch('cart-updated');
     }
 
+    public function selectUrnVault(int $productId): void
+    {
+        $product = $this->urnVaults()->firstWhere('id', $productId);
+
+        if (! $product) {
+            return;
+        }
+
+        $this->urnVaultId = $productId;
+        $this->cart()->selectSlot($product);
+        $this->resetErrorBag('urn_vault');
+        $this->dispatch('cart-updated');
+    }
+
+    public function clearUrnVault(): void
+    {
+        $this->urnVaultId = null;
+        $this->cart()->clearSlot(ProductCategory::UrnVault);
+        $this->dispatch('cart-updated');
+    }
+
     public function setKeepsakeQty(int $productId, ?int $variantId, int $qty): void
     {
         $product = $this->keepsakes()->merge($this->extras())->firstWhere('id', $productId);
@@ -622,13 +662,14 @@ new class extends Component
     /**
      * Container and urn options fully covered by the package (priced at $0.00
      * or within its allowance) are the ones included in the package, so
-     * pre-select the first of each when nothing is chosen yet.
+     * pre-select the first of each when nothing is chosen yet. Urn vaults have
+     * no allowance, so a $0.00 one (e.g. "No Burial") is pre-selected.
      */
     private function preselectIncludedOptions(): void
     {
         $cart = $this->cart();
 
-        foreach (['container' => $this->containers(), 'urn' => $this->urns()] as $slot => $options) {
+        foreach (['container' => $this->containers(), 'urn' => $this->urns(), 'urn_vault' => $this->urnVaults()] as $slot => $options) {
             if ($cart->state()[$slot]) {
                 continue;
             }
@@ -661,6 +702,12 @@ new class extends Component
 
         if ($this->storeModel()->requires_urn && $this->urns()->isNotEmpty() && ! $this->cart()->hasUrn()) {
             $this->addError('urn', __('Please choose an urn to continue.'));
+
+            return;
+        }
+
+        if ($this->storeModel()->requires_urn_vault && $this->urnVaults()->isNotEmpty() && ! $this->cart()->hasUrnVault()) {
+            $this->addError('urn_vault', __('Please choose an urn vault to continue.'));
 
             return;
         }
@@ -843,7 +890,7 @@ new class extends Component
     })"
 >
     <nav class="mb-8 flex flex-wrap items-center justify-center gap-2 text-xs font-medium text-zinc-400" aria-label="{{ __('Checkout steps') }}">
-        @foreach ([$this->storeModel()->isPreNeed() ? 'Package' : 'Timing & Package', 'Container & Urn', 'Add-ons & Services', 'Keepsakes', 'Your Information', 'Payment'] as $index => $label)
+        @foreach ([$this->storeModel()->isPreNeed() ? 'Package' : 'Timing & Package', $this->containersStepLabel(), 'Add-ons & Services', 'Keepsakes', 'Your Information', 'Payment'] as $index => $label)
             <span class="flex items-center gap-2">
                 <span @class([
                     'flex size-6 items-center justify-center rounded-full text-[11px]',
@@ -962,10 +1009,10 @@ new class extends Component
         </div>
     @endif
 
-    {{-- Step 2: Cremation container & urn --}}
+    {{-- Step 2: Cremation container, urn & urn vault --}}
     @if ($step === 'containers')
         <div class="rounded-2xl border border-brand-100 bg-white p-6 shadow-sm sm:p-8" x-data="{ zoom: null }" x-on:keydown.escape.window="zoom = null">
-            <flux:heading size="xl" class="font-serif">{{ __('Cremation container & urn') }}</flux:heading>
+            <flux:heading size="xl" class="font-serif">{{ $this->urnVaults()->isNotEmpty() ? __('Cremation container, urn & vault') : __('Cremation container & urn') }}</flux:heading>
             <flux:subheading class="mt-1">{{ __('Choose what fits — anything marked required must be selected before you continue.') }}</flux:subheading>
 
             @if ($this->containers()->isNotEmpty())
@@ -1066,7 +1113,50 @@ new class extends Component
                 </div>
             @endif
 
-            @if ($this->containers()->isEmpty() && $this->urns()->isEmpty())
+            @if ($this->urnVaults()->isNotEmpty())
+                <div class="mt-8">
+                    <flux:heading size="lg">{{ __('Urn vault') }}</flux:heading>
+                    <p class="mb-3 text-xs text-zinc-500">
+                        {{ $this->storeModel()->requires_urn_vault ? __('An urn vault selection is required to continue.') : __('Most cemeteries require a vault when an urn is buried.') }}
+                    </p>
+                    <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                        @foreach ($this->urnVaults() as $product)
+                            <div class="relative" wire:key="urn-vault-{{ $product->id }}">
+                                <button type="button" wire:click="selectUrnVault({{ $product->id }})" @class([
+                                    'block h-full w-full overflow-hidden rounded-xl border text-left transition',
+                                    'border-2 border-brand-600 bg-brand-50 ring-2 ring-brand-600/30' => $urnVaultId === $product->id,
+                                    'border border-zinc-200 hover:border-brand-300' => $urnVaultId !== $product->id,
+                                ])>
+                                    <x-product-image :src="$product->imageUrl()" :alt="$product->name" :category="$product->category->value" class="aspect-square w-full" />
+                                    @if ($urnVaultId === $product->id)
+                                        <span class="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-store px-2 py-0.5 text-xs font-semibold text-store-foreground shadow">
+                                            <flux:icon.check class="size-3.5" />{{ __('Selected') }}
+                                        </span>
+                                    @endif
+                                    <div class="p-3">
+                                        <p class="text-sm font-medium text-zinc-800">{{ $product->name }}</p>
+                                        @if ($product->description)
+                                            <p class="mt-1 text-xs text-zinc-500">{{ $product->description }}</p>
+                                        @endif
+                                        <p class="mt-1 text-sm text-brand-700">{{ $product->priceLabel() }}</p>
+                                    </div>
+                                </button>
+                                @if ($product->imageUrl())
+                                    <button type="button" class="absolute right-2 top-2 flex size-6 items-center justify-center rounded-full bg-white/90 text-zinc-700 shadow hover:bg-white" x-on:click="zoom = { src: @js($product->imageUrl()), name: @js($product->name) }" aria-label="{{ __('View full size image of :name', ['name' => $product->name]) }}">
+                                        <flux:icon.magnifying-glass-plus class="size-4" />
+                                    </button>
+                                @endif
+                            </div>
+                        @endforeach
+                    </div>
+                    @if ($urnVaultId && ! $this->storeModel()->requires_urn_vault)
+                        <button type="button" wire:click="clearUrnVault" class="mt-2 text-xs text-zinc-400 underline hover:text-red-600">{{ __('Clear selection') }}</button>
+                    @endif
+                    <flux:error name="urn_vault" :deep="false" class="mt-2" />
+                </div>
+            @endif
+
+            @if ($this->containers()->isEmpty() && $this->urns()->isEmpty() && $this->urnVaults()->isEmpty())
                 <p class="mt-6 text-sm text-zinc-500">{{ __('No container or urn options are available for this arrangement — you can continue to the next step.') }}</p>
             @endif
 

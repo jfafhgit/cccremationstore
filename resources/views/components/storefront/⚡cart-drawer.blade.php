@@ -19,7 +19,7 @@ new class extends Component {
     public bool $embedded = false;
 
     /** Keys iterated from Cart::allLines() that are single-select slots — fixed quantity of 1, no stepper, just a remove action. */
-    private const SLOT_KEYS = ['package', 'container', 'urn'];
+    private const SLOT_KEYS = ['package', 'container', 'urn', 'urn_vault'];
 
     #[On('cart-updated')]
     public function refreshCart(): void
@@ -46,6 +46,7 @@ new class extends Component {
         return match ($key) {
             'container' => (bool) $this->store?->requires_container,
             'urn' => (bool) $this->store?->requires_urn,
+            'urn_vault' => (bool) $this->store?->requires_urn_vault,
             default => (bool) ($line['is_required'] ?? false),
         };
     }
@@ -191,7 +192,7 @@ new class extends Component {
                                             @endif
 
                                             @if ($this->isRequiredKey($key, $line))
-                                                <span class="text-xs font-medium text-brand-700">{{ in_array($key, ['container', 'urn'], true) ? __('Selection Required') : __('Required') }}</span>
+                                                <span class="text-xs font-medium text-brand-700">{{ in_array($key, ['container', 'urn', 'urn_vault'], true) ? __('Selection Required') : __('Required') }}</span>
                                             @elseif (($line['included_quantity'] ?? 0) >= $line['quantity'])
                                                 <span class="text-xs font-medium text-brand-700">{{ __('Included') }}</span>
                                             @elseif ($key === 'package')

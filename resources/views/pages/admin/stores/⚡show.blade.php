@@ -46,6 +46,8 @@ new class extends Component
 
     public bool $requiresUrn = false;
 
+    public bool $requiresUrnVault = false;
+
     /** The funeral home's own Vital Statistics form, used instead of ours when set. */
     public string $vitalStatisticsUrl = '';
 
@@ -121,6 +123,7 @@ new class extends Component
         $this->checkoutPath = $store->checkout_path->value;
         $this->requiresContainer = $store->requires_container;
         $this->requiresUrn = $store->requires_urn;
+        $this->requiresUrnVault = $store->requires_urn_vault;
         $this->vitalStatisticsUrl = $store->vital_statistics_url ?? '';
         $this->contactName = $store->contact_name ?? '';
         $this->contactEmail = $store->contact_email ?? '';
@@ -153,6 +156,7 @@ new class extends Component
             'checkoutPath' => ['required', Rule::enum(StorePath::class)],
             'requiresContainer' => ['boolean'],
             'requiresUrn' => ['boolean'],
+            'requiresUrnVault' => ['boolean'],
             'vitalStatisticsUrl' => ['nullable', 'url:http,https', 'max:2048'],
             'contactName' => ['nullable', 'string', 'max:255'],
             'contactEmail' => ['nullable', 'email', 'max:255'],
@@ -183,6 +187,7 @@ new class extends Component
             'checkout_path' => StorePath::from($validated['checkoutPath']),
             'requires_container' => $validated['requiresContainer'],
             'requires_urn' => $validated['requiresUrn'],
+            'requires_urn_vault' => $validated['requiresUrnVault'],
             'vital_statistics_url' => $validated['vitalStatisticsUrl'] ?: null,
             'contact_name' => $validated['contactName'] ?: null,
             'contact_email' => $validated['contactEmail'] ?: null,
@@ -688,6 +693,7 @@ new class extends Component
                             <div class="mt-1 flex flex-wrap gap-x-6 gap-y-2">
                                 <flux:checkbox wire:model="requiresContainer" :label="__('Cremation container')" />
                                 <flux:checkbox wire:model="requiresUrn" :label="__('Urn')" />
+                                <flux:checkbox wire:model="requiresUrnVault" :label="__('Urn vault')" />
                             </div>
                             <flux:description>{{ __('Customers must choose one to complete their order. Only applies if the store offers products in that category.') }}</flux:description>
                         </flux:field>

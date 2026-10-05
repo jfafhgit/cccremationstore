@@ -12,21 +12,38 @@
     <body class="min-h-screen bg-brand-50/40 text-zinc-900 antialiased">
         <div class="flex min-h-screen flex-col">
             <header class="border-b border-brand-100 bg-white">
-                @if ($store?->website_url || $store?->contact_phone)
+                @if ($store?->website_url || $store?->contact_phone || $store?->generalPriceListUrl())
                     <div class="border-b border-brand-100 bg-brand-50">
-                        <div class="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-1.5 text-xs text-zinc-600 sm:px-6">
-                            @if ($store->website_url)
-                                <a href="{{ $store->website_url }}" target="_top" class="flex min-w-0 items-center gap-1 hover:text-brand-700">
-                                    <flux:icon.arrow-left class="size-3.5 shrink-0" />
-                                    <span class="truncate">{{ __('Back to :name website', ['name' => $store->name]) }}</span>
-                                </a>
-                            @endif
+                        {{-- Three equal columns keep the phone number centered whichever side links are present. --}}
+                        <div class="mx-auto grid max-w-5xl grid-cols-[1fr_auto_1fr] items-center gap-3 px-4 py-1.5 text-xs text-zinc-600 sm:gap-4 sm:px-6">
+                            <div class="min-w-0">
+                                @if ($store->website_url)
+                                    <a href="{{ $store->website_url }}" target="_top" class="flex min-w-0 items-center gap-1 hover:text-brand-700">
+                                        <flux:icon.arrow-left class="size-3.5 shrink-0" />
+                                        <span class="truncate">
+                                            <span class="sm:hidden">{{ __('Website') }}</span>
+                                            <span class="hidden sm:inline">{{ __('Back to :name website', ['name' => $store->name]) }}</span>
+                                        </span>
+                                    </a>
+                                @endif
+                            </div>
 
-                            @if ($store->contact_phone)
-                                <a href="tel:{{ $store->contact_phone }}" class="ml-auto shrink-0 hover:text-brand-700">
-                                    <span class="hidden sm:inline">{{ __('Need help?') }}</span> <span class="font-medium">{{ $store->contact_phone }}</span>
-                                </a>
-                            @endif
+                            <div class="text-center">
+                                @if ($store->contact_phone)
+                                    <a href="tel:{{ $store->contact_phone }}" class="whitespace-nowrap hover:text-brand-700">
+                                        <span class="hidden md:inline">{{ __('Need help?') }}</span> <span class="font-medium">{{ $store->contact_phone }}</span>
+                                    </a>
+                                @endif
+                            </div>
+
+                            <div class="min-w-0 text-right">
+                                @if ($store->generalPriceListUrl())
+                                    <a href="{{ $store->generalPriceListUrl() }}" target="_blank" rel="noopener" class="block truncate hover:text-brand-700">
+                                        <span class="sm:hidden">{{ __('Price List') }}</span>
+                                        <span class="hidden sm:inline">{{ __('General Price List') }}</span>
+                                    </a>
+                                @endif
+                            </div>
                         </div>
                     </div>
                 @endif
@@ -57,11 +74,6 @@
 
             <footer class="border-t border-brand-100 bg-white py-6 text-center text-xs text-zinc-500">
                 <p>&copy; {{ now()->year }} {{ $store?->name ?? config('app.name') }}. {{ __('All arrangements handled with care.') }}</p>
-                @if ($store?->generalPriceListUrl())
-                    <p class="mt-1">
-                        <a href="{{ $store->generalPriceListUrl() }}" target="_blank" rel="noopener" class="underline hover:text-brand-700">{{ __('View our General Price List') }}</a>
-                    </p>
-                @endif
                 <p class="mt-1 text-zinc-400">{{ __('Powered by') }} {{ config('app.name') }}</p>
             </footer>
         </div>

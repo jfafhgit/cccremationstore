@@ -177,7 +177,7 @@ class CheckoutService
 
     /**
      * The checkout wizard already blocks progress past "Personalize" when a
-     * required container/urn selection is missing, but that's client-side
+     * required container/urn/vault selection is missing, but that's client-side
      * state — this is the actual integrity boundary before an order (and a
      * charge) is created. Only enforced when the store actually sells
      * products in that category, matching what the wizard shows the customer.
@@ -194,6 +194,10 @@ class CheckoutService
 
         if ($store->requires_urn && ! $cart->hasUrn() && $store->products()->active()->ofCategory(ProductCategory::Urn)->exists()) {
             throw new \RuntimeException('An urn selection is required to complete this order.');
+        }
+
+        if ($store->requires_urn_vault && ! $cart->hasUrnVault() && $store->products()->active()->ofCategory(ProductCategory::UrnVault)->exists()) {
+            throw new \RuntimeException('An urn vault selection is required to complete this order.');
         }
 
         if ($cart->missingRequiredOptions()->isNotEmpty()) {

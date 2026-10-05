@@ -45,6 +45,11 @@ class StoreFactory extends Factory
         return $this->state(['requires_urn' => true]);
     }
 
+    public function requiresUrnVault(): static
+    {
+        return $this->state(['requires_urn_vault' => true]);
+    }
+
     public function stripeConnected(): static
     {
         return $this->state([
