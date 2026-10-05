@@ -475,15 +475,15 @@ test('an at-need store cannot be ordered from as pre-need', function () {
     expect((new Cart($this->store))->timing())->toBeNull();
 });
 
-test('only products offered for an imminent passing are shown when one is expected soon', function () {
-    $offered = Product::factory()->for($this->store)->category(ProductCategory::Urn)->create(['available_for_imminent' => true]);
-    $notOffered = Product::factory()->for($this->store)->category(ProductCategory::Urn)->create(['available_for_imminent' => false]);
+test('the timing answer is only recorded and offers the same products either way', function (string $timing) {
+    $urn = Product::factory()->for($this->store)->category(ProductCategory::Urn)->create();
 
     $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
-        ->call('selectTiming', 'imminent');
+        ->call('selectTiming', $timing);
 
-    expect($component->instance()->urns()->pluck('id')->all())->toBe([$offered->id]);
-});
+    expect($component->instance()->urns()->pluck('id')->all())->toBe([$urn->id])
+        ->and($component->instance()->packages()->pluck('id')->all())->toBe([$this->package->id]);
+})->with(['immediate', 'imminent']);
 
 test('the urn vault section only appears when the store offers urn vaults', function () {
     $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page'])

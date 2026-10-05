@@ -430,17 +430,12 @@ new class extends Component
     {
         $store = $this->storeModel();
 
-        $query = $store->products()
+        return $store->products()
             ->active()
             ->ofCategory($category)
             ->with('variants')
-            ->orderedFor($store->productSortMode($category));
-
-        if ($timing = $this->cart()->timing()) {
-            $query->availableForTiming($timing);
-        }
-
-        return $query->get();
+            ->orderedFor($store->productSortMode($category))
+            ->get();
     }
 
     public function isALaCarte(): bool

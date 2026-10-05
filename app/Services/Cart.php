@@ -395,8 +395,8 @@ class Cart
     }
 
     /**
-     * Required "choose one" products (for the current timing) the customer
-     * hasn't picked an option for yet.
+     * Required "choose one" products the customer hasn't picked an option
+     * for yet.
      *
      * @return Collection<int, Product>
      */
@@ -406,20 +406,15 @@ class Cart
     }
 
     /**
-     * "Choose one" products (for the current timing) the customer hasn't
-     * answered yet: no option picked and, for optional ones, no "No thanks".
+     * "Choose one" products the customer hasn't answered yet: no option
+     * picked and, for optional ones, no "No thanks".
      *
      * @return Collection<int, Product>
      */
     public function unansweredOptions(): Collection
     {
-        $query = $this->store->products()->active()->ofCategory(ProductCategory::Choice)->has('variants')->with('variants');
-
-        if ($timing = $this->timing()) {
-            $query->availableForTiming($timing);
-        }
-
-        return $query->orderBy('sort_order')->get()
+        return $this->store->products()->active()->ofCategory(ProductCategory::Choice)->has('variants')->with('variants')
+            ->orderBy('sort_order')->get()
             ->reject(fn (Product $product) => $this->selectedVariantId($product->id) !== null
                 || (! $product->is_required && $this->hasDeclinedOption($product->id)))
             ->values();
@@ -531,8 +526,7 @@ class Cart
     }
 
     /**
-     * Add every active required product for the current timing that isn't
-     * already in the cart, and refresh the flag on lines already present.
+     * Add every active required product that isn't already in the cart, and refresh the flag on lines already present.
      * Called by the wizard so required items are pre-selected for the customer.
      * Required "choose one" products are left for the customer to pick from.
      */
@@ -546,10 +540,6 @@ class Cart
                 ProductCategory::UrnVault->value,
                 ProductCategory::Choice->value,
             ]);
-
-        if ($timing = $this->timing()) {
-            $query->availableForTiming($timing);
-        }
 
         foreach ($query->orderBy('sort_order')->get() as $product) {
             $key = $this->lineKey($product, null);

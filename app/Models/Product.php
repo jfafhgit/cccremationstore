@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use App\Enums\OrderTiming;
 use App\Enums\ProductCategory;
 use App\Enums\ProductSortMode;
 use Database\Factories\ProductFactory;
@@ -37,8 +36,6 @@ use Illuminate\Support\Facades\Storage;
  * @property int $sort_order
  * @property bool $allow_multiple_quantity
  * @property bool $requires_engraving
- * @property bool $available_for_immediate
- * @property bool $available_for_imminent
  */
 class Product extends Model
 {
@@ -66,8 +63,6 @@ class Product extends Model
         'sort_order',
         'allow_multiple_quantity',
         'requires_engraving',
-        'available_for_immediate',
-        'available_for_imminent',
     ];
 
     protected function casts(): array
@@ -87,8 +82,6 @@ class Product extends Model
             'sort_order' => 'integer',
             'allow_multiple_quantity' => 'boolean',
             'requires_engraving' => 'boolean',
-            'available_for_immediate' => 'boolean',
-            'available_for_imminent' => 'boolean',
         ];
     }
 
@@ -144,17 +137,6 @@ class Product extends Model
     protected function ofCategory(Builder $query, ProductCategory $category): Builder
     {
         return $query->where('category', $category);
-    }
-
-    #[Scope]
-    protected function availableForTiming(Builder $query, OrderTiming $timing): Builder
-    {
-        return match ($timing) {
-            OrderTiming::Immediate => $query->where('available_for_immediate', true),
-            OrderTiming::Imminent => $query->where('available_for_imminent', true),
-            // A pre-need store's whole catalog is for pre-need.
-            OrderTiming::PreNeed => $query,
-        };
     }
 
     #[Scope]
