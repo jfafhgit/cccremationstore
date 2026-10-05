@@ -372,7 +372,18 @@ new class extends Component
             'duplicateSlug' => __('subdomain'),
         ]);
 
-        $duplicate = $duplicator->duplicate($this->currentStore, $validated['duplicateName'], $validated['duplicateSlug']);
+        try {
+            $duplicate = $duplicator->duplicate($this->currentStore, $validated['duplicateName'], $validated['duplicateSlug']);
+        } catch (\RuntimeException $e) {
+            Log::error('Could not duplicate a store.', [
+                'store_id' => $this->currentStore->id,
+                'message' => $e->getMessage(),
+            ]);
+
+            $this->addError('duplicateName', __('The product images could not be copied, so nothing was created. Please try again in a moment.'));
+
+            return;
+        }
 
         Flux::toast(variant: 'success', text: __('Store duplicated with :count products. It starts as a draft.', ['count' => $duplicate->products()->count()]));
 

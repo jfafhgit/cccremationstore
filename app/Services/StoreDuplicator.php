@@ -9,6 +9,7 @@ use App\Models\StoreLocation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -150,6 +151,10 @@ class StoreDuplicator
     /**
      * Each store gets its own copy of an image, because replacing or deleting
      * a product's image removes the file from disk.
+     *
+     * The file is read and written again rather than copied: Laravel Cloud's
+     * object storage (Cloudflare R2) can't copy files through the S3 adapter,
+     * which asks for the file's ACL first, and R2 doesn't support ACLs.
      */
     private function copyImage(?string $path): ?string
     {
@@ -162,7 +167,17 @@ class StoreDuplicator
         $extension = pathinfo($path, PATHINFO_EXTENSION);
         $newPath = 'products/'.Str::random(40).($extension ? ".{$extension}" : '');
 
-        $disk->copy($path, $newPath);
+        $stream = $disk->readStream($path);
+        $written = is_resource($stream) && $disk->writeStream($newPath, $stream);
+
+        if (is_resource($stream)) {
+            fclose($stream);
+        }
+
+        if (! $written) {
+            throw new RuntimeException("Could not copy the product image {$path}.");
+        }
+
         $this->copiedImagePaths[] = $newPath;
 
         return $newPath;

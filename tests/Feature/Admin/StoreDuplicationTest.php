@@ -14,6 +14,7 @@ use App\Models\StoreLocation;
 use App\Models\StoreUser;
 use App\Models\User;
 use App\Services\StoreDuplicator;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
@@ -195,6 +196,59 @@ test('a failed duplication leaves no store or copied images behind', function ()
 
     expect(fn () => app(StoreDuplicator::class)->duplicate($this->source, 'Lakeside', 'lakeside'))
         ->toThrow(RuntimeException::class, 'Simulated failure');
+
+    expect(Store::where('slug', 'lakeside')->exists())->toBeFalse()
+        ->and(Storage::disk('public')->allFiles('products'))->toBe([$imagePath]);
+});
+
+/**
+ * Stands in for Laravel Cloud's object storage (Cloudflare R2), where copying
+ * a file through the S3 adapter always fails because R2 has no ACLs.
+ */
+function useStorageThatCannotCopy(bool $writesFail = false): void
+{
+    $fake = Storage::disk('public');
+
+    Storage::set('public', new class($fake->getDriver(), $fake->getAdapter(), $fake->getConfig(), $writesFail) extends FilesystemAdapter
+    {
+        public function __construct($driver, $adapter, array $config, private bool $writesFail)
+        {
+            parent::__construct($driver, $adapter, $config);
+        }
+
+        public function copy($from, $to)
+        {
+            return false;
+        }
+
+        public function writeStream($path, $resource, array $options = [])
+        {
+            return $this->writesFail ? false : parent::writeStream($path, $resource, $options);
+        }
+    });
+}
+
+test('product images are copied on storage that cannot copy files, like Laravel Cloud', function () {
+    $imagePath = UploadedFile::fake()->image('urn.jpg')->store('products', 'public');
+    Product::factory()->for($this->source)->create(['image_path' => $imagePath]);
+    useStorageThatCannotCopy();
+
+    $copiedPath = duplicateThroughAdmin($this->source)->products()->sole()->image_path;
+
+    expect($copiedPath)->not->toBe($imagePath);
+    expect(Storage::disk('public')->get($copiedPath))->toBe(Storage::disk('public')->get($imagePath));
+});
+
+test('nothing is created when a product image cannot be copied', function () {
+    $imagePath = UploadedFile::fake()->image('urn.jpg')->store('products', 'public');
+    Product::factory()->for($this->source)->create(['image_path' => $imagePath]);
+    useStorageThatCannotCopy(writesFail: true);
+
+    Livewire::test('pages::admin.stores.show', ['store' => $this->source])
+        ->set('duplicateName', 'Lakeside Cremation')
+        ->set('duplicateSlug', 'lakeside')
+        ->call('duplicateStore')
+        ->assertHasErrors('duplicateName');
 
     expect(Store::where('slug', 'lakeside')->exists())->toBeFalse()
         ->and(Storage::disk('public')->allFiles('products'))->toBe([$imagePath]);
