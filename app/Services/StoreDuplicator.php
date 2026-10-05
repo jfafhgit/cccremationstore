@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Enums\CatalogCopyStatus;
 use App\Enums\StoreStatus;
+use App\Jobs\CopyStoreCatalog;
 use App\Models\Product;
 use App\Models\Store;
 use App\Models\StoreLocation;
@@ -51,19 +53,37 @@ class StoreDuplicator
      */
     private array $copiedImagePaths = [];
 
+    /**
+     * Create the new draft store right away and queue copying its products
+     * and images, which takes too long for one web request when the images
+     * live in Cloud object storage.
+     */
     public function duplicate(Store $source, string $name, string $slug): Store
+    {
+        $duplicate = Store::create([
+            ...$source->only(self::COPIED_SETTINGS),
+            'name' => $name,
+            'slug' => $slug,
+            'status' => StoreStatus::Draft,
+            'catalog_copy_status' => CatalogCopyStatus::Copying,
+        ]);
+
+        CopyStoreCatalog::dispatch($source, $duplicate);
+
+        return $duplicate;
+    }
+
+    /**
+     * Copy every product (with its variants and image), the packages'
+     * inclusions, and the cities served into the duplicate. All or nothing:
+     * if anything fails, no products or image copies are left behind.
+     */
+    public function copyCatalog(Store $source, Store $duplicate): void
     {
         $this->copiedImagePaths = [];
 
         try {
-            return DB::transaction(function () use ($source, $name, $slug): Store {
-                $duplicate = Store::create([
-                    ...$source->only(self::COPIED_SETTINGS),
-                    'name' => $name,
-                    'slug' => $slug,
-                    'status' => StoreStatus::Draft,
-                ]);
-
+            DB::transaction(function () use ($source, $duplicate): void {
                 /** @var array<int, int> $copiedProductIds source product ID => copy's ID */
                 $copiedProductIds = [];
 
@@ -76,7 +96,7 @@ class StoreDuplicator
                 $this->copyPackageInclusions($source, $copiedProductIds);
                 $this->copyLocations($source, $duplicate, $copiedProductIds);
 
-                return $duplicate;
+                $duplicate->update(['catalog_copy_status' => null]);
             });
         } catch (Throwable $e) {
             Storage::disk('public')->delete($this->copiedImagePaths);

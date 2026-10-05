@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\CatalogCopyStatus;
 use App\Enums\PlatformFeeModel;
 use App\Enums\StorePath;
 use App\Enums\StoreSaleType;
@@ -372,22 +373,19 @@ new class extends Component
             'duplicateSlug' => __('subdomain'),
         ]);
 
-        try {
-            $duplicate = $duplicator->duplicate($this->currentStore, $validated['duplicateName'], $validated['duplicateSlug']);
-        } catch (\RuntimeException $e) {
-            Log::error('Could not duplicate a store.', [
-                'store_id' => $this->currentStore->id,
-                'message' => $e->getMessage(),
-            ]);
+        $duplicate = $duplicator->duplicate($this->currentStore, $validated['duplicateName'], $validated['duplicateSlug']);
 
-            $this->addError('duplicateName', __('The product images could not be copied, so nothing was created. Please try again in a moment.'));
-
-            return;
-        }
-
-        Flux::toast(variant: 'success', text: __('Store duplicated with :count products. It starts as a draft.', ['count' => $duplicate->products()->count()]));
+        Flux::toast(variant: 'success', text: __('Store created as a draft. Its products and images are being copied now.'));
 
         $this->redirect(route('admin.stores.show', $duplicate), navigate: true);
+    }
+
+    /**
+     * Polled while a duplicated store's products are copied in the background.
+     */
+    public function checkCatalogCopy(): void
+    {
+        $this->currentStore->refresh();
     }
 
     /**
@@ -555,6 +553,18 @@ new class extends Component
             @endif
         </div>
     </div>
+
+    @if ($currentStore->catalog_copy_status === CatalogCopyStatus::Copying)
+        <div wire:poll.2s="checkCatalogCopy">
+            <flux:callout icon="arrow-path" class="mt-4" :heading="__('Copying products and images…')">
+                <flux:callout.text>{{ __('This can take a minute for a large catalog. This page updates on its own when it is done, and you can keep working in the meantime.') }}</flux:callout.text>
+            </flux:callout>
+        </div>
+    @elseif ($currentStore->catalog_copy_status === CatalogCopyStatus::Failed)
+        <flux:callout variant="danger" icon="exclamation-triangle" class="mt-4" :heading="__('The products and images could not be copied into this store.')">
+            <flux:callout.text>{{ __('Nothing was copied. Delete this store and duplicate the original again.') }}</flux:callout.text>
+        </flux:callout>
+    @endif
 
     @if ($currentStore->trashed())
         <flux:callout variant="warning" icon="archive-box" class="mt-4" :heading="__('This store was archived on :date.', ['date' => $currentStore->deleted_at->format('F j, Y')])">

@@ -1,11 +1,13 @@
 <?php
 
+use App\Enums\CatalogCopyStatus;
 use App\Enums\PlatformFeeModel;
 use App\Enums\ProductCategory;
 use App\Enums\StorePath;
 use App\Enums\StoreSaleType;
 use App\Enums\StoreStatus;
 use App\Enums\UsState;
+use App\Jobs\CopyStoreCatalog;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\ProductVariant;
@@ -16,6 +18,7 @@ use App\Models\User;
 use App\Services\StoreDuplicator;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 
@@ -183,7 +186,7 @@ test('the subdomain is suggested from the new name', function () {
         ->assertSet('duplicateSlug', 'lakeside-cremation-care');
 });
 
-test('a failed duplication leaves no store or copied images behind', function () {
+test('a copy that fails part way leaves no products or copied images behind', function () {
     $imagePath = UploadedFile::fake()->image('urn.jpg')->store('products', 'public');
     Product::factory()->for($this->source)->create(['image_path' => $imagePath]);
     Product::factory()->for($this->source)->create(['name' => 'Second']);
@@ -197,7 +200,9 @@ test('a failed duplication leaves no store or copied images behind', function ()
     expect(fn () => app(StoreDuplicator::class)->duplicate($this->source, 'Lakeside', 'lakeside'))
         ->toThrow(RuntimeException::class, 'Simulated failure');
 
-    expect(Store::where('slug', 'lakeside')->exists())->toBeFalse()
+    $duplicate = Store::where('slug', 'lakeside')->sole();
+    expect($duplicate->catalog_copy_status)->toBe(CatalogCopyStatus::Failed)
+        ->and($duplicate->products()->count())->toBe(0)
         ->and(Storage::disk('public')->allFiles('products'))->toBe([$imagePath]);
 });
 
@@ -239,17 +244,40 @@ test('product images are copied on storage that cannot copy files, like Laravel 
     expect(Storage::disk('public')->get($copiedPath))->toBe(Storage::disk('public')->get($imagePath));
 });
 
-test('nothing is created when a product image cannot be copied', function () {
-    $imagePath = UploadedFile::fake()->image('urn.jpg')->store('products', 'public');
-    Product::factory()->for($this->source)->create(['image_path' => $imagePath]);
-    useStorageThatCannotCopy(writesFail: true);
+test('duplicating creates the draft store right away and copies its products in the background', function () {
+    Queue::fake();
+    Product::factory()->for($this->source)->create();
 
     Livewire::test('pages::admin.stores.show', ['store' => $this->source])
         ->set('duplicateName', 'Lakeside Cremation')
         ->set('duplicateSlug', 'lakeside')
         ->call('duplicateStore')
-        ->assertHasErrors('duplicateName');
+        ->assertHasNoErrors();
 
-    expect(Store::where('slug', 'lakeside')->exists())->toBeFalse()
+    $duplicate = Store::where('slug', 'lakeside')->sole();
+    expect($duplicate->catalog_copy_status)->toBe(CatalogCopyStatus::Copying)
+        ->and($duplicate->products()->count())->toBe(0);
+    Queue::assertPushed(CopyStoreCatalog::class, fn (CopyStoreCatalog $job) => $job->source->is($this->source) && $job->duplicate->is($duplicate));
+
+    $page = Livewire::test('pages::admin.stores.show', ['store' => $duplicate])->assertSee('Copying products and images');
+
+    app(StoreDuplicator::class)->copyCatalog($this->source, $duplicate);
+
+    $page->call('checkCatalogCopy')->assertDontSee('Copying products and images');
+    expect($duplicate->fresh()->catalog_copy_status)->toBeNull()
+        ->and($duplicate->products()->count())->toBe(1);
+});
+
+test('a failed copy leaves the duplicate without products or stray images, and says so', function () {
+    $imagePath = UploadedFile::fake()->image('urn.jpg')->store('products', 'public');
+    Product::factory()->for($this->source)->create(['image_path' => $imagePath]);
+    $duplicate = Store::factory()->create(['catalog_copy_status' => CatalogCopyStatus::Copying]);
+    useStorageThatCannotCopy(writesFail: true);
+
+    expect(fn () => CopyStoreCatalog::dispatchSync($this->source, $duplicate))->toThrow(RuntimeException::class);
+
+    expect($duplicate->fresh()->catalog_copy_status)->toBe(CatalogCopyStatus::Failed)
+        ->and($duplicate->products()->count())->toBe(0)
         ->and(Storage::disk('public')->allFiles('products'))->toBe([$imagePath]);
+    Livewire::test('pages::admin.stores.show', ['store' => $duplicate->fresh()])->assertSee('could not be copied into this store');
 });

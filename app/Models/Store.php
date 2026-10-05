@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\CatalogCopyStatus;
 use App\Enums\PlatformFeeModel;
 use App\Enums\ProductCategory;
 use App\Enums\ProductSortMode;
@@ -29,6 +30,7 @@ use Illuminate\Support\Facades\Storage;
  * @property string $name
  * @property string $slug
  * @property StoreStatus $status
+ * @property CatalogCopyStatus|null $catalog_copy_status
  * @property StoreSaleType $sale_type
  * @property StorePath $checkout_path
  * @property bool $requires_container
@@ -106,6 +108,7 @@ class Store extends Model
         'brand_logo_path',
         'general_price_list_path',
         'vital_statistics_url',
+        'catalog_copy_status',
         'platform_fee_bps',
         'platform_fee_model',
         'platform_fee_flat_cents',
@@ -120,6 +123,7 @@ class Store extends Model
     {
         return [
             'status' => StoreStatus::class,
+            'catalog_copy_status' => CatalogCopyStatus::class,
             'sale_type' => StoreSaleType::class,
             'checkout_path' => StorePath::class,
             'requires_container' => 'boolean',
