@@ -263,12 +263,31 @@ test('switching to a package that hides the chosen urn swaps in the urn it cover
         ->assertSet('urnId', $coveredUrn->id);
 });
 
-test('the addons step marks items the package includes', function () {
-    Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+test('the addons step leaves out items the package includes', function () {
+    $flowers = Product::factory()->for($this->store)->category(ProductCategory::Addon)->create(['name' => 'Flower arrangement']);
+
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
         ->call('selectTiming', 'immediate')
         ->call('selectPackage', $this->premium->id)
         ->call('goToContainers')
-        ->call('goToAddons')
-        ->assertSee('2 included, then $15.00 per copy')
-        ->assertSee('Included with your package');
+        ->call('goToAddons');
+
+    expect($component->instance()->extras()->pluck('id')->all())->toBe([$flowers->id]);
+
+    $component->call('selectPackage', $this->basic->id);
+
+    expect($component->instance()->extras()->pluck('id')->all())->toEqualCanonicalizing([$this->certificates->id, $this->memorial->id, $flowers->id]);
+});
+
+test('the package card lists its included products alongside its typed-in items alphabetically', function () {
+    $this->premium->update(['included_items' => ['Transportation', 'Cremation permit']]);
+    $inactive = Product::factory()->for($this->store)->category(ProductCategory::Addon)->create(['name' => 'Archived service', 'is_active' => false]);
+    $this->premium->includedProducts()->attach($inactive->id);
+
+    expect($this->premium->fresh()->includedItemsList())
+        ->toBe(['Cremation permit', 'Death certificates (2)', 'Memorial service', 'Transportation']);
+
+    Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->assertSeeInOrder(['Cremation permit', 'Death certificates (2)', 'Memorial service', 'Transportation']);
 });

@@ -115,6 +115,29 @@ class Product extends Model
     }
 
     /**
+     * For a package: everything it includes, the typed-in items alongside
+     * the active products it covers (with their quantity when more than
+     * one), in alphabetical order.
+     *
+     * @return array<int, string>
+     */
+    public function includedItemsList(): array
+    {
+        $includedProducts = $this->includedProducts
+            ->where('is_active', true)
+            ->map(fn (Product $product) => $product->pivot->included_quantity > 1
+                ? "{$product->name} ({$product->pivot->included_quantity})"
+                : $product->name);
+
+        return collect($this->included_items ?? [])
+            ->concat($includedProducts)
+            ->unique(fn (string $item) => mb_strtolower($item))
+            ->sort(fn (string $first, string $second) => strnatcasecmp($first, $second))
+            ->values()
+            ->all();
+    }
+
+    /**
      * For a package in a location-priced store: its price in each city it's
      * offered in.
      *

@@ -140,7 +140,7 @@ new class extends Component
      */
     public function packages(): Collection
     {
-        $packages = $this->productsFor(ProductCategory::Package);
+        $packages = $this->productsFor(ProductCategory::Package)->load('includedProducts');
 
         if (! $this->usesLocationPricing()) {
             return $packages;
@@ -416,14 +416,17 @@ new class extends Component
     }
 
     /**
-     * Services and add-ons, including required ones (which show as included),
-     * followed by the choose-one items that have options to choose from.
+     * Services and add-ons, including required ones, followed by the
+     * choose-one items that have options to choose from. Anything the
+     * selected package includes is already listed on the package, so it's
+     * left out here.
      */
     public function extras(): Collection
     {
+        $addons = $this->productsFor(ProductCategory::Addon)->filter(fn (Product $product) => $this->includedQuantity($product->id) === 0);
         $choices = $this->productsFor(ProductCategory::Choice)->filter(fn (Product $product) => $this->hasOptions($product));
 
-        return $this->productsFor(ProductCategory::Addon)->concat($choices)->values();
+        return $addons->concat($choices)->values();
     }
 
     private function productsFor(ProductCategory $category): Collection
@@ -978,9 +981,9 @@ new class extends Component
                                     @if ($product->description)
                                         <p class="mt-1 text-sm text-zinc-500">{{ $product->description }}</p>
                                     @endif
-                                    @if ($product->included_items)
+                                    @if ($includedItems = $product->includedItemsList())
                                         <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-zinc-600 marker:text-brand-600">
-                                            @foreach ($product->included_items as $item)
+                                            @foreach ($includedItems as $item)
                                                 <li>{{ $item }}</li>
                                             @endforeach
                                         </ul>
