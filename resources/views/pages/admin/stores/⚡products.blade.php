@@ -278,11 +278,16 @@ new class extends Component
         $isPackage = $validated['formCategory'] === ProductCategory::Package->value;
 
         if ($isPackage) {
+            // A per-unit item can be included with 0 units, covering just its base fee.
+            $includedQuantityRules = $this->includableProducts()->mapWithKeys(fn (Product $includable) => [
+                "formIncludedProducts.{$includable->id}.quantity" => ['nullable', 'integer', $includable->hasPerUnitPricing() ? 'min:0' : 'min:1', 'max:999'],
+            ])->all();
+
             $this->validate([
                 'formTaxableAmount' => ['required', 'numeric', 'min:0', 'lte:formPrice'],
                 'formContainerAllowance' => ['nullable', 'numeric', 'min:0'],
                 'formUrnAllowance' => ['nullable', 'numeric', 'min:0'],
-                'formIncludedProducts.*.quantity' => ['nullable', 'integer', 'min:1', 'max:999'],
+                ...$includedQuantityRules,
                 'formLocationPrices.*' => ['nullable', 'numeric', 'min:0'],
             ], attributes: [
                 'formLocationPrices.*' => 'city price',
@@ -404,7 +409,7 @@ new class extends Component
 
         return collect($this->formIncludedProducts)
             ->filter(fn (array $selection, int $productId) => ($selection['included'] ?? false) && $includableIds->contains($productId))
-            ->map(fn (array $selection) => ['included_quantity' => max(1, (int) ($selection['quantity'] ?? 1))])
+            ->map(fn (array $selection) => ['included_quantity' => ($selection['quantity'] ?? '') === '' ? 1 : (int) $selection['quantity']])
             ->all();
     }
 
@@ -743,12 +748,13 @@ new class extends Component
                 <div class="space-y-2 border-t border-zinc-100 pt-4 dark:border-zinc-700">
                     <flux:heading size="sm" class="text-zinc-500">{{ __('Included add-ons, services & keepsakes') }}</flux:heading>
                     <p class="text-xs text-zinc-500">{{ __('Checked items are free with this package. The family can still add more at the regular price where quantity allows.') }}</p>
+                    <p class="text-xs text-zinc-500">{{ __('For items with a base price plus a per-unit price, the package always covers the base price. Enter 0 to cover only the base price, so the family pays just the per-unit price (e.g. the death certificate service, then each certificate).') }}</p>
                     @forelse ($this->includableProducts() as $includable)
                         <div class="flex items-center justify-between gap-3" wire:key="includable-{{ $includable->id }}">
                             <flux:checkbox wire:model.live="formIncludedProducts.{{ $includable->id }}.included" :label="$includable->name.' ('.$includable->category->label().')'" />
                             @if ($formIncludedProducts[$includable->id]['included'] ?? false)
                                 <div class="flex items-center gap-2">
-                                    <flux:input size="sm" type="number" min="1" step="1" wire:model="formIncludedProducts.{{ $includable->id }}.quantity" placeholder="1" class="w-20" :aria-label="__('Included quantity')" />
+                                    <flux:input size="sm" type="number" :min="$includable->hasPerUnitPricing() ? 0 : 1" step="1" wire:model="formIncludedProducts.{{ $includable->id }}.quantity" placeholder="1" class="w-20" :aria-label="__('Included quantity')" />
                                     <span class="text-xs text-zinc-500">{{ $includable->per_unit_label ?: __('qty') }}</span>
                                 </div>
                             @endif

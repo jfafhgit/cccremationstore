@@ -163,8 +163,8 @@ new class extends Component {
                                             <p class="text-xs text-zinc-500">{{ $line['variant_name'] }}</p>
                                         @endif
                                         <p class="mt-1 text-sm text-zinc-500">
-                                            @if ($line['base_price_cents'] ?? 0)
-                                                ${{ number_format($line['base_price_cents'] / 100, 2) }} + ${{ number_format($line['unit_price_cents'] / 100, 2) }} {{ ($line['unit_label'] ?? null) ? __('per :unit', ['unit' => $line['unit_label']]) : __('each') }}
+                                            @if ($basePriceCents = $this->cart()->basePriceCents($line))
+                                                ${{ number_format($basePriceCents / 100, 2) }} + ${{ number_format($line['unit_price_cents'] / 100, 2) }} {{ ($line['unit_label'] ?? null) ? __('per :unit', ['unit' => $line['unit_label']]) : __('each') }}
                                             @else
                                                 ${{ number_format($line['unit_price_cents'] / 100, 2) }} {{ __('each') }}
                                             @endif

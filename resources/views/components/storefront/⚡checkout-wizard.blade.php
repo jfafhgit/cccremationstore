@@ -289,7 +289,8 @@ new class extends Component
 
     /**
      * Pricing for an item the package includes, e.g. "2 included, then
-     * $15.00 per copy".
+     * $15.00 per copy", or "Service fee included, then $15.00 each" when the
+     * package covers only the base fee.
      */
     public function includedNote(Product $product, int $includedQuantity): string
     {
@@ -301,6 +302,13 @@ new class extends Component
         $unit = $product->hasPerUnitPricing() && $product->per_unit_label
             ? __('per :unit', ['unit' => $product->per_unit_label])
             : __('each');
+
+        if ($includedQuantity === 0) {
+            return __('Service fee included, then :price :unit', [
+                'price' => '$'.number_format($unitCents / 100, 2),
+                'unit' => $unit,
+            ]);
+        }
 
         return __(':count included, then :price :unit', [
             'count' => $includedQuantity,
@@ -408,6 +416,14 @@ new class extends Component
     public function includedQuantity(int $productId): int
     {
         return $this->cart()->includedQuantity($productId.'-0');
+    }
+
+    /**
+     * Whether the selected package covers only a per-unit product's base fee.
+     */
+    public function includesBaseFee(int $productId): bool
+    {
+        return $this->cart()->includesBaseFee($productId);
     }
 
     public function keepsakes(): Collection
@@ -1220,10 +1236,10 @@ new class extends Component
                                     <div class="shrink-0 sm:text-right">
                                         <p class="text-sm text-brand-700">{{ match (true) {
                                             $hasOptions => __('Choose one'),
-                                            $includedQty > 0 => $this->includedNote($product, $includedQty),
+                                            $includedQty > 0 || $this->includesBaseFee($product->id) => $this->includedNote($product, $includedQty),
                                             default => $product->priceLabel(),
                                         } }}</p>
-                                        @if ($includedQty > 0)
+                                        @if ($includedQty > 0 || $this->includesBaseFee($product->id))
                                             <span class="mt-1 inline-block rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Included with your package') }}</span>
                                         @elseif ($product->is_required)
                                             <span class="mt-1 inline-block rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Required') }}</span>
@@ -1332,8 +1348,8 @@ new class extends Component
                                 <p class="mt-1 text-xs text-zinc-500">{{ $product->description }}</p>
                             @endif
                             @php($includedQty = $this->includedQuantity($product->id))
-                            <p class="mt-1 text-sm text-brand-700">{{ $includedQty > 0 ? $this->includedNote($product, $includedQty) : $product->priceLabel() }}</p>
-                            @if ($includedQty > 0)
+                            <p class="mt-1 text-sm text-brand-700">{{ $includedQty > 0 || $this->includesBaseFee($product->id) ? $this->includedNote($product, $includedQty) : $product->priceLabel() }}</p>
+                            @if ($includedQty > 0 || $this->includesBaseFee($product->id))
                                 <span class="mt-2 inline-block rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Included with your package') }}</span>
                             @endif
                             @if ($includedQty === 0 || $this->canAddBeyondIncluded($product))

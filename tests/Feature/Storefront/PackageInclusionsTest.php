@@ -309,3 +309,62 @@ test('the package card lists its included products alongside its typed-in items 
         ->call('selectTiming', 'immediate')
         ->assertSeeInOrder(['Cremation permit', 'Death certificates (2)', 'Memorial service', 'Transportation']);
 });
+
+test('a package that includes a per-unit item with 0 units covers only its base fee', function () {
+    $this->basic->includedProducts()->attach($this->certificates->id, ['included_quantity' => 0]);
+
+    $cart = new Cart($this->store);
+    $cart->selectSlot($this->basic);
+
+    expect($cart->allLines()->has($this->certificatesKey))->toBeFalse();
+
+    $cart->addLine($this->certificates, null, 3);
+
+    expect($cart->lineTotalCents($cart->allLines()->get($this->certificatesKey)))->toBe(3 * 1500)
+        ->and($cart->subtotalCents())->toBe(100000 + 3 * 1500);
+
+    $cart->selectSlot(Product::factory()->for($this->store)->create(['price_cents' => 50000]));
+
+    expect($cart->lineTotalCents($cart->allLines()->get($this->certificatesKey)))->toBe(25000 + 3 * 1500);
+});
+
+test('a base fee covered by a package is left off the cart and order instead of shown as a discount', function () {
+    $this->basic->includedProducts()->attach($this->certificates->id, ['included_quantity' => 0]);
+
+    $cart = new Cart($this->store);
+    $cart->selectSlot($this->basic);
+    $cart->addLine($this->certificates, null, 2);
+
+    Livewire::test('storefront.cart-drawer', ['store' => $this->store])
+        ->assertSee('$30.00')
+        ->assertDontSee('$250.00')
+        ->assertDontSee('Included with package');
+
+    $order = app(CheckoutService::class)->createOrder($this->store, $cart, [
+        'purchaser_first_name' => 'Sam',
+        'purchaser_last_name' => 'Rivera',
+        'purchaser_email' => 'sam@example.com',
+        'relationship_to_deceased' => 'Adult child',
+        'deceased_first_name' => 'Pat',
+        'deceased_last_name' => 'Rivera',
+    ]);
+
+    $certificatesItem = $order->items->firstWhere('product_id', $this->certificates->id);
+
+    expect($certificatesItem->total_price_cents)->toBe(3000)
+        ->and($certificatesItem->regularTotalCents())->toBe(3000)
+        ->and($certificatesItem->discountCents())->toBe(0);
+});
+
+test('the wizard and package card show when only the service fee is included', function () {
+    $this->certificates->update(['allow_multiple_quantity' => true]);
+    $this->basic->includedProducts()->attach($this->certificates->id, ['included_quantity' => 0]);
+
+    Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->assertSee('Death certificates (service fee)')
+        ->call('selectPackage', $this->basic->id)
+        ->call('goToContainers')
+        ->call('goToAddons')
+        ->assertSee('Service fee included, then $15.00 per copy');
+});

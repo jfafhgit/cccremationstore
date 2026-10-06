@@ -128,9 +128,11 @@ class Product extends Model
     {
         $includedProducts = $this->includedProducts
             ->where('is_active', true)
-            ->map(fn (Product $product) => $product->pivot->included_quantity > 1
-                ? "{$product->name} ({$product->pivot->included_quantity})"
-                : $product->name);
+            ->map(fn (Product $product) => match (true) {
+                $product->pivot->included_quantity === 0 => __(':name (service fee)', ['name' => $product->name]),
+                $product->pivot->included_quantity > 1 => "{$product->name} ({$product->pivot->included_quantity})",
+                default => $product->name,
+            });
 
         return collect($this->included_items ?? [])
             ->concat($includedProducts)

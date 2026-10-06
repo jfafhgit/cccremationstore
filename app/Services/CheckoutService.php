@@ -166,7 +166,7 @@ class CheckoutService
                 'name_snapshot' => $line['name'],
                 'variant_snapshot' => $line['variant_name'] ?? null,
                 'unit_price_cents' => $line['unit_price_cents'],
-                'base_price_cents_snapshot' => $line['base_price_cents'] ?? 0,
+                'base_price_cents_snapshot' => $cart->basePriceCents($line),
                 'quantity' => $line['quantity'],
                 'included_quantity' => $line['included_quantity'] ?? 0,
                 'allowance_cents' => $line['allowance_cents'] ?? 0,

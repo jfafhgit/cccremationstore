@@ -120,3 +120,15 @@ test('only taxed products are tagged on the products page', function () {
 
     expect(substr_count($html, 'Taxed'))->toBe(1);
 });
+
+test('a per-unit item can be included with 0 units to cover only its base fee', function () {
+    $this->certificates->update(['price_cents' => 25000, 'per_unit_price_cents' => 1500]);
+
+    Livewire::test('pages::admin.stores.products', ['store' => $this->store])
+        ->call('editProduct', $this->package->id)
+        ->set('formIncludedProducts', [$this->certificates->id => ['included' => true, 'quantity' => '0']])
+        ->call('saveProduct')
+        ->assertHasNoErrors();
+
+    expect($this->package->fresh()->includedProducts->first()->pivot->included_quantity)->toBe(0);
+});

@@ -91,6 +91,7 @@ class Cart
             'urn_vault' => null,
             'lines' => [], // repeatable keepsakes / add-ons / services
             'declined_options' => [], // ids of "choose one" products answered with "No thanks"
+            'base_fee_included_ids' => [], // ids of per-unit products whose base fee the package covers
             'pending_order_id' => null,
         ];
     }
@@ -331,10 +332,14 @@ class Cart
      * units are free; the customer can still add more at the regular price.
      * Each line remembers its quantity from before the package included it,
      * so switching packages back and forth doesn't lose or inflate what the
-     * customer chose themselves.
+     * customer chose themselves. An item included with a quantity of 0 (a
+     * per-unit item like death certificates) only has its base fee covered,
+     * and is charged per unit if the customer adds it.
      */
     private function syncPackageInclusions(): void
     {
+        $this->state['base_fee_included_ids'] = [];
+
         foreach ($this->state['lines'] as $key => $line) {
             $previouslyIncludedQuantity = $line['included_quantity'] ?? 0;
 
@@ -362,6 +367,13 @@ class Cart
         foreach ($package?->includedProducts ?? [] as $product) {
             $key = $this->lineKey($product, null);
             $includedQuantity = (int) $product->pivot->included_quantity;
+
+            if ($includedQuantity === 0) {
+                $this->state['base_fee_included_ids'][] = $product->id;
+
+                continue;
+            }
+
             $line = $this->state['lines'][$key] ?? $this->lineFor($product, null, 0);
 
             // Pick up an allowance set on the product since the line was added.
@@ -557,6 +569,15 @@ class Cart
     /**
      * How many units of this line the selected package covers.
      */
+    /**
+     * Whether the selected package covers this product's base fee, leaving
+     * only its per-unit price to pay.
+     */
+    public function includesBaseFee(int $productId): bool
+    {
+        return in_array($productId, $this->state['base_fee_included_ids'] ?? [], true);
+    }
+
     public function includedQuantity(string $key): int
     {
         return (int) ($this->state['lines'][$key]['included_quantity'] ?? 0);
@@ -774,7 +795,7 @@ class Cart
     public function lineTotalCents(array $line): int
     {
         $includedQuantity = $line['included_quantity'] ?? 0;
-        $baseCents = $includedQuantity > 0 ? 0 : ($line['base_price_cents'] ?? 0);
+        $baseCents = $includedQuantity > 0 ? 0 : $this->basePriceCents($line);
 
         return max(0, $baseCents + $line['unit_price_cents'] * $this->chargedQuantity($line) - ($line['allowance_cents'] ?? 0));
     }
@@ -787,7 +808,18 @@ class Cart
      */
     public function lineRegularTotalCents(array $line): int
     {
-        return ($line['base_price_cents'] ?? 0) + $line['unit_price_cents'] * $line['quantity'];
+        return $this->basePriceCents($line) + $line['unit_price_cents'] * $line['quantity'];
+    }
+
+    /**
+     * A line's one-time base fee. When the package covers only the base fee,
+     * the item is priced as if it had none, so no discount is shown for it.
+     *
+     * @param  array<string, mixed>  $line
+     */
+    public function basePriceCents(array $line): int
+    {
+        return $this->includesBaseFee($line['product_id']) ? 0 : ($line['base_price_cents'] ?? 0);
     }
 
     /**
