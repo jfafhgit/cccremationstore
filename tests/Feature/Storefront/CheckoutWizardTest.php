@@ -627,3 +627,18 @@ test('a choice the family already made stands over the pre-selection', function 
         ->call('goToContainers')
         ->assertSet('urnVaultId', $vault->id);
 });
+
+test('the step bar links back to completed steps but never forward', function () {
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $this->package->id)
+        ->call('goToContainers')
+        ->call('goToAddons')
+        ->assertSeeHtml('wire:click="backTo(\'timing\')"')
+        ->assertSeeHtml('wire:click="backTo(\'containers\')"')
+        ->assertDontSeeHtml('wire:click="backTo(\'addons\')"')
+        ->assertDontSeeHtml('wire:click="backTo(\'keepsakes\')"');
+
+    $component->call('backTo', 'details')->assertSet('step', 'addons');
+    $component->call('backTo', 'containers')->assertSet('step', 'containers');
+});

@@ -764,8 +764,18 @@ new class extends Component
         $this->step = 'details';
     }
 
+    /**
+     * Return to an earlier step, from a Back button or the step bar. Never
+     * moves forward, since later steps validate the ones before them.
+     */
     public function backTo(string $step): void
     {
+        $targetIndex = array_search($step, $this->steps, true);
+
+        if ($targetIndex === false || $targetIndex >= $this->stepIndex()) {
+            return;
+        }
+
         $this->step = $step;
         $this->clientSecret = null;
     }
@@ -907,14 +917,34 @@ new class extends Component
 >
     <nav class="mb-8 flex flex-wrap items-center justify-center gap-2 text-xs font-medium text-zinc-400" aria-label="{{ __('Checkout steps') }}">
         @foreach ([$this->storeModel()->isPreNeed() ? 'Package' : 'Timing & Package', $this->containersStepLabel(), 'Add-ons & Services', 'Keepsakes', 'Your Information', 'Payment'] as $index => $label)
-            <span class="flex items-center gap-2">
+            {{-- Completed steps link back; the current and later steps aren't clickable. --}}
+            @php($isCompleted = $index < $this->stepIndex())
+            <{{ $isCompleted ? 'button' : 'span' }}
+                @if ($isCompleted)
+                    type="button"
+                    wire:click="backTo('{{ $steps[$index] }}')"
+                    title="{{ __('Go back to :step', ['step' => __($label)]) }}"
+                    class="group flex items-center gap-2 rounded-full hover:text-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+                @else
+                    class="flex items-center gap-2"
+                    @if ($index === $this->stepIndex()) aria-current="step" @endif
+                @endif
+            >
                 <span @class([
                     'flex size-6 items-center justify-center rounded-full text-[11px]',
                     'bg-store text-store-foreground' => $index <= $this->stepIndex(),
+                    'group-hover:ring-2 group-hover:ring-brand-300' => $isCompleted,
                     'bg-zinc-100 text-zinc-400' => $index > $this->stepIndex(),
                 ])>{{ $index + 1 }}</span>
-                <span class="hidden sm:inline {{ $index === $this->stepIndex() ? 'text-brand-800' : '' }}">{{ __($label) }}</span>
-            </span>
+                <span @class([
+                    'hidden sm:inline',
+                    'text-brand-800' => $index === $this->stepIndex(),
+                    'underline-offset-2 group-hover:underline' => $isCompleted,
+                ])>{{ __($label) }}</span>
+                @if ($isCompleted)
+                    <span class="sr-only sm:hidden">{{ __('Go back to :step', ['step' => __($label)]) }}</span>
+                @endif
+            </{{ $isCompleted ? 'button' : 'span' }}>
             @if (! $loop->last)
                 <span class="h-px w-4 bg-zinc-200"></span>
             @endif
