@@ -30,6 +30,10 @@ new class extends Component
     #[Validate('nullable|string|max:2000')]
     public string $formDescription = '';
 
+    /** Groups add-ons and choose-one items under this heading on the storefront (blank = no heading). */
+    #[Validate('nullable|string|max:100')]
+    public string $formSectionHeading = '';
+
     /** One bullet point per line; stored as an array on the product. */
     #[Validate('nullable|string|max:2000')]
     public string $formIncludedItems = '';
@@ -211,7 +215,7 @@ new class extends Component
 
     public function newProduct(?string $category = null): void
     {
-        $this->reset(['editingProductId', 'formName', 'formDescription', 'formIncludedItems', 'formPrice', 'formTaxableAmount', 'formPerUnitPrice', 'formPerUnitLabel', 'formImage', 'existingImagePath', 'newVariantName', 'newVariantPrice', 'newVariantDescription', 'newVariantIsDefault', 'editingVariantId', 'formIncludedProducts', 'formContainerAllowance', 'formUrnAllowance', 'formHideOptionsBelowAllowance', 'formKeepsakeAllowance', 'formLocationPrices']);
+        $this->reset(['editingProductId', 'formName', 'formSectionHeading', 'formDescription', 'formIncludedItems', 'formPrice', 'formTaxableAmount', 'formPerUnitPrice', 'formPerUnitLabel', 'formImage', 'existingImagePath', 'newVariantName', 'newVariantPrice', 'newVariantDescription', 'newVariantIsDefault', 'editingVariantId', 'formIncludedProducts', 'formContainerAllowance', 'formUrnAllowance', 'formHideOptionsBelowAllowance', 'formKeepsakeAllowance', 'formLocationPrices']);
         $this->formCategory = $category ?? ProductCategory::Package->value;
         $this->formIsTaxable = true;
         $this->formIsRequired = false;
@@ -230,6 +234,7 @@ new class extends Component
         $this->formName = $product->name;
         $this->formCategory = $product->category->value;
         $this->formDescription = $product->description ?? '';
+        $this->formSectionHeading = $product->section_heading ?? '';
         $this->formIncludedItems = implode("\n", $product->included_items ?? []);
         $this->formPrice = number_format($product->price_cents / 100, 2, '.', '');
         $this->formIsTaxable = $product->is_taxable;
@@ -327,6 +332,7 @@ new class extends Component
             'name' => $validated['formName'],
             'slug' => str($validated['formName'])->slug().'-'.str()->random(4),
             'description' => $validated['formDescription'] ?: null,
+            'section_heading' => $this->hasSectionHeading($validated['formCategory']) ? (trim($validated['formSectionHeading'] ?? '') ?: null) : null,
             'included_items' => collect(preg_split('/\R/', $validated['formIncludedItems'] ?? ''))
                 ->map(fn (string $item) => trim($item))
                 ->filter()
@@ -377,6 +383,30 @@ new class extends Component
 
         Flux::modal('product-form')->close();
         Flux::toast(variant: 'success', text: __('Product saved.'));
+    }
+
+    /**
+     * Whether products in this category appear on the Add-ons & Services
+     * step, where they can be grouped under section headings.
+     */
+    public function hasSectionHeading(string $categoryValue): bool
+    {
+        return in_array($categoryValue, [ProductCategory::Addon->value, ProductCategory::Choice->value], true);
+    }
+
+    /**
+     * The section headings this store already uses, suggested in the form so
+     * a typo doesn't start a second section.
+     *
+     * @return Collection<int, string>
+     */
+    public function existingSectionHeadings(): Collection
+    {
+        return $this->currentStore->products()
+            ->whereNotNull('section_heading')
+            ->orderBy('section_heading')
+            ->distinct()
+            ->pluck('section_heading');
     }
 
     /**
@@ -597,6 +627,9 @@ new class extends Component
                                         <span class="shrink-0 text-zinc-300 dark:text-zinc-600" title="{{ __('Drag to reorder') }}">⠿</span>
                                     @endif
                                 </div>
+                                @if ($product->section_heading)
+                                    <p class="truncate text-[11px] text-zinc-400" title="{{ __('Section heading') }}">{{ $product->section_heading }}</p>
+                                @endif
                                 <div class="mt-0.5 flex flex-wrap items-center gap-1">
                                     <p class="text-xs font-semibold text-brand-700 dark:text-brand-300">{{ $product->priceLabel() }}</p>
                                     <flux:badge size="sm" :color="$product->is_active ? 'green' : 'zinc'">{{ $product->is_active ? __('Active') : __('Hidden') }}</flux:badge>
@@ -648,6 +681,20 @@ new class extends Component
                 </flux:select>
                 <flux:error name="formCategory" />
             </flux:field>
+
+            @if ($this->hasSectionHeading($formCategory))
+                <flux:field>
+                    <flux:label>{{ __('Section heading') }}</flux:label>
+                    <flux:description>{{ __('Optional. Groups this item with others that have the same heading on the Add-ons & Services step, e.g. Memorial Services or Transportation.') }}</flux:description>
+                    <flux:input wire:model="formSectionHeading" list="section-headings" autocomplete="off" />
+                    <datalist id="section-headings">
+                        @foreach ($this->existingSectionHeadings() as $heading)
+                            <option value="{{ $heading }}"></option>
+                        @endforeach
+                    </datalist>
+                    <flux:error name="formSectionHeading" />
+                </flux:field>
+            @endif
 
             <flux:field>
                 <flux:label>{{ __('Description') }}</flux:label>

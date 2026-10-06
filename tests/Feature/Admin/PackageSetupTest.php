@@ -132,3 +132,22 @@ test('a per-unit item can be included with 0 units to cover only its base fee', 
 
     expect($this->package->fresh()->includedProducts->first()->pivot->included_quantity)->toBe(0);
 });
+
+test('an add-on saves its section heading, and categories off the add-ons step clear it', function () {
+    Livewire::test('pages::admin.stores.products', ['store' => $this->store])
+        ->call('editProduct', $this->certificates->id)
+        ->set('formSectionHeading', '  Documents ')
+        ->call('saveProduct')
+        ->assertHasNoErrors();
+
+    expect($this->certificates->fresh()->section_heading)->toBe('Documents');
+
+    Livewire::test('pages::admin.stores.products', ['store' => $this->store])
+        ->call('editProduct', $this->certificates->id)
+        ->assertSet('formSectionHeading', 'Documents')
+        ->set('formCategory', ProductCategory::Keepsake->value)
+        ->call('saveProduct')
+        ->assertHasNoErrors();
+
+    expect($this->certificates->fresh()->section_heading)->toBeNull();
+});

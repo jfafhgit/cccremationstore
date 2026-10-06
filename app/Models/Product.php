@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Storage;
  * @property int $store_id
  * @property ProductCategory $category
  * @property string $name
+ * @property string|null $section_heading
  * @property string $slug
  * @property string|null $description
  * @property array<int, string>|null $included_items
@@ -47,6 +48,7 @@ class Product extends Model
         'store_id',
         'category',
         'name',
+        'section_heading',
         'slug',
         'description',
         'included_items',

@@ -446,6 +446,24 @@ new class extends Component
         return $addons->concat($choices)->values();
     }
 
+    /**
+     * The services and add-ons grouped by section heading: items without a
+     * heading first, then each section in the order its first item appears.
+     *
+     * @return Collection<int, array{heading: string|null, products: Collection<int, Product>}>
+     */
+    public function extraSections(): Collection
+    {
+        return $this->extras()
+            ->groupBy(fn (Product $product) => $product->section_heading ?? '')
+            ->sortBy(fn (Collection $products, string $heading) => $heading === '' ? 0 : 1)
+            ->map(fn (Collection $products, string $heading) => [
+                'heading' => $heading === '' ? null : $heading,
+                'products' => $products->values(),
+            ])
+            ->values();
+    }
+
     private function productsFor(ProductCategory $category): Collection
     {
         $store = $this->storeModel();
@@ -1228,101 +1246,106 @@ new class extends Component
             <flux:heading size="xl" class="font-serif">{{ __('Services & add-ons') }}</flux:heading>
             <flux:subheading class="mt-1">{{ __('Add anything else you need for the service.') }}</flux:subheading>
 
-            @if (($extras = $this->extras())->isNotEmpty())
-                <div class="mt-6 space-y-3">
-                    @foreach ($extras as $product)
-                        @php($qty = (int) ($keepsakeQty[$product->id.'-0'] ?? 0))
-                        @php($includedQty = $this->includedQuantity($product->id))
-                        @php($hasOptions = $this->hasOptions($product))
-                        @php($selectedOptionId = $hasOptions ? $this->selectedOptionId($product->id) : null)
-                        @php($isSelected = $hasOptions ? $selectedOptionId !== null : ($qty > 0 || $includedQty > 0 || $product->is_required))
-                        @php($canToggle = $this->canToggleExtra($product))
-                        @php($needsAnswer = $errors->has("options.{$product->id}"))
-                        <div wire:key="extra-{{ $product->id }}" @class([
-                            'relative overflow-hidden rounded-xl transition',
-                            'border-2 border-brand-600 bg-brand-50 ring-2 ring-brand-600/30' => $isSelected,
-                            'border-2 border-red-500' => ! $isSelected && $needsAnswer,
-                            'border border-zinc-200 hover:border-brand-300' => ! $isSelected && ! $needsAnswer,
-                        ])>
-                            @if ($canToggle)
-                                <button type="button" wire:click="toggleExtra({{ $product->id }})" class="absolute inset-0 z-10 rounded-xl focus-visible:outline-2 focus-visible:outline-brand-600" aria-pressed="{{ $isSelected ? 'true' : 'false' }}" aria-label="{{ $isSelected ? __('Remove :name', ['name' => $product->name]) : __('Select :name', ['name' => $product->name]) }}"></button>
-                            @endif
-                            <div class="flex items-start gap-3 p-3">
-                                @if ($isSelected)
-                                    <span class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-store text-store-foreground" title="{{ __('Selected') }}">
-                                        <flux:icon.check class="size-3.5" />
-                                        <span class="sr-only">{{ __('Selected') }}</span>
-                                    </span>
-                                @else
-                                    <span class="mt-0.5 size-5 shrink-0 rounded-full border-2 border-zinc-300" aria-hidden="true"></span>
+            @if (($extraSections = $this->extraSections())->isNotEmpty())
+                @foreach ($extraSections as $section)
+                    <div @class(['space-y-3', 'mt-6' => $loop->first, 'mt-8' => ! $loop->first]) wire:key="extra-section-{{ $loop->index }}">
+                        @if ($section['heading'])
+                            <h3 class="font-serif text-lg text-zinc-800">{{ $section['heading'] }}</h3>
+                        @endif
+                        @foreach ($section['products'] as $product)
+                            @php($qty = (int) ($keepsakeQty[$product->id.'-0'] ?? 0))
+                            @php($includedQty = $this->includedQuantity($product->id))
+                            @php($hasOptions = $this->hasOptions($product))
+                            @php($selectedOptionId = $hasOptions ? $this->selectedOptionId($product->id) : null)
+                            @php($isSelected = $hasOptions ? $selectedOptionId !== null : ($qty > 0 || $includedQty > 0 || $product->is_required))
+                            @php($canToggle = $this->canToggleExtra($product))
+                            @php($needsAnswer = $errors->has("options.{$product->id}"))
+                            <div wire:key="extra-{{ $product->id }}" @class([
+                                'relative overflow-hidden rounded-xl transition',
+                                'border-2 border-brand-600 bg-brand-50 ring-2 ring-brand-600/30' => $isSelected,
+                                'border-2 border-red-500' => ! $isSelected && $needsAnswer,
+                                'border border-zinc-200 hover:border-brand-300' => ! $isSelected && ! $needsAnswer,
+                            ])>
+                                @if ($canToggle)
+                                    <button type="button" wire:click="toggleExtra({{ $product->id }})" class="absolute inset-0 z-10 rounded-xl focus-visible:outline-2 focus-visible:outline-brand-600" aria-pressed="{{ $isSelected ? 'true' : 'false' }}" aria-label="{{ $isSelected ? __('Remove :name', ['name' => $product->name]) : __('Select :name', ['name' => $product->name]) }}"></button>
                                 @endif
-                                <div class="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                                    <div class="min-w-0">
-                                        <p class="text-sm font-medium text-zinc-800">{{ $product->name }}</p>
-                                        @if ($product->description)
-                                            <p class="mt-1 text-xs text-zinc-500">{{ $product->description }}</p>
-                                        @endif
-                                    </div>
-                                    <div class="shrink-0 sm:text-right">
-                                        <p class="text-sm text-brand-700">{{ match (true) {
-                                            $hasOptions => __('Choose one'),
-                                            $includedQty > 0 || $this->includesBaseFee($product->id) => $this->includedNote($product, $includedQty),
-                                            default => $product->priceLabel(),
-                                        } }}</p>
-                                        @if ($includedQty > 0 || $this->includesBaseFee($product->id))
-                                            <span class="mt-1 inline-block rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Included with your package') }}</span>
-                                        @elseif ($product->is_required)
-                                            <span class="mt-1 inline-block rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Required') }}</span>
-                                        @endif
+                                <div class="flex items-start gap-3 p-3">
+                                    @if ($isSelected)
+                                        <span class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-store text-store-foreground" title="{{ __('Selected') }}">
+                                            <flux:icon.check class="size-3.5" />
+                                            <span class="sr-only">{{ __('Selected') }}</span>
+                                        </span>
+                                    @else
+                                        <span class="mt-0.5 size-5 shrink-0 rounded-full border-2 border-zinc-300" aria-hidden="true"></span>
+                                    @endif
+                                    <div class="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                                        <div class="min-w-0">
+                                            <p class="text-sm font-medium text-zinc-800">{{ $product->name }}</p>
+                                            @if ($product->description)
+                                                <p class="mt-1 text-xs text-zinc-500">{{ $product->description }}</p>
+                                            @endif
+                                        </div>
+                                        <div class="shrink-0 sm:text-right">
+                                            <p class="text-sm text-brand-700">{{ match (true) {
+                                                $hasOptions => __('Choose one'),
+                                                $includedQty > 0 || $this->includesBaseFee($product->id) => $this->includedNote($product, $includedQty),
+                                                default => $product->priceLabel(),
+                                            } }}</p>
+                                            @if ($includedQty > 0 || $this->includesBaseFee($product->id))
+                                                <span class="mt-1 inline-block rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Included with your package') }}</span>
+                                            @elseif ($product->is_required)
+                                                <span class="mt-1 inline-block rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Required') }}</span>
+                                            @endif
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                            <div>
-                                @if ($hasOptions)
-                                    <fieldset class="space-y-1 border-t border-brand-200 py-2 pr-3 pl-11">
-                                        <legend class="sr-only">{{ __('Options for :name', ['name' => $product->name]) }}</legend>
-                                        @foreach ($product->variants as $option)
-                                            <div wire:key="extra-{{ $product->id }}-option-{{ $option->id }}" @if ($option->description) x-data="{ detail: false }" @endif>
-                                                <label class="flex cursor-pointer items-start gap-2 text-sm text-zinc-700">
-                                                    <input type="radio" name="extra-option-{{ $product->id }}" value="{{ $option->id }}" @checked($selectedOptionId === $option->id) wire:click="selectExtraOption({{ $product->id }}, {{ $option->id }})" class="mt-1 accent-[var(--color-brand-700)]" />
-                                                    <span class="flex-1">
-                                                        {{ $option->name }}
-                                                        @if ($option->description)
-                                                            <button type="button" class="ml-1 text-xs text-brand-700 underline hover:text-brand-900" x-on:click.prevent="detail = ! detail" x-bind:aria-expanded="detail" aria-controls="option-detail-{{ $option->id }}">
-                                                                <span x-text="detail ? @js(__('Hide detail')) : @js(__('Show detail'))">{{ __('Show detail') }}</span>
-                                                            </button>
-                                                        @endif
-                                                    </span>
-                                                    <span class="font-medium text-brand-700">{{ $this->optionPriceLabel($product, $option) }}</span>
+                                <div>
+                                    @if ($hasOptions)
+                                        <fieldset class="space-y-1 border-t border-brand-200 py-2 pr-3 pl-11">
+                                            <legend class="sr-only">{{ __('Options for :name', ['name' => $product->name]) }}</legend>
+                                            @foreach ($product->variants as $option)
+                                                <div wire:key="extra-{{ $product->id }}-option-{{ $option->id }}" @if ($option->description) x-data="{ detail: false }" @endif>
+                                                    <label class="flex cursor-pointer items-start gap-2 text-sm text-zinc-700">
+                                                        <input type="radio" name="extra-option-{{ $product->id }}" value="{{ $option->id }}" @checked($selectedOptionId === $option->id) wire:click="selectExtraOption({{ $product->id }}, {{ $option->id }})" class="mt-1 accent-[var(--color-brand-700)]" />
+                                                        <span class="flex-1">
+                                                            {{ $option->name }}
+                                                            @if ($option->description)
+                                                                <button type="button" class="ml-1 text-xs text-brand-700 underline hover:text-brand-900" x-on:click.prevent="detail = ! detail" x-bind:aria-expanded="detail" aria-controls="option-detail-{{ $option->id }}">
+                                                                    <span x-text="detail ? @js(__('Hide detail')) : @js(__('Show detail'))">{{ __('Show detail') }}</span>
+                                                                </button>
+                                                            @endif
+                                                        </span>
+                                                        <span class="font-medium text-brand-700">{{ $this->optionPriceLabel($product, $option) }}</span>
+                                                    </label>
+                                                    @if ($option->description)
+                                                        <p id="option-detail-{{ $option->id }}" x-show="detail" x-transition.opacity style="display: none" class="ml-6 mt-1 whitespace-pre-line rounded-lg bg-white/70 px-3 py-2 text-xs text-zinc-600">{{ $option->description }}</p>
+                                                    @endif
+                                                </div>
+                                            @endforeach
+                                            @unless ($product->is_required)
+                                                <label class="flex cursor-pointer items-start gap-2 text-sm text-zinc-500">
+                                                    <input type="radio" name="extra-option-{{ $product->id }}" value="" @checked($selectedOptionId === null && $this->declinedOption($product->id)) wire:click="selectExtraOption({{ $product->id }}, null)" class="mt-1 accent-[var(--color-brand-700)]" />
+                                                    <span>{{ __('No thanks') }}</span>
                                                 </label>
-                                                @if ($option->description)
-                                                    <p id="option-detail-{{ $option->id }}" x-show="detail" x-transition.opacity style="display: none" class="ml-6 mt-1 whitespace-pre-line rounded-lg bg-white/70 px-3 py-2 text-xs text-zinc-600">{{ $option->description }}</p>
-                                                @endif
+                                            @endunless
+                                            <flux:error :name="'options.'.$product->id" class="pt-1" />
+                                        </fieldset>
+                                    @elseif ($this->showsQuantitySelector($product) && $isSelected)
+                                        @php($minimumQty = max($includedQty, $product->is_required ? 1 : 0))
+                                        <div class="relative z-20 flex flex-wrap items-center justify-between gap-2 border-t border-brand-200 py-2 pr-3 pl-11">
+                                            <div class="flex items-center gap-2">
+                                                <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-300 bg-white text-sm disabled:opacity-40" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ $qty - 1 }})" @disabled($qty <= $minimumQty) aria-label="{{ __('Decrease quantity of :name', ['name' => $product->name]) }}">&minus;</button>
+                                                <span class="w-6 text-center text-sm">{{ $qty }}</span>
+                                                <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-300 bg-white text-sm" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ $qty + 1 }})" aria-label="{{ __('Increase quantity of :name', ['name' => $product->name]) }}">+</button>
                                             </div>
-                                        @endforeach
-                                        @unless ($product->is_required)
-                                            <label class="flex cursor-pointer items-start gap-2 text-sm text-zinc-500">
-                                                <input type="radio" name="extra-option-{{ $product->id }}" value="" @checked($selectedOptionId === null && $this->declinedOption($product->id)) wire:click="selectExtraOption({{ $product->id }}, null)" class="mt-1 accent-[var(--color-brand-700)]" />
-                                                <span>{{ __('No thanks') }}</span>
-                                            </label>
-                                        @endunless
-                                        <flux:error :name="'options.'.$product->id" class="pt-1" />
-                                    </fieldset>
-                                @elseif ($this->showsQuantitySelector($product) && $isSelected)
-                                    @php($minimumQty = max($includedQty, $product->is_required ? 1 : 0))
-                                    <div class="relative z-20 flex flex-wrap items-center justify-between gap-2 border-t border-brand-200 py-2 pr-3 pl-11">
-                                        <div class="flex items-center gap-2">
-                                            <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-300 bg-white text-sm disabled:opacity-40" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ $qty - 1 }})" @disabled($qty <= $minimumQty) aria-label="{{ __('Decrease quantity of :name', ['name' => $product->name]) }}">&minus;</button>
-                                            <span class="w-6 text-center text-sm">{{ $qty }}</span>
-                                            <button type="button" class="flex size-7 items-center justify-center rounded-full border border-zinc-300 bg-white text-sm" wire:click="setKeepsakeQty({{ $product->id }}, null, {{ $qty + 1 }})" aria-label="{{ __('Increase quantity of :name', ['name' => $product->name]) }}">+</button>
+                                            <p class="text-sm font-semibold text-zinc-800">{{ __('Total') }}: {{ $this->extraTotal($product->id) }}</p>
                                         </div>
-                                        <p class="text-sm font-semibold text-zinc-800">{{ __('Total') }}: {{ $this->extraTotal($product->id) }}</p>
-                                    </div>
-                                @endif
+                                    @endif
+                                </div>
                             </div>
-                        </div>
-                    @endforeach
-                </div>
+                        @endforeach
+                    </div>
+                @endforeach
             @else
                 <p class="mt-6 text-sm text-zinc-500">{{ __('No services or add-ons are available for this option — you can continue to the next step.') }}</p>
             @endif

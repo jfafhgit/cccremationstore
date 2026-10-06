@@ -642,3 +642,18 @@ test('the step bar links back to completed steps but never forward', function ()
     $component->call('backTo', 'details')->assertSet('step', 'addons');
     $component->call('backTo', 'containers')->assertSet('step', 'containers');
 });
+
+test('add-ons are grouped under their section headings, with unheaded items first', function () {
+    $this->store->update(['settings' => [...($this->store->settings ?? []), 'product_sort' => [ProductCategory::Addon->value => 'name']]]);
+    Product::factory()->for($this->store)->category(ProductCategory::Addon)->create(['name' => 'Memorial video', 'section_heading' => 'Memorial Services']);
+    Product::factory()->for($this->store)->category(ProductCategory::Addon)->create(['name' => 'Airport transfer', 'section_heading' => 'Transportation']);
+    Product::factory()->for($this->store)->category(ProductCategory::Addon)->create(['name' => 'Celebration of life', 'section_heading' => 'Memorial Services']);
+    Product::factory()->for($this->store)->category(ProductCategory::Addon)->create(['name' => 'Witness cremation']);
+
+    Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $this->package->id)
+        ->call('goToContainers')
+        ->call('goToAddons')
+        ->assertSeeInOrder(['Witness cremation', 'Transportation', 'Airport transfer', 'Memorial Services', 'Celebration of life', 'Memorial video']);
+});
