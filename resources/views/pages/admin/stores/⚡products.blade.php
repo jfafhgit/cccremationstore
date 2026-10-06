@@ -755,7 +755,7 @@ new class extends Component
             @if ($formCategory === ProductCategory::KeepsakeAllowance->value)
                 <flux:field>
                     <flux:label>{{ __('Allowance amount (USD)') }}</flux:label>
-                    <flux:description>{{ __('Credited toward any keepsakes the family picks, like a Legacy Touch Allowance. Families never see this on its own; include it in a package to give it with that package.') }}</flux:description>
+                    <flux:description>{{ __('Credited toward any keepsakes the family picks, like a Legacy Touch Allowance. Families never see this on its own; include it in a package to give it with that package. Keepsakes it covers are taxed at their full price; tick Taxable below to also tax any amount the family leaves unused.') }}</flux:description>
                     <flux:input type="number" step="0.01" min="0" wire:model="formKeepsakeAllowance" />
                     <flux:error name="formKeepsakeAllowance" />
                 </flux:field>

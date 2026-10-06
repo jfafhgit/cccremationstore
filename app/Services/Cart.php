@@ -395,7 +395,7 @@ class Cart
 
             // Pick up an allowance set on the product since the line was added.
             unset($line['keepsake_allowance_cents']);
-            $line = [...$line, ...$this->keepsakeAllowanceFor($product)];
+            $line = [...$line, ...$this->keepsakeAllowanceFor($product), 'is_taxable' => $product->is_taxable];
 
             $line['quantity_before_package'] = $line['quantity'];
             $line['quantity'] = max($line['quantity'], $includedQuantity);
@@ -930,24 +930,41 @@ class Cart
      * The portion of the subtotal made up of taxable lines. Lines added
      * before 'taxable_unit_cents' existed fall back to the 'is_taxable' flag
      * (itself defaulting to taxable, the safer default for an in-flight
-     * session cart).
+     * session cart). Includes any unused keepsake allowance that's taxable.
      */
     public function taxableSubtotalCents(): int
     {
-        return (int) $this->allLines()->sum(fn (array $line) => $this->taxableLineCents($line));
+        return (int) $this->allLines()->sum(fn (array $line) => $this->taxableLineCents($line))
+            + $this->taxableUnusedKeepsakeAllowanceCents();
+    }
+
+    /**
+     * Keepsake allowance the family doesn't use is merchandise still owed to
+     * them, so when the allowance product is taxable, what's left is taxed.
+     * (The keepsakes it does cover are taxed on their own lines.)
+     */
+    public function taxableUnusedKeepsakeAllowanceCents(): int
+    {
+        $taxableAllowanceCents = (int) collect($this->state['lines'])
+            ->filter(fn (array $line) => $line['is_taxable'] ?? false)
+            ->sum(fn (array $line) => ($line['keepsake_allowance_cents'] ?? 0) * $line['quantity']);
+
+        return min($this->keepsakeAllowanceRemainingCents(), $taxableAllowanceCents);
     }
 
     /**
      * A product with an explicit taxable amount only taxes that portion (plus
      * any variant upcharge); otherwise the is_taxable flag covers the full price.
      * $priceCents overrides the product's own price (a package's city price).
+     * A keepsake allowance is never taxed on its own price; a taxable one is
+     * taxed on the amount left unused instead.
      */
     private function taxableUnitCentsForProduct(Product $product, int $variantDeltaCents, ?int $priceCents = null): int
     {
         $unitPriceCents = ($priceCents ?? $product->price_cents) + $variantDeltaCents;
 
         return max(0, match (true) {
-            ! $product->is_taxable => 0,
+            ! $product->is_taxable, $product->category === ProductCategory::KeepsakeAllowance => 0,
             $product->taxable_amount_cents !== null => min($product->taxable_amount_cents + $variantDeltaCents, $unitPriceCents),
             default => $unitPriceCents,
         });

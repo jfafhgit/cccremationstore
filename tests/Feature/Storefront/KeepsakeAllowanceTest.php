@@ -104,3 +104,24 @@ test('an allowance set after the package was chosen applies once the package is 
 
     expect($this->cart->keepsakeAllowanceCents())->toBe(50000);
 });
+
+test('a taxable allowance is taxed on whatever the keepsakes leave unused', function () {
+    $this->legacyTouch->update(['is_taxable' => true]);
+    $this->cart->selectSlot($this->package);
+
+    expect($this->cart->taxCents())->toBe(3000);
+
+    $this->cart->addLine($this->pendant);
+
+    expect($this->cart->keepsakeAllowanceRemainingCents())->toBe(10000)
+        ->and($this->cart->taxCents())->toBe(2000 + 1000);
+
+    $this->cart->addLine($this->bracelet);
+
+    expect($this->cart->keepsakeAllowanceRemainingCents())->toBe(0)
+        ->and($this->cart->taxCents())->toBe(3500);
+});
+
+test('an allowance that is not taxable leaves its unused amount untaxed', function () {
+    expect($this->cart->taxCents())->toBe(0);
+});
