@@ -419,13 +419,11 @@ new class extends Component
      * Services and add-ons, including required ones, followed by the
      * choose-one items that have options to choose from. Anything the
      * selected package includes is already listed on the package, so it's
-     * left out here unless the customer can change its quantity. Keepsake
-     * allowance products only come with a package, so they're never offered.
+     * left out here unless the customer can change its quantity.
      */
     public function extras(): Collection
     {
         $addons = $this->productsFor(ProductCategory::Addon)
-            ->reject(fn (Product $product) => $product->keepsake_allowance_cents > 0)
             ->filter(fn (Product $product) => $this->includedQuantity($product->id) === 0 || $this->showsQuantitySelector($product));
         $choices = $this->productsFor(ProductCategory::Choice)->filter(fn (Product $product) => $this->hasOptions($product));
 

@@ -62,7 +62,7 @@ new class extends Component
     #[Validate('boolean')]
     public bool $formHideOptionsBelowAllowance = false;
 
-    /** An add-on's allowance toward any keepsakes, e.g. a "Legacy Touch Allowance" (blank = none). */
+    /** A keepsake allowance product's amount toward any keepsakes, e.g. a "Legacy Touch Allowance". */
     public string $formKeepsakeAllowance = '';
 
     /**
@@ -293,12 +293,12 @@ new class extends Component
             ]);
         }
 
-        $isAddon = $validated['formCategory'] === ProductCategory::Addon->value;
+        $isKeepsakeAllowance = $validated['formCategory'] === ProductCategory::KeepsakeAllowance->value;
 
-        if ($isAddon) {
+        if ($isKeepsakeAllowance) {
             $this->validate(
-                ['formKeepsakeAllowance' => ['nullable', 'numeric', 'min:0']],
-                attributes: ['formKeepsakeAllowance' => 'keepsake allowance'],
+                ['formKeepsakeAllowance' => ['required', 'numeric', 'gt:0']],
+                attributes: ['formKeepsakeAllowance' => 'allowance amount'],
             );
         }
 
@@ -308,7 +308,7 @@ new class extends Component
             ProductCategory::Urn->value,
             ProductCategory::UrnVault->value,
         ], true);
-        $hasPerUnitPrice = ! $isSlotCategory && $validated['formCategory'] !== ProductCategory::Choice->value && trim($this->formPerUnitPrice) !== '';
+        $hasPerUnitPrice = ! $isSlotCategory && ! $isKeepsakeAllowance && $validated['formCategory'] !== ProductCategory::Choice->value && trim($this->formPerUnitPrice) !== '';
 
         $taxableAmountCents = $isPackage ? (int) round(((float) $this->formTaxableAmount) * 100) : null;
 
@@ -333,12 +333,12 @@ new class extends Component
             'container_allowance_cents' => $isPackage ? $this->dollarsToCents($this->formContainerAllowance) : null,
             'urn_allowance_cents' => $isPackage ? $this->dollarsToCents($this->formUrnAllowance) : null,
             'hide_options_below_allowance' => $isPackage && $this->formHideOptionsBelowAllowance,
-            'keepsake_allowance_cents' => $isAddon ? $this->dollarsToCents($this->formKeepsakeAllowance) : null,
-            'is_required' => ! $isSlotCategory && $this->formIsRequired,
+            'keepsake_allowance_cents' => $isKeepsakeAllowance ? $this->dollarsToCents($this->formKeepsakeAllowance) : null,
+            'is_required' => ! $isSlotCategory && ! $isKeepsakeAllowance && $this->formIsRequired,
             'per_unit_price_cents' => $hasPerUnitPrice ? (int) round(((float) $this->formPerUnitPrice) * 100) : null,
             'per_unit_label' => $hasPerUnitPrice ? ($this->formPerUnitLabel ?: null) : null,
             'is_active' => $this->formIsActive,
-            'allow_multiple_quantity' => $this->formAllowMultipleQuantity,
+            'allow_multiple_quantity' => ! $isKeepsakeAllowance && $this->formAllowMultipleQuantity,
         ];
 
         if ($isPackage) {
@@ -385,6 +385,7 @@ new class extends Component
             ->whereIn('category', [
                 ProductCategory::Addon->value,
                 ProductCategory::Keepsake->value,
+                ProductCategory::KeepsakeAllowance->value,
             ])
             ->orderBy('category')
             ->orderBy('name')
@@ -597,6 +598,9 @@ new class extends Component
                                     @if ($product->is_required)
                                         <flux:badge size="sm" color="blue">{{ __('Pre-selected') }}</flux:badge>
                                     @endif
+                                    @if ($product->is_taxable)
+                                        <flux:badge size="sm" color="amber">{{ __('Taxed') }}</flux:badge>
+                                    @endif
                                 </div>
                                 @if ($product->variants->isNotEmpty())
                                     <p class="mt-1 text-[11px] text-zinc-400">{{ $product->category === ProductCategory::Choice
@@ -632,7 +636,7 @@ new class extends Component
 
             <flux:field>
                 <flux:label>{{ __('Category') }}</flux:label>
-                <flux:select wire:model="formCategory">
+                <flux:select wire:model.live="formCategory">
                     @foreach (ProductCategory::cases() as $option)
                         <option value="{{ $option->value }}">{{ $option->label() }}</option>
                     @endforeach
@@ -654,12 +658,12 @@ new class extends Component
             </flux:field>
 
             <flux:field>
-                <flux:label>{{ trim($formPerUnitPrice) !== '' && ! in_array($formCategory, ['package', 'container', 'urn', 'urn_vault', 'choice'], true) ? __('Base price (USD, charged once)') : __('Price (USD)') }}</flux:label>
+                <flux:label>{{ trim($formPerUnitPrice) !== '' && ! in_array($formCategory, ['package', 'container', 'urn', 'urn_vault', 'choice', 'keepsake_allowance'], true) ? __('Base price (USD, charged once)') : __('Price (USD)') }}</flux:label>
                 <flux:input type="number" step="0.01" min="0" wire:model.live.debounce.400ms="formPrice" />
                 <flux:error name="formPrice" />
             </flux:field>
 
-            @unless (in_array($formCategory, ['package', 'container', 'urn', 'urn_vault', 'choice'], true))
+            @unless (in_array($formCategory, ['package', 'container', 'urn', 'urn_vault', 'choice', 'keepsake_allowance'], true))
                 <div class="grid grid-cols-2 gap-3">
                     <flux:field>
                         <flux:label>{{ __('Additional price per unit (USD)') }}</flux:label>
@@ -676,10 +680,10 @@ new class extends Component
                 </div>
             @endunless
 
-            @if ($formCategory === ProductCategory::Addon->value)
+            @if ($formCategory === ProductCategory::KeepsakeAllowance->value)
                 <flux:field>
-                    <flux:label>{{ __('Keepsake allowance (USD)') }}</flux:label>
-                    <flux:description>{{ __('Makes this an allowance product, like a Legacy Touch Allowance: this amount is credited toward any keepsakes the family picks. It is not offered on the Add-ons step; include it in a package to give it with that package. Leave blank for a regular add-on.') }}</flux:description>
+                    <flux:label>{{ __('Allowance amount (USD)') }}</flux:label>
+                    <flux:description>{{ __('Credited toward any keepsakes the family picks, like a Legacy Touch Allowance. Families never see this on its own; include it in a package to give it with that package.') }}</flux:description>
                     <flux:input type="number" step="0.01" min="0" wire:model="formKeepsakeAllowance" />
                     <flux:error name="formKeepsakeAllowance" />
                 </flux:field>
@@ -782,10 +786,10 @@ new class extends Component
                 @unless ($formCategory === ProductCategory::Package->value)
                     <flux:checkbox wire:model="formIsTaxable" :label="__('Taxable')" />
                 @endunless
-                @unless (in_array($formCategory, ['package', 'container', 'urn', 'urn_vault'], true))
+                @unless (in_array($formCategory, ['package', 'container', 'urn', 'urn_vault', 'keepsake_allowance'], true))
                     <flux:checkbox wire:model="formIsRequired" :label="$formCategory === ProductCategory::Choice->value ? __('Required (customer must choose an option)') : __('Pre-selected (customer cannot remove)')" />
                 @endunless
-                @unless ($formCategory === ProductCategory::Choice->value)
+                @unless (in_array($formCategory, ['choice', 'keepsake_allowance'], true))
                     <flux:checkbox wire:model="formAllowMultipleQuantity" :label="__('Allow quantity > 1')" />
                 @endunless
             </div>

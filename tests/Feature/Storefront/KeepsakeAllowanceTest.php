@@ -12,7 +12,7 @@ beforeEach(function () {
     actingAsTenant($this->store);
 
     $this->package = Product::factory()->for($this->store)->create(['name' => 'Legacy', 'price_cents' => 300000, 'is_taxable' => false, 'taxable_amount_cents' => 0]);
-    $this->legacyTouch = Product::factory()->for($this->store)->category(ProductCategory::Addon)->create([
+    $this->legacyTouch = Product::factory()->for($this->store)->category(ProductCategory::KeepsakeAllowance)->create([
         'name' => 'Legacy Touch Allowance',
         'price_cents' => 30000,
         'keepsake_allowance_cents' => 30000,

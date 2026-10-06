@@ -74,21 +74,49 @@ test('changing a package to another category clears its inclusions and allowance
         ->and($product->urn_allowance_cents)->toBeNull();
 });
 
-test('an add-on saves its keepsake allowance, and other categories clear it', function () {
+test('a keepsake allowance saves its amount, which is required, and other categories clear it', function () {
     Livewire::test('pages::admin.stores.products', ['store' => $this->store])
-        ->call('editProduct', $this->certificates->id)
+        ->call('newProduct', ProductCategory::KeepsakeAllowance->value)
+        ->set('formName', 'Legacy Touch Allowance')
+        ->call('saveProduct')
+        ->assertHasErrors('formKeepsakeAllowance')
         ->set('formKeepsakeAllowance', '300.00')
         ->call('saveProduct')
         ->assertHasNoErrors();
 
-    expect($this->certificates->fresh()->keepsake_allowance_cents)->toBe(30000);
+    $allowance = $this->store->products()->firstWhere('name', 'Legacy Touch Allowance');
+
+    expect($allowance->category)->toBe(ProductCategory::KeepsakeAllowance)
+        ->and($allowance->keepsake_allowance_cents)->toBe(30000);
 
     Livewire::test('pages::admin.stores.products', ['store' => $this->store])
-        ->call('editProduct', $this->certificates->id)
+        ->call('editProduct', $allowance->id)
         ->assertSet('formKeepsakeAllowance', '300.00')
-        ->set('formCategory', ProductCategory::Keepsake->value)
+        ->set('formCategory', ProductCategory::Addon->value)
         ->call('saveProduct')
         ->assertHasNoErrors();
 
-    expect($this->certificates->fresh()->keepsake_allowance_cents)->toBeNull();
+    expect($allowance->fresh()->keepsake_allowance_cents)->toBeNull();
+});
+
+test('a package can include a keepsake allowance', function () {
+    $allowance = Product::factory()->for($this->store)->category(ProductCategory::KeepsakeAllowance)->create(['keepsake_allowance_cents' => 30000]);
+
+    Livewire::test('pages::admin.stores.products', ['store' => $this->store])
+        ->call('editProduct', $this->package->id)
+        ->assertSee($allowance->name.' (Keepsake Allowance)')
+        ->set('formIncludedProducts', [$allowance->id => ['included' => true, 'quantity' => '1']])
+        ->call('saveProduct')
+        ->assertHasNoErrors();
+
+    expect($this->package->fresh()->includedProducts->pluck('id')->all())->toBe([$allowance->id]);
+});
+
+test('only taxed products are tagged on the products page', function () {
+    $this->store->products()->update(['is_taxable' => false]);
+    $this->keepsake->update(['is_taxable' => true]);
+
+    $html = Livewire::test('pages::admin.stores.products', ['store' => $this->store])->html();
+
+    expect(substr_count($html, 'Taxed'))->toBe(1);
 });

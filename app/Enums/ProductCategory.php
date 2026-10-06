@@ -4,7 +4,8 @@ namespace App\Enums;
 
 /**
  * Cases are declared in the order the storefront wizard presents them,
- * which the admin products page follows too.
+ * which the admin products page follows too. Keepsake allowances come last:
+ * they're never offered on their own, only included with a package.
  */
 enum ProductCategory: string
 {
@@ -15,6 +16,7 @@ enum ProductCategory: string
     case Addon = 'addon';
     case Choice = 'choice';
     case Keepsake = 'keepsake';
+    case KeepsakeAllowance = 'keepsake_allowance';
 
     public function label(): string
     {
@@ -26,6 +28,7 @@ enum ProductCategory: string
             self::Addon => 'Add-on / Service',
             self::Choice => 'Choose-One Item',
             self::Keepsake => 'Keepsake',
+            self::KeepsakeAllowance => 'Keepsake Allowance',
         };
     }
 
