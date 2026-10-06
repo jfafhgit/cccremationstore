@@ -283,3 +283,19 @@ test('a failed copy leaves the duplicate without products or stray images, and s
         ->and(Storage::disk('public')->allFiles('products'))->toBe([$imagePath]);
     Livewire::test('pages::admin.stores.show', ['store' => $duplicate->fresh()])->assertSee('could not be copied into this store');
 });
+
+test('duplicated packages include the copy of a choose-one item option they include', function () {
+    $package = Product::factory()->for($this->source)->create(['name' => 'Standard']);
+    $care = Product::factory()->for($this->source)->category(ProductCategory::Choice)->create(['name' => 'Care of Deceased']);
+    ProductVariant::factory()->for($care)->create(['name' => 'Refrigeration', 'price_delta_cents' => 25000]);
+    $embalming = ProductVariant::factory()->for($care)->create(['name' => 'Embalming', 'price_delta_cents' => 60000]);
+    $package->includedProducts()->attach($care->id, ['included_quantity' => 1, 'included_variant_id' => $embalming->id]);
+
+    $duplicate = duplicateThroughAdmin($this->source);
+
+    $copiedCare = $duplicate->products()->where('name', 'Care of Deceased')->sole();
+    $copiedVariantId = $duplicate->products()->where('name', 'Standard')->sole()->includedProducts->sole()->pivot->included_variant_id;
+
+    expect($copiedVariantId)->toBe($copiedCare->variants()->where('name', 'Embalming')->sole()->id)
+        ->and($copiedVariantId)->not->toBe($embalming->id);
+});

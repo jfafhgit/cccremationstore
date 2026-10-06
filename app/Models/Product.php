@@ -118,14 +118,14 @@ class Product extends Model
     public function includedProducts(): BelongsToMany
     {
         return $this->belongsToMany(Product::class, 'package_included_products', 'package_id', 'product_id')
-            ->withPivot('included_quantity')
+            ->withPivot('included_quantity', 'included_variant_id')
             ->withTimestamps();
     }
 
     /**
      * For a package: everything it includes, the typed-in items alongside
      * the active products it covers (with their quantity when more than
-     * one), in alphabetical order.
+     * one, or the option included for a choose-one item), in alphabetical order.
      *
      * @return array<int, string>
      */
@@ -133,7 +133,9 @@ class Product extends Model
     {
         $includedProducts = $this->includedProducts
             ->where('is_active', true)
+            ->reject(fn (Product $product) => $product->category === ProductCategory::Choice && ! $product->includedOption())
             ->map(fn (Product $product) => match (true) {
+                $product->category === ProductCategory::Choice => "{$product->name} ({$product->includedOption()->name})",
                 $product->pivot->included_quantity === 0 => __(':name (service fee)', ['name' => $product->name]),
                 $product->pivot->included_quantity > 1 => "{$product->name} ({$product->pivot->included_quantity})",
                 default => $product->name,
@@ -145,6 +147,25 @@ class Product extends Model
             ->sort(fn (string $first, string $second) => strnatcasecmp($first, $second))
             ->values()
             ->all();
+    }
+
+    /**
+     * For a choose-one item loaded through a package's includedProducts: the
+     * option the package includes, if it still exists.
+     */
+    public function includedOption(): ?ProductVariant
+    {
+        $variantId = $this->pivot?->included_variant_id;
+
+        return $variantId ? $this->variants->firstWhere('id', (int) $variantId) : null;
+    }
+
+    /**
+     * An option's full price: the item's price plus the option's difference.
+     */
+    public function optionPriceCents(ProductVariant $option): int
+    {
+        return $this->price_cents + $option->price_delta_cents;
     }
 
     /**

@@ -2,6 +2,7 @@
 
 use App\Enums\ProductCategory;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Models\Store;
 use App\Models\User;
 use Livewire\Livewire;
@@ -47,7 +48,7 @@ test('editing a package loads its current inclusions', function () {
 
     Livewire::test('pages::admin.stores.products', ['store' => $this->store])
         ->call('editProduct', $this->package->id)
-        ->assertSet('formIncludedProducts', [$this->certificates->id => ['included' => true, 'quantity' => 3]]);
+        ->assertSet('formIncludedProducts', [$this->certificates->id => ['included' => true, 'quantity' => 3, 'variant_id' => null]]);
 });
 
 test('an included quantity must be at least one', function () {
@@ -150,4 +151,25 @@ test('an add-on saves its section heading, and categories off the add-ons step c
         ->assertHasNoErrors();
 
     expect($this->certificates->fresh()->section_heading)->toBeNull();
+});
+
+test('a package can include one option of a choose-one item, which is required', function () {
+    $care = Product::factory()->for($this->store)->category(ProductCategory::Choice)->create(['name' => 'Care of Deceased']);
+    $refrigeration = ProductVariant::factory()->for($care)->create(['name' => 'Refrigeration']);
+    $otherStoresOption = ProductVariant::factory()->create();
+
+    Livewire::test('pages::admin.stores.products', ['store' => $this->store])
+        ->call('editProduct', $this->package->id)
+        ->assertSee('Care of Deceased (Choose-One Item)')
+        ->set('formIncludedProducts', [$care->id => ['included' => true, 'variant_id' => '']])
+        ->call('saveProduct')
+        ->assertHasErrors('formIncludedProducts.'.$care->id.'.variant_id')
+        ->set('formIncludedProducts', [$care->id => ['included' => true, 'variant_id' => (string) $otherStoresOption->id]])
+        ->call('saveProduct')
+        ->assertHasErrors('formIncludedProducts.'.$care->id.'.variant_id')
+        ->set('formIncludedProducts', [$care->id => ['included' => true, 'variant_id' => (string) $refrigeration->id]])
+        ->call('saveProduct')
+        ->assertHasNoErrors();
+
+    expect($this->package->fresh()->includedProducts->first()->pivot->included_variant_id)->toBe($refrigeration->id);
 });

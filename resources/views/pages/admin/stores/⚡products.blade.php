@@ -9,6 +9,7 @@ use App\Models\StoreLocation;
 use Flux\Flux;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Validate;
 use Livewire\Component;
 use Livewire\WithFileUploads;
@@ -250,7 +251,11 @@ new class extends Component
             ''
         );
         $this->formIncludedProducts = $product->includedProducts
-            ->mapWithKeys(fn (Product $included) => [$included->id => ['included' => true, 'quantity' => $included->pivot->included_quantity]])
+            ->mapWithKeys(fn (Product $included) => [$included->id => [
+                'included' => true,
+                'quantity' => $included->pivot->included_quantity,
+                'variant_id' => $included->pivot->included_variant_id,
+            ]])
             ->all();
         $this->formContainerAllowance = $product->container_allowance_cents !== null ? number_format($product->container_allowance_cents / 100, 2, '.', '') : '';
         $this->formUrnAllowance = $product->urn_allowance_cents !== null ? number_format($product->urn_allowance_cents / 100, 2, '.', '') : '';
@@ -286,9 +291,14 @@ new class extends Component
 
         if ($isPackage) {
             // A per-unit item can be included with 0 units, covering just its base fee.
-            $includedQuantityRules = $this->includableProducts()->mapWithKeys(fn (Product $includable) => [
-                "formIncludedProducts.{$includable->id}.quantity" => ['nullable', 'integer', $includable->hasPerUnitPricing() ? 'min:0' : 'min:1', 'max:999'],
-            ])->all();
+            $includedQuantityRules = $this->includableProducts()->mapWithKeys(fn (Product $includable) => $includable->category === ProductCategory::Choice
+                ? ["formIncludedProducts.{$includable->id}.variant_id" => [
+                    "required_if_accepted:formIncludedProducts.{$includable->id}.included",
+                    'nullable',
+                    Rule::in($includable->variants->pluck('id')),
+                ]]
+                : ["formIncludedProducts.{$includable->id}.quantity" => ['nullable', 'integer', $includable->hasPerUnitPricing() ? 'min:0' : 'min:1', 'max:999']]
+            )->all();
 
             $this->validate([
                 'formTaxableAmount' => ['required', 'numeric', 'min:0', 'lte:formPrice'],
@@ -302,6 +312,7 @@ new class extends Component
                 'formContainerAllowance' => 'container allowance',
                 'formUrnAllowance' => 'urn allowance',
                 'formIncludedProducts.*.quantity' => 'included quantity',
+                'formIncludedProducts.*.variant_id' => 'included option',
             ]);
         }
 
@@ -419,11 +430,15 @@ new class extends Component
     public function includableProducts(): Collection
     {
         return $this->currentStore->products()
-            ->whereIn('category', [
-                ProductCategory::Addon->value,
-                ProductCategory::Keepsake->value,
-                ProductCategory::KeepsakeAllowance->value,
-            ])
+            ->with('variants')
+            ->where(fn ($query) => $query
+                ->whereIn('category', [
+                    ProductCategory::Addon->value,
+                    ProductCategory::Keepsake->value,
+                    ProductCategory::KeepsakeAllowance->value,
+                ])
+                // A choose-one item is included as one of its options.
+                ->orWhere(fn ($query) => $query->where('category', ProductCategory::Choice->value)->has('variants')))
             ->orderBy('category')
             ->orderBy('name')
             ->get();
@@ -437,11 +452,14 @@ new class extends Component
      */
     private function includedProductsToSync(): array
     {
-        $includableIds = $this->includableProducts()->pluck('id');
+        $includable = $this->includableProducts();
+        $includableIds = $includable->pluck('id');
 
         return collect($this->formIncludedProducts)
             ->filter(fn (array $selection, int $productId) => ($selection['included'] ?? false) && $includableIds->contains($productId))
-            ->map(fn (array $selection) => ['included_quantity' => ($selection['quantity'] ?? '') === '' ? 1 : (int) $selection['quantity']])
+            ->map(fn (array $selection, int $productId) => $includable->firstWhere('id', $productId)->category === ProductCategory::Choice
+                ? ['included_quantity' => 1, 'included_variant_id' => (int) $selection['variant_id']]
+                : ['included_quantity' => ($selection['quantity'] ?? '') === '' ? 1 : (int) $selection['quantity'], 'included_variant_id' => null])
             ->all();
     }
 
@@ -798,17 +816,28 @@ new class extends Component
                     <flux:heading size="sm" class="text-zinc-500">{{ __('Included add-ons, services & keepsakes') }}</flux:heading>
                     <p class="text-xs text-zinc-500">{{ __('Checked items are free with this package. The family can still add more at the regular price where quantity allows.') }}</p>
                     <p class="text-xs text-zinc-500">{{ __('For items with a base price plus a per-unit price, the package always covers the base price. Enter 0 to cover only the base price, so the family pays just the per-unit price (e.g. the death certificate service, then each certificate).') }}</p>
+                    <p class="text-xs text-zinc-500">{{ __('For a choose-one item, pick the option the package includes. Families can upgrade to options that cost more, paying the difference; if no option costs more, the item is not shown to them at all.') }}</p>
                     @forelse ($this->includableProducts() as $includable)
                         <div class="flex items-center justify-between gap-3" wire:key="includable-{{ $includable->id }}">
                             <flux:checkbox wire:model.live="formIncludedProducts.{{ $includable->id }}.included" :label="$includable->name.' ('.$includable->category->label().')'" />
                             @if ($formIncludedProducts[$includable->id]['included'] ?? false)
                                 <div class="flex items-center gap-2">
-                                    <flux:input size="sm" type="number" :min="$includable->hasPerUnitPricing() ? 0 : 1" step="1" wire:model="formIncludedProducts.{{ $includable->id }}.quantity" placeholder="1" class="w-20" :aria-label="__('Included quantity')" />
-                                    <span class="text-xs text-zinc-500">{{ $includable->per_unit_label ?: __('qty') }}</span>
+                                    @if ($includable->category === ProductCategory::Choice)
+                                        <flux:select size="sm" wire:model="formIncludedProducts.{{ $includable->id }}.variant_id" class="w-44" :aria-label="__('Included option')">
+                                            <option value="">{{ __('Choose the included option') }}</option>
+                                            @foreach ($includable->variants as $option)
+                                                <option value="{{ $option->id }}">{{ $option->name }}</option>
+                                            @endforeach
+                                        </flux:select>
+                                    @else
+                                        <flux:input size="sm" type="number" :min="$includable->hasPerUnitPricing() ? 0 : 1" step="1" wire:model="formIncludedProducts.{{ $includable->id }}.quantity" placeholder="1" class="w-20" :aria-label="__('Included quantity')" />
+                                        <span class="text-xs text-zinc-500">{{ $includable->per_unit_label ?: __('qty') }}</span>
+                                    @endif
                                 </div>
                             @endif
                         </div>
                         <flux:error name="formIncludedProducts.{{ $includable->id }}.quantity" />
+                        <flux:error name="formIncludedProducts.{{ $includable->id }}.variant_id" />
                     @empty
                         <p class="text-xs text-zinc-400">{{ __('Add add-ons, services, or keepsakes first to include them here.') }}</p>
                     @endforelse

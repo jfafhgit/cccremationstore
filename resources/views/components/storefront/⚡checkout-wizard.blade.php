@@ -140,7 +140,7 @@ new class extends Component
      */
     public function packages(): Collection
     {
-        $packages = $this->productsFor(ProductCategory::Package)->load('includedProducts');
+        $packages = $this->productsFor(ProductCategory::Package)->load('includedProducts.variants');
 
         if (! $this->usesLocationPricing()) {
             return $packages;
@@ -360,9 +360,23 @@ new class extends Component
         return $this->cart()->selectedVariantId($productId);
     }
 
+    /**
+     * An option's price, or for an item the package includes: "Included" for
+     * the included option and the extra cost of each upgrade.
+     */
     public function optionPriceLabel(Product $product, ProductVariant $option): string
     {
-        return '$'.number_format(($product->price_cents + $option->price_delta_cents) / 100, 2);
+        $includedOption = $product->variants->firstWhere('id', $this->includedOptionId($product->id));
+
+        if (! $includedOption) {
+            return '$'.number_format($product->optionPriceCents($option) / 100, 2);
+        }
+
+        if ($option->id === $includedOption->id) {
+            return __('Included');
+        }
+
+        return '+$'.number_format(($product->optionPriceCents($option) - $product->optionPriceCents($includedOption)) / 100, 2);
     }
 
     /**
@@ -443,9 +457,43 @@ new class extends Component
     {
         $addons = $this->productsFor(ProductCategory::Addon)
             ->filter(fn (Product $product) => $this->includedQuantity($product->id) === 0 || $this->showsQuantitySelector($product));
-        $choices = $this->productsFor(ProductCategory::Choice)->filter(fn (Product $product) => $this->hasOptions($product));
+        $choices = $this->productsFor(ProductCategory::Choice)
+            ->filter(fn (Product $product) => $this->hasOptions($product))
+            ->map(fn (Product $product) => $this->withUpgradesOnly($product))
+            ->filter();
 
         return $addons->concat($choices)->values();
+    }
+
+    /**
+     * When the package includes one of a choose-one item's options, offer
+     * only that option and the ones that cost more; with nothing to upgrade
+     * to, the item isn't shown at all (it's listed on the package instead).
+     */
+    private function withUpgradesOnly(Product $product): ?Product
+    {
+        $includedOption = $product->variants->firstWhere('id', $this->includedOptionId($product->id));
+
+        if (! $includedOption) {
+            return $product;
+        }
+
+        $includedCents = $product->optionPriceCents($includedOption);
+        $options = $product->variants->filter(fn (ProductVariant $option) => $product->optionPriceCents($option) >= $includedCents);
+
+        if (! $options->contains(fn (ProductVariant $option) => $product->optionPriceCents($option) > $includedCents)) {
+            return null;
+        }
+
+        return $product->setRelation('variants', $options->values());
+    }
+
+    /**
+     * The option of a choose-one item the selected package includes, if any.
+     */
+    public function includedOptionId(int $productId): ?int
+    {
+        return $this->cart()->includedOptionId($productId);
     }
 
     /**
@@ -1295,11 +1343,12 @@ new class extends Component
                                         </div>
                                         <div class="shrink-0 sm:text-right">
                                             <p class="text-sm text-brand-700">{{ match (true) {
+                                                $hasOptions && $this->includedOptionId($product->id) => __('Upgrade available'),
                                                 $hasOptions => __('Choose one'),
                                                 $includedQty > 0 || $this->includesBaseFee($product->id) => $this->includedNote($product, $includedQty),
                                                 default => $product->priceLabel(),
                                             } }}</p>
-                                            @if ($includedQty > 0 || $this->includesBaseFee($product->id))
+                                            @if ($includedQty > 0 || $this->includesBaseFee($product->id) || $this->includedOptionId($product->id))
                                                 <span class="mt-1 inline-block rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Included with your package') }}</span>
                                             @elseif ($product->is_required)
                                                 <span class="mt-1 inline-block rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Required') }}</span>
@@ -1311,26 +1360,37 @@ new class extends Component
                                     @if ($hasOptions)
                                         <fieldset class="space-y-1 border-t border-brand-200 py-2 pr-3 pl-11">
                                             <legend class="sr-only">{{ __('Options for :name', ['name' => $product->name]) }}</legend>
+                                            @php($includedOptionId = $this->includedOptionId($product->id))
                                             @foreach ($product->variants as $option)
                                                 <div wire:key="extra-{{ $product->id }}-option-{{ $option->id }}" @if ($option->description) x-data="{ detail: false }" @endif>
                                                     <label class="flex cursor-pointer items-start gap-2 text-sm text-zinc-700">
                                                         <input type="radio" name="extra-option-{{ $product->id }}" value="{{ $option->id }}" @checked($selectedOptionId === $option->id) wire:click="selectExtraOption({{ $product->id }}, {{ $option->id }})" class="mt-1 accent-[var(--color-brand-700)]" />
                                                         <span class="flex-1">
                                                             {{ $option->name }}
+                                                            {{-- With an included option, the price sits beside the name so the upgrade reads clearly. --}}
+                                                            @if ($includedOptionId)
+                                                                <span @class([
+                                                                    'ml-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium',
+                                                                    'bg-brand-100 text-brand-800' => $option->id === $includedOptionId,
+                                                                    'border border-brand-300 bg-white text-brand-700' => $option->id !== $includedOptionId,
+                                                                ])>{{ $option->id === $includedOptionId ? __('Included') : __(':price upgrade', ['price' => $this->optionPriceLabel($product, $option)]) }}</span>
+                                                            @endif
                                                             @if ($option->description)
                                                                 <button type="button" class="ml-1 text-xs text-brand-700 underline hover:text-brand-900" x-on:click.prevent="detail = ! detail" x-bind:aria-expanded="detail" aria-controls="option-detail-{{ $option->id }}">
                                                                     <span x-text="detail ? @js(__('Hide detail')) : @js(__('Show detail'))">{{ __('Show detail') }}</span>
                                                                 </button>
                                                             @endif
                                                         </span>
-                                                        <span class="font-medium text-brand-700">{{ $this->optionPriceLabel($product, $option) }}</span>
+                                                        @unless ($includedOptionId)
+                                                            <span class="font-medium text-brand-700">{{ $this->optionPriceLabel($product, $option) }}</span>
+                                                        @endunless
                                                     </label>
                                                     @if ($option->description)
                                                         <p id="option-detail-{{ $option->id }}" x-show="detail" x-transition.opacity style="display: none" class="ml-6 mt-1 whitespace-pre-line rounded-lg bg-white/70 px-3 py-2 text-xs text-zinc-600">{{ $option->description }}</p>
                                                     @endif
                                                 </div>
                                             @endforeach
-                                            @unless ($product->is_required)
+                                            @unless ($product->is_required || $this->includedOptionId($product->id))
                                                 <label class="flex cursor-pointer items-start gap-2 text-sm text-zinc-500">
                                                     <input type="radio" name="extra-option-{{ $product->id }}" value="" @checked($selectedOptionId === null && $this->declinedOption($product->id)) wire:click="selectExtraOption({{ $product->id }}, null)" class="mt-1 accent-[var(--color-brand-700)]" />
                                                     <span>{{ __('No thanks') }}</span>

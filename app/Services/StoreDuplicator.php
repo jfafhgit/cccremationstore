@@ -160,17 +160,36 @@ class StoreDuplicator
      */
     private function copyPackageInclusions(Store $source, array $copiedProductIds): void
     {
-        $source->products()->with('includedProducts')->each(function (Product $package) use ($copiedProductIds): void {
+        $source->products()->with('includedProducts.variants')->each(function (Product $package) use ($copiedProductIds): void {
             if ($package->includedProducts->isEmpty()) {
                 return;
             }
 
             Product::find($copiedProductIds[$package->id])->includedProducts()->sync(
                 $package->includedProducts->mapWithKeys(fn (Product $included) => [
-                    $copiedProductIds[$included->id] => ['included_quantity' => $included->pivot->included_quantity],
+                    $copiedProductIds[$included->id] => [
+                        'included_quantity' => $included->pivot->included_quantity,
+                        'included_variant_id' => $this->copiedVariantId($included, $copiedProductIds[$included->id]),
+                    ],
                 ])->all(),
             );
         });
+    }
+
+    /**
+     * The copy of the option a package includes for a choose-one item.
+     */
+    private function copiedVariantId(Product $included, int $copiedProductId): ?int
+    {
+        $option = $included->includedOption();
+
+        if (! $option) {
+            return null;
+        }
+
+        return Product::find($copiedProductId)->variants
+            ->first(fn ($variant) => $variant->name === $option->name && $variant->price_delta_cents === $option->price_delta_cents)
+            ?->id;
     }
 
     /**

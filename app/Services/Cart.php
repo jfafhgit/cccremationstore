@@ -92,6 +92,7 @@ class Cart
             'lines' => [], // repeatable keepsakes / add-ons / services
             'declined_options' => [], // ids of "choose one" products answered with "No thanks"
             'base_fee_included_ids' => [], // ids of per-unit products whose base fee the package covers
+            'included_options' => [], // choose-one product id => the option the package includes and its price
             'pending_order_id' => null,
         ];
     }
@@ -340,6 +341,16 @@ class Cart
     {
         $this->state['base_fee_included_ids'] = [];
 
+        // An option the previous package chose for the customer goes with it;
+        // an upgrade they picked themselves stays.
+        foreach ($this->state['included_options'] ?? [] as $productId => $included) {
+            if ($this->selectedVariantId($productId) === $included['variant_id']) {
+                $this->forgetProductLines($productId);
+            }
+        }
+
+        $this->state['included_options'] = [];
+
         foreach ($this->state['lines'] as $key => $line) {
             $previouslyIncludedQuantity = $line['included_quantity'] ?? 0;
 
@@ -361,11 +372,17 @@ class Cart
         }
 
         $package = $this->state['package']
-            ? Product::with(['includedProducts' => fn ($query) => $query->active()])->find($this->state['package']['product_id'])
+            ? Product::with(['includedProducts' => fn ($query) => $query->active()->with('variants')])->find($this->state['package']['product_id'])
             : null;
 
         foreach ($package?->includedProducts ?? [] as $product) {
             $key = $this->lineKey($product, null);
+            if ($product->category === ProductCategory::Choice) {
+                $this->includeOption($product);
+
+                continue;
+            }
+
             $includedQuantity = (int) $product->pivot->included_quantity;
 
             if ($includedQuantity === 0) {
@@ -447,7 +464,7 @@ class Cart
      */
     public function clearOption(Product $product): void
     {
-        if ($product->is_required) {
+        if ($product->is_required || $this->includedOptionId($product->id) !== null) {
             return;
         }
 
@@ -538,6 +555,11 @@ class Cart
         // Units the package includes can't be removed either.
         $quantity = max($this->includedQuantity($key), $quantity);
 
+        // A choose-one item the package includes is always exactly one.
+        if ($this->includedOptionId($this->state['lines'][$key]['product_id'] ?? 0) !== null) {
+            $quantity = 1;
+        }
+
         if ($quantity <= 0) {
             unset($this->state['lines'][$key]);
         } elseif (isset($this->state['lines'][$key])) {
@@ -551,6 +573,18 @@ class Cart
 
     public function removeLine(string $key): void
     {
+        $line = $this->state['lines'][$key] ?? null;
+        $includedOptionId = $line ? $this->includedOptionId($line['product_id']) : null;
+
+        if ($includedOptionId !== null) {
+            // Removing an upgrade goes back to the option the package includes.
+            if ($line['variant_id'] !== $includedOptionId && ($option = ProductVariant::find($includedOptionId))) {
+                $this->selectOption($option->product, $option);
+            }
+
+            return;
+        }
+
         if ($this->isRequiredLine($key)) {
             return;
         }
@@ -569,6 +603,46 @@ class Cart
     /**
      * How many units of this line the selected package covers.
      */
+    /**
+     * Record the option of a choose-one item the package includes, and select
+     * it unless the customer already chose an option that costs more.
+     */
+    private function includeOption(Product $product): void
+    {
+        $option = $product->includedOption();
+
+        if (! $option) {
+            return;
+        }
+
+        $includedCents = $product->optionPriceCents($option);
+        $this->state['included_options'][$product->id] = ['variant_id' => $option->id, 'credit_cents' => $includedCents];
+
+        $selected = $product->variants->firstWhere('id', $this->selectedVariantId($product->id));
+
+        if (! $selected || $product->optionPriceCents($selected) < $includedCents) {
+            $this->selectOption($product, $option);
+        }
+    }
+
+    /**
+     * The option of a choose-one item the selected package includes, if any.
+     */
+    public function includedOptionId(int $productId): ?int
+    {
+        return $this->state['included_options'][$productId]['variant_id'] ?? null;
+    }
+
+    /**
+     * What the package covers of a choose-one line: the included option's price.
+     *
+     * @param  array<string, mixed>  $line
+     */
+    private function includedOptionCreditCents(array $line): int
+    {
+        return ($line['variant_id'] ?? null) ? (int) ($this->state['included_options'][$line['product_id']]['credit_cents'] ?? 0) : 0;
+    }
+
     /**
      * Whether the selected package covers this product's base fee, leaving
      * only its per-unit price to pay.
@@ -797,7 +871,7 @@ class Cart
         $includedQuantity = $line['included_quantity'] ?? 0;
         $baseCents = $includedQuantity > 0 ? 0 : $this->basePriceCents($line);
 
-        return max(0, $baseCents + $line['unit_price_cents'] * $this->chargedQuantity($line) - ($line['allowance_cents'] ?? 0));
+        return max(0, $baseCents + $line['unit_price_cents'] * $this->chargedQuantity($line) - ($line['allowance_cents'] ?? 0) - $this->includedOptionCreditCents($line));
     }
 
     /**

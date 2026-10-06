@@ -171,7 +171,7 @@ new class extends Component {
                                         </p>
 
                                         <div class="mt-3 flex items-center justify-between">
-                                            @if ($this->isSlot($key) || (($line['is_required'] ?? false) && ! array_key_exists('base_price_cents', $line)))
+                                            @if ($this->isSlot($key) || (($line['is_required'] ?? false) && ! array_key_exists('base_price_cents', $line)) || $this->cart()->includedOptionId($line['product_id']) !== null)
                                                 <span class="text-xs text-zinc-400">{{ __('Qty: 1') }}</span>
                                             @else
                                                 <div class="flex items-center gap-2">
@@ -191,7 +191,9 @@ new class extends Component {
                                                 </div>
                                             @endif
 
-                                            @if ($this->isRequiredKey($key, $line))
+                                            @if (($line['variant_id'] ?? null) !== null && $line['variant_id'] === $this->cart()->includedOptionId($line['product_id']))
+                                                <span class="text-xs font-medium text-brand-700">{{ __('Included') }}</span>
+                                            @elseif ($this->isRequiredKey($key, $line))
                                                 <span class="text-xs font-medium text-brand-700">{{ in_array($key, ['container', 'urn', 'urn_vault'], true) ? __('Selection Required') : __('Required') }}</span>
                                             @elseif (($line['included_quantity'] ?? 0) >= $line['quantity'])
                                                 <span class="text-xs font-medium text-brand-700">{{ __('Included') }}</span>
