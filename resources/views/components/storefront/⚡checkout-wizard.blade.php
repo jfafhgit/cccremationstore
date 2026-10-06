@@ -419,11 +419,13 @@ new class extends Component
      * Services and add-ons, including required ones, followed by the
      * choose-one items that have options to choose from. Anything the
      * selected package includes is already listed on the package, so it's
-     * left out here unless the customer can change its quantity.
+     * left out here unless the customer can change its quantity. Keepsake
+     * allowance products only come with a package, so they're never offered.
      */
     public function extras(): Collection
     {
         $addons = $this->productsFor(ProductCategory::Addon)
+            ->reject(fn (Product $product) => $product->keepsake_allowance_cents > 0)
             ->filter(fn (Product $product) => $this->includedQuantity($product->id) === 0 || $this->showsQuantitySelector($product));
         $choices = $this->productsFor(ProductCategory::Choice)->filter(fn (Product $product) => $this->hasOptions($product));
 
@@ -1296,6 +1298,21 @@ new class extends Component
         <div class="rounded-2xl border border-brand-100 bg-white p-6 shadow-sm sm:p-8" x-data="{ zoom: null }" x-on:keydown.escape.window="zoom = null">
             <flux:heading size="xl" class="font-serif">{{ __('Keepsakes') }}</flux:heading>
             <flux:subheading class="mt-1">{{ __('Add as many as you like.') }}</flux:subheading>
+
+            @php($cart = $this->cart())
+            @if (($allowanceCents = $cart->keepsakeAllowanceCents()) > 0)
+                @php($remainingCents = $cart->keepsakeAllowanceRemainingCents())
+                <div class="mt-6 flex flex-col gap-2 rounded-xl border border-brand-200 bg-brand-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-zinc-800">{{ $cart->keepsakeAllowanceLabel() }}</p>
+                        <p class="text-xs text-zinc-600">{{ __('Applied automatically to the keepsakes you choose.') }}</p>
+                    </div>
+                    <div class="sm:text-right">
+                        <p class="text-lg font-semibold text-brand-700">{{ __(':amount left', ['amount' => '$'.number_format($remainingCents / 100, 2)]) }}</p>
+                        <p class="text-xs text-zinc-600">{{ __('of :amount', ['amount' => '$'.number_format($allowanceCents / 100, 2)]) }}</p>
+                    </div>
+                </div>
+            @endif
 
             <div class="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
                 @forelse ($this->keepsakes() as $product)

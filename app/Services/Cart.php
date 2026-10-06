@@ -113,7 +113,77 @@ class Cart
 
     private function persist(): void
     {
+        $this->applyKeepsakeAllowance();
+
         session()->put($this->sessionKey(), $this->state);
+    }
+
+    /**
+     * Spread the keepsake allowance (from products like a "Legacy Touch
+     * Allowance") across the keepsakes in the cart, in the order they were
+     * added, until it runs out.
+     */
+    private function applyKeepsakeAllowance(): void
+    {
+        $remainingCents = $this->keepsakeAllowanceCents();
+        $label = $this->keepsakeAllowanceLabel();
+
+        foreach ($this->state['lines'] as $key => $line) {
+            if ($line['category'] !== ProductCategory::Keepsake->value) {
+                continue;
+            }
+
+            unset($line['allowance_cents'], $line['allowance_label']);
+            $creditCents = min($remainingCents, $this->lineTotalCents($line));
+
+            if ($creditCents > 0) {
+                $line['allowance_cents'] = $creditCents;
+                $line['allowance_label'] = $label;
+                $remainingCents -= $creditCents;
+            }
+
+            $this->state['lines'][$key] = $line;
+        }
+    }
+
+    /**
+     * The total allowance toward keepsakes from the allowance products in
+     * the cart, whether the package includes them or the customer added them.
+     */
+    public function keepsakeAllowanceCents(): int
+    {
+        return (int) collect($this->state['lines'])
+            ->sum(fn (array $line) => ($line['keepsake_allowance_cents'] ?? 0) * $line['quantity']);
+    }
+
+    /**
+     * How much of the keepsake allowance the keepsakes in the cart haven't used yet.
+     */
+    public function keepsakeAllowanceRemainingCents(): int
+    {
+        $usedCents = collect($this->state['lines'])
+            ->where('category', ProductCategory::Keepsake->value)
+            ->sum(fn (array $line) => $line['allowance_cents'] ?? 0);
+
+        return max(0, $this->keepsakeAllowanceCents() - $usedCents);
+    }
+
+    /**
+     * The name of the allowance product, e.g. "Legacy Touch Allowance", or a
+     * general name when more than one is in the cart.
+     */
+    public function keepsakeAllowanceLabel(): ?string
+    {
+        $names = collect($this->state['lines'])
+            ->filter(fn (array $line) => ($line['keepsake_allowance_cents'] ?? 0) > 0)
+            ->pluck('name')
+            ->unique();
+
+        return match ($names->count()) {
+            0 => null,
+            1 => $names->first(),
+            default => __('Keepsake allowance'),
+        };
     }
 
     /**
@@ -293,6 +363,10 @@ class Cart
             $key = $this->lineKey($product, null);
             $includedQuantity = (int) $product->pivot->included_quantity;
             $line = $this->state['lines'][$key] ?? $this->lineFor($product, null, 0);
+
+            // Pick up an allowance set on the product since the line was added.
+            unset($line['keepsake_allowance_cents']);
+            $line = [...$line, ...$this->keepsakeAllowanceFor($product)];
 
             $line['quantity_before_package'] = $line['quantity'];
             $line['quantity'] = max($line['quantity'], $includedQuantity);
@@ -573,6 +647,7 @@ class Cart
             $unitCents = $product->per_unit_price_cents;
 
             return [
+                ...$this->keepsakeAllowanceFor($product),
                 'product_id' => $product->id,
                 'variant_id' => $variant?->id,
                 'category' => $product->category->value,
@@ -605,6 +680,7 @@ class Cart
 
         return [
             ...$packageAllowances,
+            ...$this->keepsakeAllowanceFor($product),
             'product_id' => $product->id,
             'variant_id' => $variant?->id,
             'category' => $product->category->value,
@@ -617,6 +693,18 @@ class Cart
             'unit_price_cents' => $unitPriceCents,
             'quantity' => $quantity,
         ];
+    }
+
+    /**
+     * The allowance toward keepsakes each unit of an allowance product gives.
+     *
+     * @return array{keepsake_allowance_cents?: int}
+     */
+    private function keepsakeAllowanceFor(Product $product): array
+    {
+        return $product->keepsake_allowance_cents > 0
+            ? ['keepsake_allowance_cents' => $product->keepsake_allowance_cents]
+            : [];
     }
 
     /**

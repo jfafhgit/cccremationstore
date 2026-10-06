@@ -62,6 +62,9 @@ new class extends Component
     #[Validate('boolean')]
     public bool $formHideOptionsBelowAllowance = false;
 
+    /** An add-on's allowance toward any keepsakes, e.g. a "Legacy Touch Allowance" (blank = none). */
+    public string $formKeepsakeAllowance = '';
+
     /**
      * A package's price per city in dollars, keyed by StoreLocation ID
      * (blank = not offered there). Only used with location-based pricing.
@@ -208,7 +211,7 @@ new class extends Component
 
     public function newProduct(?string $category = null): void
     {
-        $this->reset(['editingProductId', 'formName', 'formDescription', 'formIncludedItems', 'formPrice', 'formTaxableAmount', 'formPerUnitPrice', 'formPerUnitLabel', 'formImage', 'existingImagePath', 'newVariantName', 'newVariantPrice', 'newVariantDescription', 'newVariantIsDefault', 'editingVariantId', 'formIncludedProducts', 'formContainerAllowance', 'formUrnAllowance', 'formHideOptionsBelowAllowance', 'formLocationPrices']);
+        $this->reset(['editingProductId', 'formName', 'formDescription', 'formIncludedItems', 'formPrice', 'formTaxableAmount', 'formPerUnitPrice', 'formPerUnitLabel', 'formImage', 'existingImagePath', 'newVariantName', 'newVariantPrice', 'newVariantDescription', 'newVariantIsDefault', 'editingVariantId', 'formIncludedProducts', 'formContainerAllowance', 'formUrnAllowance', 'formHideOptionsBelowAllowance', 'formKeepsakeAllowance', 'formLocationPrices']);
         $this->formCategory = $category ?? ProductCategory::Package->value;
         $this->formIsTaxable = true;
         $this->formIsRequired = false;
@@ -245,6 +248,7 @@ new class extends Component
         $this->formContainerAllowance = $product->container_allowance_cents !== null ? number_format($product->container_allowance_cents / 100, 2, '.', '') : '';
         $this->formUrnAllowance = $product->urn_allowance_cents !== null ? number_format($product->urn_allowance_cents / 100, 2, '.', '') : '';
         $this->formHideOptionsBelowAllowance = $product->hide_options_below_allowance;
+        $this->formKeepsakeAllowance = $product->keepsake_allowance_cents !== null ? number_format($product->keepsake_allowance_cents / 100, 2, '.', '') : '';
         $this->formLocationPrices = $product->locationPrices
             ->mapWithKeys(fn (StoreLocation $location) => [$location->id => number_format($location->pivot->price_cents / 100, 2, '.', '')])
             ->all();
@@ -289,6 +293,15 @@ new class extends Component
             ]);
         }
 
+        $isAddon = $validated['formCategory'] === ProductCategory::Addon->value;
+
+        if ($isAddon) {
+            $this->validate(
+                ['formKeepsakeAllowance' => ['nullable', 'numeric', 'min:0']],
+                attributes: ['formKeepsakeAllowance' => 'keepsake allowance'],
+            );
+        }
+
         $isSlotCategory = in_array($validated['formCategory'], [
             ProductCategory::Package->value,
             ProductCategory::Container->value,
@@ -320,6 +333,7 @@ new class extends Component
             'container_allowance_cents' => $isPackage ? $this->dollarsToCents($this->formContainerAllowance) : null,
             'urn_allowance_cents' => $isPackage ? $this->dollarsToCents($this->formUrnAllowance) : null,
             'hide_options_below_allowance' => $isPackage && $this->formHideOptionsBelowAllowance,
+            'keepsake_allowance_cents' => $isAddon ? $this->dollarsToCents($this->formKeepsakeAllowance) : null,
             'is_required' => ! $isSlotCategory && $this->formIsRequired,
             'per_unit_price_cents' => $hasPerUnitPrice ? (int) round(((float) $this->formPerUnitPrice) * 100) : null,
             'per_unit_label' => $hasPerUnitPrice ? ($this->formPerUnitLabel ?: null) : null,
@@ -661,6 +675,15 @@ new class extends Component
                     </flux:field>
                 </div>
             @endunless
+
+            @if ($formCategory === ProductCategory::Addon->value)
+                <flux:field>
+                    <flux:label>{{ __('Keepsake allowance (USD)') }}</flux:label>
+                    <flux:description>{{ __('Makes this an allowance product, like a Legacy Touch Allowance: this amount is credited toward any keepsakes the family picks. It is not offered on the Add-ons step; include it in a package to give it with that package. Leave blank for a regular add-on.') }}</flux:description>
+                    <flux:input type="number" step="0.01" min="0" wire:model="formKeepsakeAllowance" />
+                    <flux:error name="formKeepsakeAllowance" />
+                </flux:field>
+            @endif
 
             @if ($formCategory === ProductCategory::Package->value)
                 <flux:field>

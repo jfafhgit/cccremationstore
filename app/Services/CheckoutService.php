@@ -170,6 +170,7 @@ class CheckoutService
                 'quantity' => $line['quantity'],
                 'included_quantity' => $line['included_quantity'] ?? 0,
                 'allowance_cents' => $line['allowance_cents'] ?? 0,
+                'allowance_label' => $line['allowance_label'] ?? null,
                 'total_price_cents' => $cart->lineTotalCents($line),
             ]);
         }

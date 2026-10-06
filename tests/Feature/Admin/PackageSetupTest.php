@@ -73,3 +73,22 @@ test('changing a package to another category clears its inclusions and allowance
     expect($product->includedProducts)->toBeEmpty()
         ->and($product->urn_allowance_cents)->toBeNull();
 });
+
+test('an add-on saves its keepsake allowance, and other categories clear it', function () {
+    Livewire::test('pages::admin.stores.products', ['store' => $this->store])
+        ->call('editProduct', $this->certificates->id)
+        ->set('formKeepsakeAllowance', '300.00')
+        ->call('saveProduct')
+        ->assertHasNoErrors();
+
+    expect($this->certificates->fresh()->keepsake_allowance_cents)->toBe(30000);
+
+    Livewire::test('pages::admin.stores.products', ['store' => $this->store])
+        ->call('editProduct', $this->certificates->id)
+        ->assertSet('formKeepsakeAllowance', '300.00')
+        ->set('formCategory', ProductCategory::Keepsake->value)
+        ->call('saveProduct')
+        ->assertHasNoErrors();
+
+    expect($this->certificates->fresh()->keepsake_allowance_cents)->toBeNull();
+});

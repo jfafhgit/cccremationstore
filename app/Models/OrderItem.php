@@ -22,6 +22,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $quantity
  * @property int $included_quantity
  * @property int $allowance_cents
+ * @property string|null $allowance_label
  * @property int $total_price_cents
  */
 class OrderItem extends Model
@@ -43,6 +44,7 @@ class OrderItem extends Model
         'quantity',
         'included_quantity',
         'allowance_cents',
+        'allowance_label',
         'total_price_cents',
     ];
 
@@ -83,7 +85,7 @@ class OrderItem extends Model
     public function discountLabel(): string
     {
         return match (true) {
-            $this->allowance_cents > 0 => __('Package allowance'),
+            $this->allowance_cents > 0 => $this->allowance_label ?? __('Package allowance'),
             $this->included_quantity > 1 => __(':count included with package', ['count' => $this->included_quantity]),
             default => __('Included with package'),
         };

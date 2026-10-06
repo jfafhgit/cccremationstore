@@ -218,7 +218,7 @@ new class extends Component {
                                     <div class="mt-2 flex items-center justify-between gap-3 pl-[4.75rem] text-sm text-brand-700 sm:pl-24">
                                         <span>
                                             @if ($line['allowance_cents'] ?? 0)
-                                                {{ __('Package allowance') }}
+                                                {{ $line['allowance_label'] ?? __('Package allowance') }}
                                             @elseif (($line['included_quantity'] ?? 0) > 1)
                                                 {{ __(':count included with package', ['count' => $line['included_quantity']]) }}
                                             @else
