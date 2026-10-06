@@ -39,6 +39,8 @@ use Illuminate\Support\Facades\Storage;
  * @property bool $preselect_container
  * @property bool $preselect_urn
  * @property bool $preselect_urn_vault
+ * @property bool $offers_family_provided_container
+ * @property bool $offers_family_provided_urn
  * @property bool $location_pricing_enabled
  * @property string|null $contact_name
  * @property string|null $contact_email
@@ -86,6 +88,8 @@ class Store extends Model
         'preselect_container' => false,
         'preselect_urn' => false,
         'preselect_urn_vault' => false,
+        'offers_family_provided_container' => false,
+        'offers_family_provided_urn' => false,
         'location_pricing_enabled' => false,
         'processing_fee_enabled' => false,
         'processing_fee_bps' => 350,
@@ -106,6 +110,8 @@ class Store extends Model
         'preselect_container',
         'preselect_urn',
         'preselect_urn_vault',
+        'offers_family_provided_container',
+        'offers_family_provided_urn',
         'location_pricing_enabled',
         'contact_name',
         'contact_email',
@@ -141,6 +147,8 @@ class Store extends Model
             'preselect_container' => 'boolean',
             'preselect_urn' => 'boolean',
             'preselect_urn_vault' => 'boolean',
+            'offers_family_provided_container' => 'boolean',
+            'offers_family_provided_urn' => 'boolean',
             'location_pricing_enabled' => 'boolean',
             'stripe_details_submitted' => 'boolean',
             'stripe_charges_enabled' => 'boolean',
@@ -162,6 +170,46 @@ class Store extends Model
     public function products(): HasMany
     {
         return $this->hasMany(Product::class);
+    }
+
+    /**
+     * Create or show the "family provided" container / urn products when the
+     * store offers them, and hide them when it doesn't. They're kept rather
+     * than deleted so past orders still point at them.
+     */
+    public function syncFamilyProvidedProducts(): void
+    {
+        $options = [
+            ProductCategory::Container->value => [
+                'offered' => $this->offers_family_provided_container,
+                'name' => 'Family Provided Cremation Container',
+                'description' => 'This container must be brought to the facility by the family before cremation and meet the same requirements as the minimum alternative container.',
+            ],
+            ProductCategory::Urn->value => [
+                'offered' => $this->offers_family_provided_urn,
+                'name' => 'Family Provided Urn',
+                'description' => 'This urn must be brought to the facility by the family before cremation. If you have questions about the suitability, please contact our office.',
+            ],
+        ];
+
+        foreach ($options as $category => $option) {
+            $product = $this->products()->where('is_family_provided', true)->where('category', $category)->first();
+
+            if ($product) {
+                $product->update(['is_active' => $option['offered']]);
+            } elseif ($option['offered']) {
+                $this->products()->create([
+                    'category' => $category,
+                    'name' => $option['name'],
+                    'slug' => str($option['name'])->slug().'-'.str()->random(4),
+                    'description' => $option['description'],
+                    'price_cents' => 0,
+                    'is_taxable' => false,
+                    'is_active' => true,
+                    'is_family_provided' => true,
+                ]);
+            }
+        }
     }
 
     /**

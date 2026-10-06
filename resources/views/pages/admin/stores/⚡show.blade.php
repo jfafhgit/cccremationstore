@@ -56,6 +56,10 @@ new class extends Component
 
     public bool $preselectUrnVault = false;
 
+    public bool $offersFamilyProvidedContainer = false;
+
+    public bool $offersFamilyProvidedUrn = false;
+
     /** The funeral home's own Vital Statistics form, used instead of ours when set. */
     public string $vitalStatisticsUrl = '';
 
@@ -138,6 +142,8 @@ new class extends Component
         $this->preselectContainer = $store->preselect_container;
         $this->preselectUrn = $store->preselect_urn;
         $this->preselectUrnVault = $store->preselect_urn_vault;
+        $this->offersFamilyProvidedContainer = $store->offers_family_provided_container;
+        $this->offersFamilyProvidedUrn = $store->offers_family_provided_urn;
         $this->vitalStatisticsUrl = $store->vital_statistics_url ?? '';
         $this->contactName = $store->contact_name ?? '';
         $this->contactEmail = $store->contact_email ?? '';
@@ -174,6 +180,8 @@ new class extends Component
             'preselectContainer' => ['boolean'],
             'preselectUrn' => ['boolean'],
             'preselectUrnVault' => ['boolean'],
+            'offersFamilyProvidedContainer' => ['boolean'],
+            'offersFamilyProvidedUrn' => ['boolean'],
             'vitalStatisticsUrl' => ['nullable', 'url:http,https', 'max:2048'],
             'contactName' => ['nullable', 'string', 'max:255'],
             'contactEmail' => ['nullable', 'email', 'max:255'],
@@ -208,6 +216,8 @@ new class extends Component
             'preselect_container' => $validated['preselectContainer'],
             'preselect_urn' => $validated['preselectUrn'],
             'preselect_urn_vault' => $validated['preselectUrnVault'],
+            'offers_family_provided_container' => $validated['offersFamilyProvidedContainer'],
+            'offers_family_provided_urn' => $validated['offersFamilyProvidedUrn'],
             'vital_statistics_url' => $validated['vitalStatisticsUrl'] ?: null,
             'contact_name' => $validated['contactName'] ?: null,
             'contact_email' => $validated['contactEmail'] ?: null,
@@ -237,6 +247,7 @@ new class extends Component
             $this->sendHeldBackInvitations();
         }
 
+        $this->currentStore->syncFamilyProvidedProducts();
         $this->saveGeneralPriceList();
         $this->saveBrandLogo();
 
@@ -832,6 +843,14 @@ new class extends Component
                                 <flux:checkbox wire:model="preselectUrnVault" :label="__('Urn vault')" />
                             </div>
                             <flux:description>{{ __('The first active item, in the order set on the Products page, is already selected when the family reaches that step. They can still choose another.') }}</flux:description>
+                        </flux:field>
+                        <flux:field>
+                            <flux:label>{{ __('Family provided options') }}</flux:label>
+                            <div class="mt-1 flex flex-col gap-y-2">
+                                <flux:checkbox wire:model="offersFamilyProvidedContainer" :label="__('Add family provided cremation container option')" />
+                                <flux:checkbox wire:model="offersFamilyProvidedUrn" :label="__('Add family provided urn option')" />
+                            </div>
+                            <flux:description>{{ __('Adds a no-charge option at the end of the cremation containers or urns, after every other option whatever the sort order, explaining that the family brings their own to the facility before cremation.') }}</flux:description>
                         </flux:field>
                         <flux:field>
                             <flux:label>{{ __('Vital Statistics form (optional)') }}</flux:label>

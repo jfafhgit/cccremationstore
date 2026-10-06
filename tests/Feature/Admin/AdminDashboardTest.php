@@ -472,3 +472,33 @@ test('an admin can choose which categories pre-select their first item', functio
     expect($store->fresh()->only(['preselect_container', 'preselect_urn', 'preselect_urn_vault']))
         ->toBe(['preselect_container' => true, 'preselect_urn' => false, 'preselect_urn_vault' => true]);
 });
+
+test('turning the family provided options on and off adds and hides their products', function () {
+    $store = Store::factory()->create();
+
+    Livewire::test('pages::admin.stores.show', ['store' => $store->id])
+        ->set('offersFamilyProvidedUrn', true)
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $urn = $store->products()->where('is_family_provided', true)->sole();
+
+    expect($urn->category)->toBe(ProductCategory::Urn)
+        ->and($urn->name)->toBe('Family Provided Urn')
+        ->and($urn->price_cents)->toBe(0)
+        ->and($urn->is_active)->toBeTrue();
+
+    Livewire::test('pages::admin.stores.show', ['store' => $store->id])
+        ->assertSet('offersFamilyProvidedUrn', true)
+        ->set('offersFamilyProvidedUrn', false)
+        ->set('offersFamilyProvidedContainer', true)
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($urn->fresh()->is_active)->toBeFalse()
+        ->and($store->products()->where('is_family_provided', true)->where('category', ProductCategory::Container)->sole()->name)
+        ->toBe('Family Provided Cremation Container');
+
+    Livewire::test('pages::admin.stores.products', ['store' => $store])
+        ->assertDontSee('Family Provided Cremation Container');
+});

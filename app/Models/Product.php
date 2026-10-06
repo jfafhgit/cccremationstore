@@ -35,6 +35,7 @@ use Illuminate\Support\Facades\Storage;
  * @property bool $hide_options_below_allowance
  * @property string|null $image_path
  * @property bool $is_active
+ * @property bool $is_family_provided
  * @property int $sort_order
  * @property bool $allow_multiple_quantity
  * @property bool $requires_engraving
@@ -64,6 +65,7 @@ class Product extends Model
         'per_unit_label',
         'image_path',
         'is_active',
+        'is_family_provided',
         'sort_order',
         'allow_multiple_quantity',
         'requires_engraving',
@@ -84,6 +86,7 @@ class Product extends Model
             'hide_options_below_allowance' => 'boolean',
             'per_unit_price_cents' => 'integer',
             'is_active' => 'boolean',
+            'is_family_provided' => 'boolean',
             'sort_order' => 'integer',
             'allow_multiple_quantity' => 'boolean',
             'requires_engraving' => 'boolean',

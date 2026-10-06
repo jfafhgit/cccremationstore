@@ -657,3 +657,86 @@ test('add-ons are grouped under their section headings, with unheaded items firs
         ->call('goToAddons')
         ->assertSeeInOrder(['Witness cremation', 'Transportation', 'Airport transfer', 'Memorial Services', 'Celebration of life', 'Memorial video']);
 });
+
+test('the family provided urn is always the last option, can be chosen, and is never pre-selected', function () {
+    $this->store->update([
+        'offers_family_provided_urn' => true,
+        'preselect_urn' => true,
+        'settings' => [...($this->store->settings ?? []), 'product_sort' => [ProductCategory::Urn->value => 'price']],
+    ]);
+    $this->store->syncFamilyProvidedProducts();
+    $familyUrn = $this->store->products()->where('is_family_provided', true)->sole();
+    $urn = Product::factory()->for($this->store)->category(ProductCategory::Urn)->create(['price_cents' => 15000]);
+
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $this->package->id)
+        ->call('goToContainers')
+        ->assertSet('urnId', $urn->id)
+        ->assertSeeInOrder([$urn->name, 'Family Provided Urn', 'This urn must be brought to the facility']);
+
+    expect($component->instance()->urns()->pluck('id')->all())->toBe([$urn->id, $familyUrn->id]);
+
+    $component->call('selectUrn', $familyUrn->id)->assertSet('urnId', $familyUrn->id);
+});
+
+test('switching to a package with an urn allowance never swaps in the family provided urn', function () {
+    $this->store->update(['offers_family_provided_urn' => true]);
+    $this->store->syncFamilyProvidedProducts();
+    $familyUrn = $this->store->products()->where('is_family_provided', true)->sole();
+    $cheapUrn = Product::factory()->for($this->store)->category(ProductCategory::Urn)->create(['price_cents' => 5000]);
+    $coveredUrn = Product::factory()->for($this->store)->category(ProductCategory::Urn)->create(['price_cents' => 30000]);
+    $premium = Product::factory()->for($this->store)->category(ProductCategory::Package)->create([
+        'urn_allowance_cents' => 20000,
+        'hide_options_below_allowance' => true,
+    ]);
+
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $this->package->id)
+        ->call('selectUrn', $cheapUrn->id)
+        ->call('selectPackage', $premium->id)
+        ->assertSet('urnId', $coveredUrn->id);
+
+    expect($component->instance()->urns()->pluck('id')->all())->toBe([$coveredUrn->id])->not->toContain($familyUrn->id);
+});
+
+test('the family provided urn is not offered when the package has an urn allowance', function () {
+    $this->store->update(['offers_family_provided_urn' => true, 'offers_family_provided_container' => true]);
+    $this->store->syncFamilyProvidedProducts();
+    $familyUrn = $this->store->products()->where('is_family_provided', true)->where('category', ProductCategory::Urn)->sole();
+    $familyContainer = $this->store->products()->where('is_family_provided', true)->where('category', ProductCategory::Container)->sole();
+    $urn = Product::factory()->for($this->store)->category(ProductCategory::Urn)->create(['price_cents' => 30000]);
+    $premium = Product::factory()->for($this->store)->category(ProductCategory::Package)->create(['urn_allowance_cents' => 20000]);
+
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $this->package->id)
+        ->call('selectUrn', $familyUrn->id)
+        ->call('selectPackage', $premium->id)
+        ->assertSet('urnId', $urn->id);
+
+    expect($component->instance()->urns()->pluck('id')->all())->toBe([$urn->id])
+        ->and($component->instance()->containers()->pluck('id')->all())->toBe([$familyContainer->id]);
+
+    $component->call('selectUrn', $familyUrn->id)->assertSet('urnId', $urn->id);
+});
+
+test('a required urn does not block an order when the only urn is a family provided one the package hides', function () {
+    $this->store->update(['requires_urn' => true, 'offers_family_provided_urn' => true]);
+    $this->store->syncFamilyProvidedProducts();
+    $this->package->update(['urn_allowance_cents' => 20000]);
+    $cart = new Cart($this->store);
+    $cart->selectSlot($this->package->fresh());
+
+    $order = app(CheckoutService::class)->createOrder($this->store, $cart, [
+        'purchaser_first_name' => 'Sam',
+        'purchaser_last_name' => 'Rivera',
+        'purchaser_email' => 'sam@example.com',
+        'relationship_to_deceased' => 'Adult child',
+        'deceased_first_name' => 'Pat',
+        'deceased_last_name' => 'Rivera',
+    ]);
+
+    expect($order->exists)->toBeTrue();
+});

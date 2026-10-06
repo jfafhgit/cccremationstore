@@ -189,11 +189,11 @@ class CheckoutService
             throw new \RuntimeException('A city must be chosen to complete this order.');
         }
 
-        if ($store->requires_container && ! $cart->hasContainer() && $store->products()->active()->ofCategory(ProductCategory::Container)->exists()) {
+        if ($store->requires_container && ! $cart->hasContainer() && $this->offersSlotOptions($store, $cart, ProductCategory::Container, 'container')) {
             throw new \RuntimeException('A cremation container selection is required to complete this order.');
         }
 
-        if ($store->requires_urn && ! $cart->hasUrn() && $store->products()->active()->ofCategory(ProductCategory::Urn)->exists()) {
+        if ($store->requires_urn && ! $cart->hasUrn() && $this->offersSlotOptions($store, $cart, ProductCategory::Urn, 'urn')) {
             throw new \RuntimeException('An urn selection is required to complete this order.');
         }
 
@@ -204,6 +204,18 @@ class CheckoutService
         if ($cart->missingRequiredOptions()->isNotEmpty()) {
             throw new \RuntimeException('A required option has not been chosen.');
         }
+    }
+
+    /**
+     * Whether the family had a container / urn to choose from. The family
+     * provided option only counts when the package has no allowance toward
+     * that slot, matching what the wizard offers.
+     */
+    private function offersSlotOptions(Store $store, Cart $cart, ProductCategory $category, string $slot): bool
+    {
+        return $store->products()->active()->ofCategory($category)
+            ->when($cart->packageAllowanceCents($slot) > 0, fn ($query) => $query->where('is_family_provided', false))
+            ->exists();
     }
 
     /**

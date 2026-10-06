@@ -245,19 +245,21 @@ new class extends Component
      * Container / urn options, without those priced below the package's
      * allowance when the package asks for that. If that would hide every
      * option, all of them are shown so a required selection is still possible.
+     * The "family provided" option always comes last, whatever the sort, and
+     * only when the package has no allowance toward this slot (an allowance
+     * means the package is paying toward one of the store's own).
      */
     private function slotOptions(ProductCategory $category, string $slot): Collection
     {
-        $options = $this->productsFor($category);
+        [$familyProvided, $options] = $this->productsFor($category)->partition(fn (Product $product) => $product->is_family_provided);
         $allowanceCents = $this->cart()->packageAllowanceCents($slot);
 
-        if (! $this->cart()->hidesOptionsBelowAllowance() || $allowanceCents === 0) {
-            return $options;
+        if ($this->cart()->hidesOptionsBelowAllowance() && $allowanceCents > 0) {
+            $filtered = $options->filter(fn (Product $product) => $product->price_cents >= $allowanceCents);
+            $options = $filtered->isNotEmpty() ? $filtered : $options;
         }
 
-        $filtered = $options->filter(fn (Product $product) => $product->price_cents >= $allowanceCents)->values();
-
-        return $filtered->isNotEmpty() ? $filtered : $options;
+        return $options->concat($allowanceCents > 0 ? [] : $familyProvided)->values();
     }
 
     /**
@@ -555,6 +557,9 @@ new class extends Component
                 continue;
             }
 
+            // Bringing their own is the family's choice, never a stand-in.
+            $options = $options->reject(fn (Product $product) => $product->is_family_provided);
+
             $replacement = $options->firstWhere('price_cents', '<=', $cart->packageAllowanceCents($slot)) ?? $options->first();
 
             if ($replacement) {
@@ -708,6 +713,9 @@ new class extends Component
         ]);
 
         foreach ($preselectedSlots as $slot => $options) {
+            // The family's own container / urn is never chosen for them.
+            $options = $options->reject(fn (Product $product) => $product->is_family_provided);
+
             if ($cart->state()[$slot] || $options->isEmpty()) {
                 continue;
             }

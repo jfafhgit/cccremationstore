@@ -143,9 +143,11 @@ new class extends Component
     {
         return collect(ProductCategory::cases())->mapWithKeys(function (ProductCategory $category) {
             return [
+                // Family provided options are switched on and off in the store settings instead.
                 $category->value => $this->currentStore->products()
                     ->with('variants')
                     ->ofCategory($category)
+                    ->where('is_family_provided', false)
                     ->orderedFor($this->currentStore->productSortMode($category))
                     ->get(),
             ];
