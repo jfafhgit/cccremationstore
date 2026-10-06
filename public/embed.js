@@ -100,6 +100,37 @@
             return;
         }
 
+        // The frame is sized to its content, so this page scrolls instead of
+        // the frame. Tell each frame how far its top is scrolled out of view
+        // so its sticky elements (like the keepsake allowance) stay visible.
+        var viewportFrame = null;
+
+        function reportViewport() {
+            viewportFrame = null;
+
+            for (var k = 0; k < iframes.length; k++) {
+                if (iframes[k].contentWindow) {
+                    iframes[k].contentWindow.postMessage({
+                        type: 'tm-cremation-store:viewport',
+                        top: Math.max(0, -iframes[k].getBoundingClientRect().top),
+                    }, '*');
+                }
+            }
+        }
+
+        function scheduleViewportReport() {
+            if (viewportFrame === null) {
+                viewportFrame = window.requestAnimationFrame(reportViewport);
+            }
+        }
+
+        window.addEventListener('scroll', scheduleViewportReport, { passive: true });
+        window.addEventListener('resize', scheduleViewportReport);
+
+        for (var m = 0; m < iframes.length; m++) {
+            iframes[m].addEventListener('load', scheduleViewportReport);
+        }
+
         window.addEventListener('message', function (event) {
             if (!event.data) {
                 return;
@@ -117,6 +148,7 @@
                     // steps as well as growing on long ones.
                     iframes[j].style.minHeight = '0';
                     iframes[j].style.height = Math.ceil(event.data.height) + 'px';
+                    scheduleViewportReport();
                 } else if (event.data.type === 'tm-cremation-store:scroll-into-view'
                     && iframes[j].getBoundingClientRect().top < 0) {
                     // A new checkout step began, but the visitor is scrolled

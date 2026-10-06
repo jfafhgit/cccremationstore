@@ -118,6 +118,19 @@
                 window.addEventListener('load', reportHeight);
                 observe();
                 reportHeight();
+
+                // The parent page does the scrolling, so sticky elements here
+                // never move on their own. embed.js reports how far this frame's
+                // top is scrolled above the visitor's view; sticky elements
+                // offset their "top" by it to stay on screen.
+                window.addEventListener('message', function (event) {
+                    if (event.source !== window.parent || !event.data || event.data.type !== 'tm-cremation-store:viewport') {
+                        return;
+                    }
+
+                    var top = Math.max(0, Number(event.data.top) || 0);
+                    document.documentElement.style.setProperty('--tm-viewport-top', top + 'px');
+                });
             })();
 
             // Some browsers (notably Safari) block cookies for a site shown in

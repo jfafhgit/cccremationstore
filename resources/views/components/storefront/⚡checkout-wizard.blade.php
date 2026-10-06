@@ -1316,15 +1316,22 @@ new class extends Component
             @php($cart = $this->cart())
             @if (($allowanceCents = $cart->keepsakeAllowanceCents()) > 0)
                 @php($remainingCents = $cart->keepsakeAllowanceRemainingCents())
-                <div class="mt-6 flex flex-col gap-2 rounded-xl border border-brand-200 bg-brand-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                        <p class="text-sm font-medium text-zinc-800">{{ $cart->keepsakeAllowanceLabel() }}</p>
-                        <p class="text-xs text-zinc-600">{{ __('Applied automatically to the keepsakes you choose.') }}</p>
+                {{-- Sticky so the balance stays in view while scrolling the keepsakes.
+                     In the embed, the parent page scrolls rather than this frame, so
+                     embed.js reports how far the frame is scrolled out of view
+                     as --tm-viewport-top. --}}
+                <div class="sticky top-[calc(var(--tm-viewport-top,0px)+0.75rem)] z-30 mt-6 rounded-xl border border-brand-200 bg-brand-50 p-3 shadow-md sm:p-4">
+                    <div class="flex items-baseline justify-between gap-3">
+                        <p class="min-w-0 text-sm font-medium text-zinc-800">{{ $cart->keepsakeAllowanceLabel() }}</p>
+                        <p class="shrink-0 text-right text-zinc-600">
+                            <span class="text-lg font-semibold text-brand-700">{{ __(':amount left', ['amount' => '$'.number_format($remainingCents / 100, 2)]) }}</span>
+                            <span class="text-xs">{{ __('of :amount', ['amount' => '$'.number_format($allowanceCents / 100, 2)]) }}</span>
+                        </p>
                     </div>
-                    <div class="sm:text-right">
-                        <p class="text-lg font-semibold text-brand-700">{{ __(':amount left', ['amount' => '$'.number_format($remainingCents / 100, 2)]) }}</p>
-                        <p class="text-xs text-zinc-600">{{ __('of :amount', ['amount' => '$'.number_format($allowanceCents / 100, 2)]) }}</p>
-                    </div>
+                    <p class="mt-1 text-xs text-zinc-600">
+                        {{ __('Applied automatically to the keepsakes you choose.') }}
+                        <span class="text-zinc-500">{{ __("Any amount you don't use here isn't taken off your total. It stays available after purchase, including for keepsakes not shown on our website.") }}</span>
+                    </p>
                 </div>
             @endif
 
