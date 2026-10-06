@@ -279,6 +279,24 @@ test('the addons step leaves out items the package includes', function () {
     expect($component->instance()->extras()->pluck('id')->all())->toEqualCanonicalizing([$this->certificates->id, $this->memorial->id, $flowers->id]);
 });
 
+test('the addons step still shows an included item whose quantity can be changed, starting from the included amount', function () {
+    $this->certificates->update(['allow_multiple_quantity' => true]);
+
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $this->premium->id)
+        ->call('goToContainers')
+        ->call('goToAddons');
+
+    expect($component->instance()->extras()->pluck('id')->all())->toBe([$this->certificates->id]);
+
+    $component->assertSee('Increase quantity of Death certificates')
+        ->call('setKeepsakeQty', $this->certificates->id, null, 3)
+        ->call('setKeepsakeQty', $this->certificates->id, null, 1);
+
+    expect((new Cart($this->store))->allLines()->get($this->certificatesKey)['quantity'])->toBe(2);
+});
+
 test('the package card lists its included products alongside its typed-in items alphabetically', function () {
     $this->premium->update(['included_items' => ['Transportation', 'Cremation permit']]);
     $inactive = Product::factory()->for($this->store)->category(ProductCategory::Addon)->create(['name' => 'Archived service', 'is_active' => false]);

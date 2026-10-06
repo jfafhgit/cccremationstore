@@ -419,11 +419,12 @@ new class extends Component
      * Services and add-ons, including required ones, followed by the
      * choose-one items that have options to choose from. Anything the
      * selected package includes is already listed on the package, so it's
-     * left out here.
+     * left out here unless the customer can change its quantity.
      */
     public function extras(): Collection
     {
-        $addons = $this->productsFor(ProductCategory::Addon)->filter(fn (Product $product) => $this->includedQuantity($product->id) === 0);
+        $addons = $this->productsFor(ProductCategory::Addon)
+            ->filter(fn (Product $product) => $this->includedQuantity($product->id) === 0 || $this->showsQuantitySelector($product));
         $choices = $this->productsFor(ProductCategory::Choice)->filter(fn (Product $product) => $this->hasOptions($product));
 
         return $addons->concat($choices)->values();
