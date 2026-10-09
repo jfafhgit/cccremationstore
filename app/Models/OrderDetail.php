@@ -30,6 +30,7 @@ use Illuminate\Support\Carbon;
  * @property bool $born_outside_us
  * @property string|null $ssn Encrypted at rest; never emailed.
  * @property bool|null $veteran_status
+ * @property array<string, string>|null $memorial_details Answers keyed as in MEMORIAL_QUESTIONS, plus the chosen 'tone'.
  * @property Carbon|null $submitted_at
  */
 class OrderDetail extends Model
@@ -39,6 +40,36 @@ class OrderDetail extends Model
 
     /** The sections() label the masked Social Security number appears under. */
     public const SSN_LABEL = 'Social Security #';
+
+    /**
+     * The extra questions in the Memorial Story section: what a memorial
+     * story needs that the death certificate questions don't already ask.
+     *
+     * @var array<string, string>
+     */
+    public const MEMORIAL_QUESTIONS = [
+        'preferred_name' => 'Name they went by',
+        'places_lived' => 'Where they grew up and lived',
+        'survived_by' => 'Survived by',
+        'preceded_by' => 'Preceded in death by',
+        'career' => 'Work, service, and accomplishments',
+        'passions' => 'Hobbies, passions, and interests',
+        'faith_and_community' => 'Faith and community',
+        'remembered_for' => 'What they will be remembered for',
+        'memorial_donations' => 'Memorial donations',
+    ];
+
+    /**
+     * How the memorial story should read, for the AI draft.
+     *
+     * @var array<string, string>
+     */
+    public const MEMORIAL_TONES = [
+        'traditional' => 'Traditional',
+        'warm' => 'Warm and personal',
+        'celebration' => 'Celebration of life',
+        'faith' => 'Faith-centered',
+    ];
 
     protected $fillable = [
         'order_id',
@@ -84,6 +115,7 @@ class OrderDetail extends Model
         'next_of_kin_phone',
         'next_of_kin_email',
         'obituary_text',
+        'memorial_details',
         'service_preferences',
         'additional_notes',
         'answers',
@@ -113,6 +145,7 @@ class OrderDetail extends Model
             'father_living' => 'boolean',
             'veteran_status' => 'boolean',
             'answers' => 'array',
+            'memorial_details' => 'array',
             'submitted_at' => 'datetime',
         ];
     }
@@ -188,6 +221,10 @@ class OrderDetail extends Model
             'Military service' => [
                 'Veteran' => $this->yesNo($this->veteran_status),
                 'Branch' => $this->veteran_status ? $this->veteran_branch : null,
+            ],
+            'Memorial Story details' => [
+                ...collect(self::MEMORIAL_QUESTIONS)->mapWithKeys(fn (string $label, string $key) => [$label => $this->memorial_details[$key] ?? null])->all(),
+                'Tone' => self::MEMORIAL_TONES[$this->memorial_details['tone'] ?? ''] ?? null,
             ],
         ];
 

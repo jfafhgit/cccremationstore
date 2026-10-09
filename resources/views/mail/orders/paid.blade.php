@@ -9,9 +9,9 @@ Your payment for {{ $deceasedName }}'s arrangements with {{ $storeName }} has be
 
 <x-mail::panel>
 @if ($usesExternalForm)
-**One more step, when you're ready.** Please complete the Vital Statistics form on our website: the information we need for official records, such as the death certificate.
+**One more step, if you would like to.** You can complete the Vital Statistics form on our website, sharing information for official records, such as the death certificate.
 @else
-**One more step, when you're ready.** Please complete the Vital Statistics form: the information we need for official records, such as the death certificate. You can save your progress and come back to it anytime — this link doesn't expire.
+**One more step, if you would like to.** You can complete the Vital Statistics form, sharing information for official records, such as the death certificate, and a memorial story. You can save your progress and come back to it anytime — this link doesn't expire.
 @endif
 </x-mail::panel>
 

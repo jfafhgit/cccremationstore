@@ -11,6 +11,8 @@ use App\Models\Store;
 use App\Notifications\OrderDetailsSubmittedNotification;
 use App\Services\Cart;
 use App\Services\CheckoutService;
+use App\Services\MemorialStoryWriter;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
@@ -129,7 +131,19 @@ new #[Layout('layouts::storefront')] class extends Component
 
     public string $veteranBranch = '';
 
-    public string $obituaryText = '';
+    /** The obituary, called the Memorial Story on the form. */
+    public string $memorialStory = '';
+
+    /**
+     * Answers to the Memorial Story questions, keyed as in
+     * OrderDetail::MEMORIAL_QUESTIONS, plus the chosen 'tone'.
+     *
+     * @var array<string, string>
+     */
+    public array $memorialDetails = [];
+
+    /** Why the last AI draft couldn't be written, shown under the button. */
+    public ?string $memorialStoryError = null;
 
     public string $servicePreferences = '';
 
@@ -214,7 +228,8 @@ new #[Layout('layouts::storefront')] class extends Component
         $this->fatherLiving = $this->yesNoValue($detail->father_living);
         $this->veteranStatus = $this->yesNoValue($detail->veteran_status);
         $this->veteranBranch = $detail->veteran_branch ?? '';
-        $this->obituaryText = $detail->obituary_text ?? '';
+        $this->memorialStory = $detail->obituary_text ?? '';
+        $this->memorialDetails = $detail->memorial_details ?? [];
         $this->servicePreferences = $detail->service_preferences ?? '';
         $this->additionalNotes = $detail->additional_notes ?? '';
         $this->submitted = $detail->isSubmitted();
@@ -329,7 +344,10 @@ new #[Layout('layouts::storefront')] class extends Component
             'veteranStatus' => ['nullable', 'boolean'],
             'veteranBranch' => ['nullable', 'string', 'max:255'],
 
-            'obituaryText' => ['nullable', 'string', 'max:10000'],
+            'memorialStory' => ['nullable', 'string', 'max:10000'],
+            'memorialDetails' => ['array'],
+            'memorialDetails.tone' => ['nullable', Rule::in(array_keys(OrderDetail::MEMORIAL_TONES))],
+            ...collect(OrderDetail::MEMORIAL_QUESTIONS)->mapWithKeys(fn (string $label, string $key) => ["memorialDetails.{$key}" => ['nullable', 'string', 'max:2000']])->all(),
             'servicePreferences' => ['nullable', 'string', 'max:5000'],
             'additionalNotes' => ['nullable', 'string', 'max:5000'],
         ];
@@ -415,6 +433,79 @@ new #[Layout('layouts::storefront')] class extends Component
         $this->draftSaved = false;
     }
 
+    public function canWriteMemorialStory(): bool
+    {
+        return app(MemorialStoryWriter::class)->isConfigured();
+    }
+
+    /**
+     * Draft the Memorial Story with AI from the answers on the form so far
+     * (saved or not), replacing what's in the box for the family to edit.
+     */
+    public function writeMemorialStory(MemorialStoryWriter $writer): void
+    {
+        $this->memorialStoryError = null;
+
+        if (! $writer->isConfigured()) {
+            return;
+        }
+
+        $this->validateOnly('memorialDetails.tone');
+
+        try {
+            $this->memorialStory = $writer->write(
+                $this->memorialFacts(),
+                OrderDetail::MEMORIAL_TONES[$this->memorialDetails['tone'] ?? ''] ?? null,
+                hasPassed: $this->isImmediate(),
+            );
+        } catch (\RuntimeException $e) {
+            Log::warning('Could not write a memorial story draft.', [
+                'order_id' => $this->currentOrder->id,
+                'message' => $e->getMessage(),
+            ]);
+
+            $this->memorialStoryError = __('Sorry, we couldn\'t write a draft just now. Please try again in a moment, or write your own.');
+        }
+    }
+
+    /**
+     * What a memorial story can draw on. Private details the death
+     * certificate needs (Social Security number, race, street address,
+     * medical devices, contact details) are never sent.
+     *
+     * @return array<string, string|null>
+     */
+    private function memorialFacts(): array
+    {
+        $join = fn (array $parts, string $glue = ' '): ?string => implode($glue, array_filter($parts, 'filled')) ?: null;
+        $parent = fn (?string $name, string $living): ?string => $name ? $name.match ($living) {
+            '1' => ' (living)',
+            '0' => ' (deceased)',
+            default => '',
+        } : null;
+        $maritalStatus = MaritalStatus::tryFrom($this->maritalStatus);
+
+        return [
+            'Full name' => $join([$this->deceasedFirstName, $this->deceasedMiddleName, $this->deceasedLastName, $this->deceasedSuffix]),
+            'Maiden name' => $this->maidenName,
+            ...collect(OrderDetail::MEMORIAL_QUESTIONS)->only(['preferred_name'])->mapWithKeys(fn (string $label, string $key) => [$label => $this->memorialDetails[$key] ?? null])->all(),
+            'Date of birth' => $this->dateOfBirth ? Carbon::parse($this->dateOfBirth)->format('F j, Y') : null,
+            'Place of birth' => $this->bornOutsideUs ? $this->birthPlaceOutsideUs : $join([$this->birthCity, UsState::tryFrom($this->birthState)?->label()], ', '),
+            'Date of passing' => $this->isImmediate() && $this->dateOfDeath ? Carbon::parse($this->dateOfDeath)->format('F j, Y') : null,
+            'Place of passing' => $this->isImmediate() ? $this->placeOfDeath : null,
+            'Hometown' => $join([$this->addressCity, UsState::tryFrom($this->addressState)?->label()], ', '),
+            'Marital status' => $maritalStatus?->label(),
+            'Spouse' => $maritalStatus?->hasSpouse() ? $join([$this->spouseFirstName, $this->spouseMiddleName, $this->spouseLastName]) : null,
+            'Mother' => $parent($join([$this->motherFirstName, $this->motherMaidenName ? "(maiden name {$this->motherMaidenName})" : null]), $this->motherLiving),
+            'Father' => $parent($join([$this->fatherFirstName, $this->fatherLastName]), $this->fatherLiving),
+            'Highest degree' => HighestDegree::tryFrom($this->highestDegree)?->label(),
+            'Occupation' => $join([$this->occupation, $this->industry ? "({$this->industry})" : null]),
+            'Military service' => $this->veteranStatus === '1' ? ($this->veteranBranch ?: 'Served in the U.S. armed forces') : null,
+            ...collect(OrderDetail::MEMORIAL_QUESTIONS)->except(['preferred_name'])->mapWithKeys(fn (string $label, string $key) => [$label => $this->memorialDetails[$key] ?? null])->all(),
+            'Service plans' => $this->servicePreferences,
+        ];
+    }
+
     /**
      * Yes/no answers live in the form as "1", "0", or "" (unanswered),
      * which is what the radio buttons compare against.
@@ -475,7 +566,12 @@ new #[Layout('layouts::storefront')] class extends Component
             'father_living' => $this->booleanFrom($this->fatherLiving),
             'veteran_status' => $this->booleanFrom($this->veteranStatus),
             'veteran_branch' => $this->veteranStatus === '1' ? ($this->veteranBranch ?: null) : null,
-            'obituary_text' => $this->obituaryText ?: null,
+            'obituary_text' => $this->memorialStory ?: null,
+            'memorial_details' => array_filter(
+                $this->memorialDetails,
+                fn (?string $answer, string $key) => filled($answer) && ($key === 'tone' || array_key_exists($key, OrderDetail::MEMORIAL_QUESTIONS)),
+                ARRAY_FILTER_USE_BOTH,
+            ) ?: null,
             'service_preferences' => $this->servicePreferences ?: null,
             'additional_notes' => $this->additionalNotes ?: null,
         ];
@@ -526,9 +622,9 @@ new #[Layout('layouts::storefront')] class extends Component
                     {{ __('Your payment for order :number is complete.', ['number' => $currentOrder->order_number]) }}
                 @endif
                 @if ($this->usesExternalForm())
-                    {{ __('Next, we need some information for official records, such as the death certificate.') }}
+                    {{ __('Next, if you would like to, you can share information for official records, such as the death certificate.') }}
                 @else
-                    {{ __('Next, we need some information for official records, such as the death certificate. You can save your progress and come back to this page anytime using the link in your email.') }}
+                    {{ __('Next, if you would like to, you can share information for official records, such as the death certificate, and a memorial story. You can save your progress and come back to this page anytime using the link in your email.') }}
                 @endif
             </flux:subheading>
         </div>
@@ -899,15 +995,76 @@ new #[Layout('layouts::storefront')] class extends Component
                     </div>
                 </section>
 
-                {{-- Obituary & service wishes --}}
+                {{-- Memorial Story & service wishes --}}
                 <section class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
-                    <flux:heading size="lg">{{ __('Obituary & service wishes') }} <span class="text-sm font-normal text-zinc-500">{{ __('(optional)') }}</span></flux:heading>
+                    <flux:heading size="lg">{{ __('Memorial Story & service wishes') }} <span class="text-sm font-normal text-zinc-500">{{ __('(optional)') }}</span></flux:heading>
                     <flux:text class="mt-1">{{ __('Share as much or as little as you have right now — nothing here is final.') }}</flux:text>
-                    <div class="mt-5 space-y-4">
+
+                    <flux:heading class="mt-6">{{ __('About their life') }}</flux:heading>
+                    <flux:text class="mt-1">{{ __('These help tell their story, along with what you have shared above.') }}</flux:text>
+                    @php($memorialHints = [
+                        'preferred_name' => __('A nickname or middle name, if different from their legal name.'),
+                        'places_lived' => __('e.g. Grew up in Dayton, Ohio; lived in Springfield for 40 years.'),
+                        'survived_by' => __('Spouse, children, grandchildren, siblings, and others, with names as you would like them to appear.'),
+                        'preceded_by' => __('Family members who passed before them.'),
+                        'career' => __('Jobs, careers, military or volunteer service, awards, and milestones.'),
+                        'passions' => __('What they loved to do and what brought them joy.'),
+                        'faith_and_community' => __('Church or faith community, clubs, and organizations.'),
+                        'remembered_for' => __('Their personality, favorite sayings, and the memories you treasure most.'),
+                        'memorial_donations' => __('e.g. In lieu of flowers, donations may be made to the American Heart Association.'),
+                    ])
+                    <div class="mt-4 grid gap-4 sm:grid-cols-2">
+                        @foreach (\App\Models\OrderDetail::MEMORIAL_QUESTIONS as $key => $label)
+                            @php($isShort = in_array($key, ['preferred_name', 'places_lived', 'memorial_donations'], true))
+                            <flux:field @class(['sm:col-span-2' => ! $isShort || $key === 'memorial_donations']) wire:key="memorial-{{ $key }}">
+                                <flux:label>{{ __($label) }}</flux:label>
+                                <flux:description>{{ $memorialHints[$key] }}</flux:description>
+                                @if ($isShort)
+                                    <flux:input wire:model="memorialDetails.{{ $key }}" />
+                                @else
+                                    <flux:textarea wire:model="memorialDetails.{{ $key }}" rows="{{ in_array($key, ['survived_by', 'remembered_for'], true) ? 3 : 2 }}" />
+                                @endif
+                                <flux:error name="memorialDetails.{{ $key }}" />
+                            </flux:field>
+                        @endforeach
+                    </div>
+
+                    <div class="mt-6 space-y-4">
                         <flux:field>
-                            <flux:label>{{ __('Obituary (a draft is fine)') }}</flux:label>
-                            <flux:textarea wire:model="obituaryText" rows="6" />
-                            <flux:error name="obituaryText" />
+                            <flux:label>{{ __('Memorial Story (a draft is fine)') }}</flux:label>
+                            @if ($this->canWriteMemorialStory())
+                                <flux:description>{{ __('Write your own, or let us draft one from your answers on this form. You can edit it before submitting.') }}</flux:description>
+                                <div class="mb-2 flex flex-col gap-2 rounded-xl border border-brand-200 bg-brand-50 p-3 sm:flex-row sm:items-end">
+                                    <flux:select wire:model="memorialDetails.tone" :label="__('Tone')" size="sm" class="sm:max-w-56">
+                                        <option value="">{{ __('Traditional') }}</option>
+                                        @foreach (\App\Models\OrderDetail::MEMORIAL_TONES as $value => $toneLabel)
+                                            @continue($value === 'traditional')
+                                            <option value="{{ $value }}">{{ __($toneLabel) }}</option>
+                                        @endforeach
+                                    </flux:select>
+                                    {{-- Ask before replacing anything already written. --}}
+                                    <flux:button
+                                        type="button"
+                                        size="sm"
+                                        icon="sparkles"
+                                        x-on:click="if (! $wire.memorialStory || confirm(@js(__('Replace what is in the Memorial Story box with a new draft?')))) $wire.writeMemorialStory()"
+                                        wire:loading.attr="disabled"
+                                        wire:target="writeMemorialStory"
+                                        class="!bg-store hover:!bg-store-hover !text-store-foreground"
+                                    >
+                                        <span wire:loading.remove wire:target="writeMemorialStory">{{ __('Write a draft for me') }}</span>
+                                        <span wire:loading wire:target="writeMemorialStory">{{ __('Writing… this can take a few seconds') }}</span>
+                                    </flux:button>
+                                </div>
+                                @if ($memorialStoryError)
+                                    <p class="text-sm text-red-600" role="alert">{{ $memorialStoryError }}</p>
+                                @endif
+                            @endif
+                            <flux:textarea wire:model="memorialStory" rows="10" />
+                            <flux:error name="memorialStory" />
+                            @if ($this->canWriteMemorialStory())
+                                <p class="text-xs text-zinc-500">{{ __('Drafts are written with AI using only what you have entered. Please read it carefully and correct anything before submitting.') }}</p>
+                            @endif
                         </flux:field>
                         <flux:field>
                             <flux:label>{{ __('Service preferences') }}</flux:label>

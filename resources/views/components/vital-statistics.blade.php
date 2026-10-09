@@ -42,7 +42,7 @@
         </div>
     @endforeach
 
-    @foreach (['obituary_text' => __('Obituary'), 'service_preferences' => __('Service preferences'), 'additional_notes' => __('Anything else')] as $column => $heading)
+    @foreach (['obituary_text' => __('Memorial Story'), 'service_preferences' => __('Service preferences'), 'additional_notes' => __('Anything else')] as $column => $heading)
         @if ($detail->{$column})
             <div class="mt-5">
                 <p class="text-xs font-semibold uppercase tracking-wide text-zinc-400">{{ $heading }}</p>

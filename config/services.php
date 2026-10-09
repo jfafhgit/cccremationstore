@@ -67,4 +67,11 @@ return [
         'connect_client_id' => env('STRIPE_CONNECT_CLIENT_ID'),
     ],
 
+    // Google Gemini, which drafts memorial stories on the Vital Statistics
+    // form. The "write it for me" button only appears once a key is set.
+    'gemini' => [
+        'key' => env('GEMINI_API_KEY'),
+        'model' => env('GEMINI_MODEL') ?: 'gemini-2.5-flash',
+    ],
+
 ];

@@ -6,7 +6,9 @@ use App\Models\Order;
 use App\Models\Store;
 use App\Models\StoreUser;
 use App\Notifications\OrderDetailsSubmittedNotification;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
@@ -263,4 +265,83 @@ test('there is no way back to a website the store has not set', function () {
     vitalStatisticsForm($this->order)
         ->call('submit')
         ->assertDontSee('Go back to main site');
+});
+
+describe('the Memorial Story', function () {
+    beforeEach(function () {
+        config(['services.gemini.key' => 'test-key', 'services.gemini.model' => 'gemini-test']);
+    });
+
+    test('its questions are saved and shown to staff', function () {
+        vitalStatisticsForm($this->order)
+            ->set('memorialDetails.passions', 'Fishing on Lake Springfield')
+            ->set('memorialDetails.tone', 'warm')
+            ->set('memorialStory', 'Pat loved the lake.')
+            ->call('saveDraft')
+            ->assertHasNoErrors();
+
+        $detail = $this->order->fresh()->detail;
+
+        expect($detail->obituary_text)->toBe('Pat loved the lake.')
+            ->and($detail->memorial_details)->toBe(['passions' => 'Fishing on Lake Springfield', 'tone' => 'warm'])
+            ->and($detail->sections()['Memorial Story details'])->toBe([
+                'Hobbies, passions, and interests' => 'Fishing on Lake Springfield',
+                'Tone' => 'Warm and personal',
+            ]);
+
+        vitalStatisticsForm($this->order)->assertSet('memorialDetails.passions', 'Fishing on Lake Springfield');
+    });
+
+    test('a draft is written from the form so far, without private details', function () {
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::response([
+            'candidates' => [['content' => ['parts' => [['text' => "Pat Rivera, known to all as Patty, loved the lake.\n"]]]]],
+        ])]);
+
+        completeVitalStatistics(vitalStatisticsForm($this->order))
+            ->set('ssn', '123-45-6789')
+            ->set('race', 'White')
+            ->set('memorialDetails.preferred_name', 'Patty')
+            ->set('memorialDetails.survived_by', 'Her son, Sam')
+            ->set('memorialDetails.tone', 'celebration')
+            ->call('writeMemorialStory')
+            ->assertSet('memorialStory', 'Pat Rivera, known to all as Patty, loved the lake.')
+            ->assertSet('memorialStoryError', null);
+
+        Http::assertSent(function (Request $request) {
+            $body = json_encode($request->data());
+
+            return str_contains($request->url(), 'models/gemini-test:generateContent')
+                && $request->header('x-goog-api-key') === ['test-key']
+                && str_contains($body, 'Name they went by: Patty')
+                && str_contains($body, 'Survived by: Her son, Sam')
+                && str_contains($body, 'Teacher (retired)')
+                && str_contains($body, 'celebratory')
+                && ! str_contains($body, '123-45-6789')
+                && ! str_contains($body, 'White')
+                && ! str_contains($body, '12 Oak Street');
+        });
+    });
+
+    test('a failed draft keeps what was written and says so', function () {
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::response(['error' => ['message' => 'quota']], 429)]);
+
+        vitalStatisticsForm($this->order)
+            ->set('memorialStory', 'My own words.')
+            ->call('writeMemorialStory')
+            ->assertSet('memorialStory', 'My own words.')
+            ->assertSet('memorialStoryError', fn (?string $error) => str_contains($error, 'couldn\'t write a draft'));
+    });
+
+    test('the draft button only appears once Gemini is set up', function () {
+        vitalStatisticsForm($this->order)->assertSee('Write a draft for me');
+
+        config(['services.gemini.key' => null]);
+
+        vitalStatisticsForm($this->order)
+            ->assertDontSee('Write a draft for me')
+            ->assertSee('Memorial Story (a draft is fine)')
+            ->call('writeMemorialStory');
+
+        Http::assertNothingSent();
+    });
 });

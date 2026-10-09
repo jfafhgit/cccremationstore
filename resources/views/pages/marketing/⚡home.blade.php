@@ -61,7 +61,7 @@ new #[Layout('layouts::marketing')] class extends Component
                 {{ __('A calmer way to offer cremation arrangements online.') }}
             </flux:heading>
             <p class="mt-4 text-lg text-zinc-600">
-                {{ __('Planning by Treasured Memories gives your funeral home a dedicated, branded online store — simple packages, inline secure payment, and a dignified experience for families arranging services at any hour.') }}
+                {{ __('Planning by Treasured Memories gives your funeral home a dedicated, branded online store with simple packages, inline secure payment, and a dignified experience for families arranging services at any hour.') }}
             </p>
             <div class="mt-8 flex flex-wrap gap-4">
                 <flux:button href="#contact" variant="primary">
@@ -79,19 +79,19 @@ new #[Layout('layouts::marketing')] class extends Component
             <div>
                 <flux:heading size="lg" class="font-serif !text-xl !text-gold-300">{{ __('Your own branded store') }}</flux:heading>
                 <p class="mt-2 text-sm text-zinc-300">
-                    {{ __('Every funeral home gets its own address and branding — set up your packages, containers, urns, and keepsakes once, and families see only your offerings.') }}
+                    {{ __('Every funeral home gets its own address and branding. Set up your packages, containers, urns, and keepsakes once, and families see only your offerings.') }}
                 </p>
             </div>
             <div>
                 <flux:heading size="lg" class="font-serif !text-xl !text-gold-300">{{ __('Simple, respectful checkout') }}</flux:heading>
                 <p class="mt-2 text-sm text-zinc-300">
-                    {{ __('A short, guided flow collects only what is needed to secure payment. The fuller intake — obituary details, service preferences — comes after, on the family\'s own time.') }}
+                    {{ __('A short, guided flow collects only what is needed to secure payment. The fuller intake, such as memorial story details and service preferences, comes after, on the family\'s own time.') }}
                 </p>
             </div>
             <div>
                 <flux:heading size="lg" class="font-serif !text-xl !text-gold-300">{{ __('Payments go straight to you') }}</flux:heading>
                 <p class="mt-2 text-sm text-zinc-300">
-                    {{ __('Payments are processed securely by Stripe directly into your own account — we never hold your funds.') }}
+                    {{ __('Payments are processed securely by Stripe directly into your own account, and we never hold your funds.') }}
                 </p>
             </div>
         </div>

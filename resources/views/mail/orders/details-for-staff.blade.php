@@ -25,7 +25,7 @@
 
 @endforeach
 @if ($obituary)
-## Obituary
+## Memorial Story
 {{ $obituary }}
 
 @endif
