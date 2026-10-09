@@ -31,7 +31,7 @@ trait FormatsOrderForMail
     {
         $lines = array_map(
             fn (string $line): string => $this->escapeMarkdown(trim($line)),
-            preg_split('/\R/', trim((string) $text)),
+            preg_split('/\R/', trim((string) $text)) ?: [],
         );
 
         // A trailing backslash is a Markdown hard line break.
@@ -56,12 +56,12 @@ trait FormatsOrderForMail
         return [
             'orderNumber' => $order->order_number,
             'paidAt' => $order->paid_at?->setTimezone($order->store->timezone)->format('F j, Y \a\t g:i A T'),
-            'items' => $order->items->map(fn (OrderItem $item): array => [
+            'items' => array_values($order->items->map(fn (OrderItem $item): array => [
                 'name' => $this->escapeMarkdown($item->name_snapshot),
                 'variant' => $item->variant_snapshot ? $this->escapeMarkdown($item->variant_snapshot) : null,
                 'quantity' => $item->quantity,
                 'total' => '$'.number_format($item->total_price_cents / 100, 2),
-            ])->values()->all(),
+            ])->all()),
             'subtotal' => '$'.$order->subtotalInDollars(),
             'tax' => $order->tax_cents > 0 ? '$'.$order->taxInDollars() : null,
             'processingFee' => $order->processing_fee_cents > 0 ? '$'.$order->processingFeeInDollars() : null,

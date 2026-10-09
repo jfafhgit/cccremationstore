@@ -49,7 +49,9 @@ class MemorialStoryWriter
             throw new RuntimeException("Gemini returned HTTP {$response->status()}: ".mb_substr($response->body(), 0, 500));
         }
 
-        $story = collect($response->json('candidates.0.content.parts', []))
+        $parts = $response->json('candidates.0.content.parts');
+
+        $story = collect(is_array($parts) ? $parts : [])
             ->reject(fn (array $part) => $part['thought'] ?? false)
             ->pluck('text')
             ->implode('');

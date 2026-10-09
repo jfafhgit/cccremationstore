@@ -305,6 +305,10 @@ class Store extends Model
         return $this->hasMany(Order::class);
     }
 
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
     #[Scope]
     protected function active(Builder $query): Builder
     {

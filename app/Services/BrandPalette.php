@@ -121,7 +121,10 @@ class BrandPalette
      */
     private static function channels(string $color): array
     {
-        return array_map('hexdec', str_split(substr($color, 1), 2));
+        [$red, $green, $blue] = str_split(substr($color, 1), 2);
+
+        // Two hex digits always fit an int; hexdec() only returns a float on overflow.
+        return [(int) hexdec($red), (int) hexdec($green), (int) hexdec($blue)];
     }
 
     private static function luminance(string $color): float

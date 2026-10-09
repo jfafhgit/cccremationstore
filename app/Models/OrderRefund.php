@@ -67,6 +67,10 @@ class OrderRefund extends Model
         return $this->belongsTo(User::class, 'refunded_by_user_id');
     }
 
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
     #[Scope]
     protected function counted(Builder $query): Builder
     {

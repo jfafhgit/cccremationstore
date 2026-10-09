@@ -17,6 +17,31 @@ use Illuminate\Support\Collection;
  * (choosing a new one replaces the old one), matching how cremation packages
  * are actually sold. Keepsakes and add-ons are repeatable line items with
  * quantities.
+ *
+ * @phpstan-type CartLine array{
+ *     product_id: int,
+ *     variant_id: int|null,
+ *     category: string,
+ *     name: string,
+ *     variant_name: string|null,
+ *     image_path: string|null,
+ *     is_taxable?: bool,
+ *     is_required: bool,
+ *     unit_price_cents: int,
+ *     quantity: int,
+ *     taxable_unit_cents?: int,
+ *     base_price_cents?: int,
+ *     taxable_base_cents?: int,
+ *     unit_label?: string|null,
+ *     included_quantity?: int,
+ *     quantity_before_package?: int,
+ *     allowance_cents?: int,
+ *     allowance_label?: string|null,
+ *     keepsake_allowance_cents?: int,
+ *     container_allowance_cents?: int,
+ *     urn_allowance_cents?: int,
+ *     hide_options_below_allowance?: bool,
+ * }
  */
 class Cart
 {
@@ -49,7 +74,7 @@ class Cart
                 continue;
             }
 
-            $product = Product::find($line['product_id']);
+            $product = Product::whereKey($line['product_id'])->first();
 
             if (! $product) {
                 continue;
@@ -154,7 +179,7 @@ class Cart
      */
     public function keepsakeAllowanceCents(): int
     {
-        return (int) collect($this->state['lines'])
+        return (int) collect($this->lines())
             ->sum(fn (array $line) => ($line['keepsake_allowance_cents'] ?? 0) * $line['quantity']);
     }
 
@@ -163,7 +188,7 @@ class Cart
      */
     public function keepsakeAllowanceRemainingCents(): int
     {
-        $usedCents = collect($this->state['lines'])
+        $usedCents = collect($this->lines())
             ->where('category', ProductCategory::Keepsake->value)
             ->sum(fn (array $line) => $line['allowance_cents'] ?? 0);
 
@@ -176,7 +201,7 @@ class Cart
      */
     public function keepsakeAllowanceLabel(): ?string
     {
-        $names = collect($this->state['lines'])
+        $names = collect($this->lines())
             ->filter(fn (array $line) => ($line['keepsake_allowance_cents'] ?? 0) > 0)
             ->pluck('name')
             ->unique();
@@ -215,7 +240,7 @@ class Cart
     {
         $locationId = $this->state['location_id'] ?? null;
 
-        return $locationId ? $this->store->locations()->find($locationId) : null;
+        return $locationId ? $this->store->locations()->whereKey($locationId)->first() : null;
     }
 
     /**
@@ -228,10 +253,10 @@ class Cart
         $this->state['location_id'] = $location->id;
 
         $packageLine = $this->state['package'];
-        $package = $packageLine ? Product::find($packageLine['product_id']) : null;
+        $package = $packageLine ? Product::whereKey($packageLine['product_id'])->first() : null;
 
         if ($package && $this->packagePriceCents($package) !== null) {
-            $variant = $packageLine['variant_id'] ? ProductVariant::find($packageLine['variant_id']) : null;
+            $variant = $packageLine['variant_id'] ? ProductVariant::whereKey($packageLine['variant_id'])->first() : null;
             $this->state['package'] = $this->lineFor($package, $variant, 1);
         } elseif ($packageLine) {
             $this->state = [
@@ -372,10 +397,10 @@ class Cart
         }
 
         $package = $this->state['package']
-            ? Product::with(['includedProducts' => fn ($query) => $query->active()->with('variants')])->find($this->state['package']['product_id'])
+            ? Product::with(['includedProducts' => fn ($query) => $query->active()->with('variants')])->whereKey($this->state['package']['product_id'])->first()
             : null;
 
-        foreach ($package?->includedProducts ?? [] as $product) {
+        foreach ($package->includedProducts ?? [] as $product) {
             $key = $this->lineKey($product, null);
             if ($product->category === ProductCategory::Choice) {
                 $this->includeOption($product);
@@ -383,7 +408,7 @@ class Cart
                 continue;
             }
 
-            $includedQuantity = (int) $product->pivot->included_quantity;
+            $includedQuantity = $product->pivot->included_quantity;
 
             if ($includedQuantity === 0) {
                 $this->state['base_fee_included_ids'][] = $product->id;
@@ -478,7 +503,7 @@ class Cart
      */
     public function selectedVariantId(int $productId): ?int
     {
-        return collect($this->state['lines'])->firstWhere('product_id', $productId)['variant_id'] ?? null;
+        return collect($this->lines())->firstWhere('product_id', $productId)['variant_id'] ?? null;
     }
 
     /**
@@ -636,7 +661,7 @@ class Cart
     /**
      * What the package covers of a choose-one line: the included option's price.
      *
-     * @param  array<string, mixed>  $line
+     * @param  CartLine  $line
      */
     private function includedOptionCreditCents(array $line): int
     {
@@ -727,15 +752,15 @@ class Cart
 
     private function lineKey(Product $product, ?ProductVariant $variant): string
     {
-        return $product->id.'-'.($variant?->id ?? '0');
+        return $product->id.'-'.($variant->id ?? '0');
     }
 
     /**
-     * @return array<string, mixed>
+     * @return CartLine
      */
     private function lineFor(Product $product, ?ProductVariant $variant, int $quantity): array
     {
-        $variantDeltaCents = $variant?->price_delta_cents ?? 0;
+        $variantDeltaCents = $variant->price_delta_cents ?? 0;
 
         if ($product->hasPerUnitPricing()) {
             $baseCents = $product->price_cents + $variantDeltaCents;
@@ -803,9 +828,19 @@ class Cart
     }
 
     /**
+     * The repeatable lines (keepsakes, add-ons, services), keyed as in allLines().
+     *
+     * @return array<string, CartLine>
+     */
+    private function lines(): array
+    {
+        return $this->state['lines'];
+    }
+
+    /**
      * Every line in the cart (slots + repeatable lines), keyed for the UI.
      *
-     * @return Collection<string, array<string, mixed>>
+     * @return Collection<string, CartLine>
      */
     public function allLines(): Collection
     {
@@ -864,7 +899,7 @@ class Cart
      * quantity beyond what the package includes, less any package allowance.
      * An item the package includes has its base fee covered too.
      *
-     * @param  array<string, mixed>  $line
+     * @param  CartLine  $line
      */
     public function lineTotalCents(array $line): int
     {
@@ -878,7 +913,7 @@ class Cart
      * What a line would cost at its regular price, before the package covers
      * any of it.
      *
-     * @param  array<string, mixed>  $line
+     * @param  CartLine  $line
      */
     public function lineRegularTotalCents(array $line): int
     {
@@ -889,7 +924,7 @@ class Cart
      * A line's one-time base fee. When the package covers only the base fee,
      * the item is priced as if it had none, so no discount is shown for it.
      *
-     * @param  array<string, mixed>  $line
+     * @param  CartLine  $line
      */
     public function basePriceCents(array $line): int
     {
@@ -899,7 +934,7 @@ class Cart
     /**
      * How much of a line the package covers (included units and allowances).
      *
-     * @param  array<string, mixed>  $line
+     * @param  CartLine  $line
      */
     public function lineDiscountCents(array $line): int
     {
@@ -907,7 +942,7 @@ class Cart
     }
 
     /**
-     * @param  array<string, mixed>  $line
+     * @param  CartLine  $line
      */
     private function chargedQuantity(array $line): int
     {
@@ -919,7 +954,7 @@ class Cart
      * includes and allowances it credits are still taxed here, on the item
      * actually provided, so a package's own taxable amount never covers them.
      *
-     * @param  array<string, mixed>  $line
+     * @param  CartLine  $line
      */
     private function taxableLineCents(array $line): int
     {
@@ -945,7 +980,7 @@ class Cart
      */
     public function taxableUnusedKeepsakeAllowanceCents(): int
     {
-        $taxableAllowanceCents = (int) collect($this->state['lines'])
+        $taxableAllowanceCents = (int) collect($this->lines())
             ->filter(fn (array $line) => $line['is_taxable'] ?? false)
             ->sum(fn (array $line) => ($line['keepsake_allowance_cents'] ?? 0) * $line['quantity']);
 
@@ -971,7 +1006,7 @@ class Cart
     }
 
     /**
-     * @param  array<string, mixed>  $line
+     * @param  CartLine  $line
      */
     public function taxableUnitCentsFor(array $line): int
     {

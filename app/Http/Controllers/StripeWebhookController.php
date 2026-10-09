@@ -109,7 +109,7 @@ class StripeWebhookController extends Controller
             return;
         }
 
-        if ($store = Store::find($session->metadata['store_id'] ?? null)) {
+        if ($store = Store::whereKey($session->metadata['store_id'] ?? null)->first()) {
             $billing->completeCheckout($store, $session->id);
         }
     }
@@ -154,7 +154,7 @@ class StripeWebhookController extends Controller
             // the checkout or the return page.
             Log::info('Stripe payment attempt failed.', [
                 'order_id' => $order->id,
-                'reason' => $intent->last_payment_error?->message,
+                'reason' => $intent->last_payment_error->message ?? null,
             ]);
 
             return;

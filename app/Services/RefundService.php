@@ -10,6 +10,7 @@ use App\Notifications\RefundIssuedForStaffNotification;
 use App\Notifications\RefundIssuedNotification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Stripe\Charge;
 use Stripe\Exception\ApiErrorException;
 use Stripe\Refund;
 use Stripe\StripeClient;
@@ -134,7 +135,9 @@ class RefundService
                 ['stripe_account' => $order->stripe_account_id],
             );
 
-            $feeId = $intent->latest_charge?->application_fee;
+            // Expanded above, so this is the Charge itself rather than its ID.
+            $charge = $intent->latest_charge;
+            $feeId = $charge instanceof Charge ? $charge->application_fee : null;
 
             if (! is_string($feeId)) {
                 return 0;

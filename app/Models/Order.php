@@ -166,6 +166,10 @@ class Order extends Model
         return $this->hasOne(OrderDetail::class);
     }
 
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
     #[Scope]
     protected function paid(Builder $query): Builder
     {

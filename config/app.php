@@ -68,7 +68,7 @@ return [
     |
     */
 
-    'root_domain' => env('APP_ROOT_DOMAIN', parse_url(env('APP_URL', 'http://localhost'), PHP_URL_HOST) ?: 'localhost'),
+    'root_domain' => env('APP_ROOT_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST) ?: 'localhost'),
 
     /*
     |--------------------------------------------------------------------------

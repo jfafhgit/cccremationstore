@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use App\Models\Store;
+use App\Models\StoreUser;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -32,7 +33,7 @@ class StripeSetupRequestNotification extends Notification implements ShouldQueue
         return ['mail'];
     }
 
-    public function toMail(object $notifiable): MailMessage
+    public function toMail(StoreUser $notifiable): MailMessage
     {
         $storeName = $this->store->name;
 

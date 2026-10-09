@@ -53,7 +53,7 @@ class TreasuredMemoriesDemoSeeder extends Seeder
         $this->seedUrns($store);
         $this->seedKeepsakes($store);
 
-        $this->command?->info("Demo store ready: https://{$store->slug}.".config('app.root_domain').'  (staff portal login: owner@chicagolandcremationcare.test / password)');
+        $this->command->info("Demo store ready: https://{$store->slug}.".config('app.root_domain').'  (staff portal login: owner@chicagolandcremationcare.test / password)');
     }
 
     private function seedPackages(Store $store): void

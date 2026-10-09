@@ -51,7 +51,7 @@ class LocationSwitchController extends Controller
         $store = Store::current();
 
         $storeUser = is_array($handoff) && $handoff['store_id'] === $store->id
-            ? StoreUser::find($handoff['store_user_id'])
+            ? StoreUser::whereKey($handoff['store_user_id'])->first()
             : null;
 
         if (! $storeUser?->belongsToStore($store)) {

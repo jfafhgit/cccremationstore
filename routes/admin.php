@@ -1,13 +1,14 @@
 <?php
 
 use App\Http\Controllers\Admin\StripeConnectController;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Laravel\WorkOS\Http\Middleware\ValidateSessionWithWorkOS;
 
 Route::middleware(['auth', ValidateSessionWithWorkOS::class])->group(function (): void {
     // Existing WorkOS post-login destination. Approved admins go straight into
     // the admin area; anyone still waiting on approval is told so.
-    Route::get('dashboard', fn () => auth()->user()->isApproved()
+    Route::get('dashboard', fn () => Auth::guard('web')->user()->isApproved()
         ? redirect('/admin/stores')
         : redirect()->route('pending-approval'))->name('dashboard');
 

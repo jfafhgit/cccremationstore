@@ -16,7 +16,8 @@ class ProductFactory extends Factory
 
     public function definition(): array
     {
-        $name = $this->faker->words(3, true);
+        $name = $this->faker->sentence(3, false);
+        $name = rtrim($name, '.');
 
         return [
             'store_id' => Store::factory(),

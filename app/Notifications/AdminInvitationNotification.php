@@ -27,7 +27,7 @@ class AdminInvitationNotification extends Notification implements ShouldQueue
         return ['mail'];
     }
 
-    public function toMail(object $notifiable): MailMessage
+    public function toMail(User $notifiable): MailMessage
     {
         $appName = config('app.name');
 

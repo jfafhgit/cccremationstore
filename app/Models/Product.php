@@ -39,6 +39,7 @@ use Illuminate\Support\Facades\Storage;
  * @property int $sort_order
  * @property bool $allow_multiple_quantity
  * @property bool $requires_engraving
+ * @property-read PackageInclusion|null $pivot Set when loaded through a package's includedProducts.
  */
 class Product extends Model
 {
@@ -113,11 +114,12 @@ class Product extends Model
      * For a package: the add-ons, services, and keepsakes it covers, with
      * how many of each are included in the package price.
      *
-     * @return BelongsToMany<Product, $this>
+     * @return BelongsToMany<Product, $this, PackageInclusion>
      */
     public function includedProducts(): BelongsToMany
     {
         return $this->belongsToMany(Product::class, 'package_included_products', 'package_id', 'product_id')
+            ->using(PackageInclusion::class)
             ->withPivot('included_quantity', 'included_variant_id')
             ->withTimestamps();
     }
@@ -157,7 +159,7 @@ class Product extends Model
     {
         $variantId = $this->pivot?->included_variant_id;
 
-        return $variantId ? $this->variants->firstWhere('id', (int) $variantId) : null;
+        return $variantId ? $this->variants->firstWhere('id', $variantId) : null;
     }
 
     /**
@@ -172,27 +174,40 @@ class Product extends Model
      * For a package in a location-priced store: its price in each city it's
      * offered in.
      *
-     * @return BelongsToMany<StoreLocation, $this>
+     * @return BelongsToMany<StoreLocation, $this, PackageLocationPrice>
      */
     public function locationPrices(): BelongsToMany
     {
         return $this->belongsToMany(StoreLocation::class, 'package_location_prices')
+            ->using(PackageLocationPrice::class)
             ->withPivot('price_cents')
             ->withTimestamps();
     }
 
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
     #[Scope]
     protected function active(Builder $query): Builder
     {
         return $query->where('is_active', true);
     }
 
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
     #[Scope]
     protected function ofCategory(Builder $query, ProductCategory $category): Builder
     {
         return $query->where('category', $category);
     }
 
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
     #[Scope]
     protected function orderedFor(Builder $query, ProductSortMode $mode): Builder
     {
