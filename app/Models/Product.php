@@ -32,6 +32,7 @@ use Illuminate\Support\Facades\Storage;
  * @property int|null $container_allowance_cents
  * @property int|null $urn_allowance_cents
  * @property int|null $keepsake_allowance_cents
+ * @property bool $counts_toward_keepsake_allowance
  * @property bool $hide_options_below_allowance
  * @property string|null $image_path
  * @property bool $is_active
@@ -61,6 +62,7 @@ class Product extends Model
         'container_allowance_cents',
         'urn_allowance_cents',
         'keepsake_allowance_cents',
+        'counts_toward_keepsake_allowance',
         'hide_options_below_allowance',
         'per_unit_price_cents',
         'per_unit_label',
@@ -84,6 +86,7 @@ class Product extends Model
             'container_allowance_cents' => 'integer',
             'urn_allowance_cents' => 'integer',
             'keepsake_allowance_cents' => 'integer',
+            'counts_toward_keepsake_allowance' => 'boolean',
             'hide_options_below_allowance' => 'boolean',
             'per_unit_price_cents' => 'integer',
             'is_active' => 'boolean',

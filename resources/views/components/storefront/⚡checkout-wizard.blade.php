@@ -448,6 +448,42 @@ new class extends Component
     }
 
     /**
+     * The keepsakes step's sections. With a keepsake allowance in the cart,
+     * the keepsakes it covers come first, then the ones it doesn't, each
+     * under its own heading; otherwise they're all listed together.
+     *
+     * @return array<int, array{heading: string|null, note: string|null, products: Collection<int, Product>}>
+     */
+    public function keepsakeSections(): array
+    {
+        $keepsakes = $this->keepsakes();
+        $allowanceLabel = $this->cart()->keepsakeAllowanceLabel();
+
+        if ($allowanceLabel === null) {
+            return $keepsakes->isEmpty() ? [] : [['heading' => null, 'note' => null, 'products' => $keepsakes]];
+        }
+
+        [$covered, $notCovered] = $keepsakes->partition(fn (Product $product) => $product->counts_toward_keepsake_allowance);
+
+        // "Legacy Touch Allowance" becomes "Legacy Touch Keepsakes".
+        $collectionName = trim(preg_replace('/\s*\ballowance$/i', '', $allowanceLabel));
+        $hasOwnName = $collectionName !== '' && strcasecmp($collectionName, 'keepsake') !== 0;
+
+        return collect([
+            [
+                'heading' => $hasOwnName ? __(':name Keepsakes', ['name' => $collectionName]) : __('Allowance Keepsakes'),
+                'note' => __('Your :allowance is applied to these automatically.', ['allowance' => $allowanceLabel]),
+                'products' => $covered,
+            ],
+            [
+                'heading' => __('More Keepsakes'),
+                'note' => __("These aren't part of your allowance and are charged at their full price."),
+                'products' => $notCovered,
+            ],
+        ])->filter(fn (array $section) => $section['products']->isNotEmpty())->values()->all();
+    }
+
+    /**
      * Services and add-ons, including required ones, followed by the
      * choose-one items that have options to choose from. Anything the
      * selected package includes is already listed on the package, so it's
@@ -1450,14 +1486,21 @@ new class extends Component
                         </p>
                     </div>
                     <p class="mt-1 text-xs text-zinc-600">
-                        {{ __('Applied automatically to the keepsakes you choose.') }}
+                        {{ __('Applied automatically to the keepsakes you choose that it covers.') }}
                         <span class="text-zinc-500">{{ __("Any amount you don't use here isn't taken off your total. It stays available after purchase, including for keepsakes not shown on our website.") }}</span>
                     </p>
                 </div>
             @endif
 
-            <div class="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                @forelse ($this->keepsakes() as $product)
+            @forelse ($this->keepsakeSections() as $section)
+            @if ($section['heading'])
+                <div class="mt-8 border-b border-brand-100 pb-2">
+                    <h3 class="font-serif text-lg font-medium text-zinc-800">{{ $section['heading'] }}</h3>
+                    <p class="mt-0.5 text-sm text-zinc-500">{{ $section['note'] }}</p>
+                </div>
+            @endif
+            <div class="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3" @if ($section['heading']) aria-label="{{ $section['heading'] }}" @endif>
+                @foreach ($section['products'] as $product)
                     @php($key = $product->id.'-0')
                     <div class="overflow-hidden rounded-xl border border-zinc-200">
                         @if ($product->imageUrl())
@@ -1489,10 +1532,11 @@ new class extends Component
                             @endif
                         </div>
                     </div>
-                @empty
-                    <p class="col-span-full text-sm text-zinc-500">{{ __('No keepsakes are available for this option — you can continue to the next step.') }}</p>
-                @endforelse
+                @endforeach
             </div>
+            @empty
+                <p class="mt-6 text-sm text-zinc-500">{{ __('No keepsakes are available for this option — you can continue to the next step.') }}</p>
+            @endforelse
 
             <div x-show="zoom" style="display: none" x-transition.opacity class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/80 p-4" x-on:click="zoom = null" role="dialog" aria-modal="true">
                 <button type="button" class="absolute right-4 top-4 flex size-10 items-center justify-center rounded-full bg-white text-zinc-800" x-on:click="zoom = null" aria-label="{{ __('Close image') }}">

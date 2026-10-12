@@ -125,3 +125,42 @@ test('a taxable allowance is taxed on whatever the keepsakes leave unused', func
 test('an allowance that is not taxable leaves its unused amount untaxed', function () {
     expect($this->cart->taxCents())->toBe(0);
 });
+
+test('keepsakes that do not count toward the allowance are charged in full', function () {
+    $urnJewelry = Product::factory()->for($this->store)->category(ProductCategory::Keepsake)->create([
+        'price_cents' => 10000,
+        'counts_toward_keepsake_allowance' => false,
+    ]);
+
+    $this->cart->addLine($urnJewelry);
+    $this->cart->addLine($this->pendant);
+
+    $lines = $this->cart->allLines();
+
+    expect($this->cart->lineTotalCents($lines->get($urnJewelry->id.'-0')))->toBe(10000)
+        ->and($this->cart->lineTotalCents($lines->get($this->pendant->id.'-0')))->toBe(0)
+        ->and($this->cart->keepsakeAllowanceRemainingCents())->toBe(10000);
+});
+
+test('the keepsakes step lists the keepsakes the allowance covers first, under their own headings', function () {
+    $this->pendant->update(['counts_toward_keepsake_allowance' => false]);
+
+    Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->set('step', 'keepsakes')
+        ->assertSeeInOrder([
+            'Legacy Touch Keepsakes',
+            $this->bracelet->name,
+            'More Keepsakes',
+            $this->pendant->name,
+        ]);
+});
+
+test('the keepsakes step lists keepsakes together when there is no allowance', function () {
+    $this->pendant->update(['counts_toward_keepsake_allowance' => false]);
+    $this->cart->selectSlot(Product::factory()->for($this->store)->create());
+
+    Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->set('step', 'keepsakes')
+        ->assertSee($this->pendant->name)
+        ->assertDontSee('More Keepsakes');
+});

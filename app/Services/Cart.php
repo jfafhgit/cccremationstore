@@ -27,6 +27,7 @@ use Illuminate\Support\Collection;
  *     image_path: string|null,
  *     is_taxable?: bool,
  *     is_required: bool,
+ *     counts_toward_keepsake_allowance?: bool,
  *     unit_price_cents: int,
  *     quantity: int,
  *     taxable_unit_cents?: int,
@@ -147,8 +148,8 @@ class Cart
 
     /**
      * Spread the keepsake allowance (from products like a "Legacy Touch
-     * Allowance") across the keepsakes in the cart, in the order they were
-     * added, until it runs out.
+     * Allowance") across the keepsakes in the cart that count toward it, in
+     * the order they were added, until it runs out.
      */
     private function applyKeepsakeAllowance(): void
     {
@@ -161,6 +162,14 @@ class Cart
             }
 
             unset($line['allowance_cents'], $line['allowance_label']);
+
+            // Lines saved before the setting existed counted toward the allowance.
+            if (! ($line['counts_toward_keepsake_allowance'] ?? true)) {
+                $this->state['lines'][$key] = $line;
+
+                continue;
+            }
+
             $creditCents = min($remainingCents, $this->lineTotalCents($line));
 
             if ($creditCents > 0) {
@@ -420,7 +429,7 @@ class Cart
 
             // Pick up an allowance set on the product since the line was added.
             unset($line['keepsake_allowance_cents']);
-            $line = [...$line, ...$this->keepsakeAllowanceFor($product), 'is_taxable' => $product->is_taxable];
+            $line = [...$line, ...$this->keepsakeAllowanceFor($product), 'is_taxable' => $product->is_taxable, 'counts_toward_keepsake_allowance' => $product->counts_toward_keepsake_allowance];
 
             $line['quantity_before_package'] = $line['quantity'];
             $line['quantity'] = max($line['quantity'], $includedQuantity);
@@ -776,6 +785,7 @@ class Cart
                 'image_path' => $product->image_path,
                 'is_taxable' => $product->is_taxable,
                 'is_required' => $product->is_required,
+                'counts_toward_keepsake_allowance' => $product->counts_toward_keepsake_allowance,
                 'base_price_cents' => $baseCents,
                 'taxable_base_cents' => $product->is_taxable ? $baseCents : 0,
                 'taxable_unit_cents' => $product->is_taxable ? $unitCents : 0,
@@ -809,6 +819,7 @@ class Cart
             'image_path' => $product->image_path,
             'is_taxable' => $product->is_taxable,
             'is_required' => $product->is_required,
+            'counts_toward_keepsake_allowance' => $product->counts_toward_keepsake_allowance,
             'taxable_unit_cents' => $this->taxableUnitCentsForProduct($product, $variantDeltaCents, $priceCents),
             'unit_price_cents' => $unitPriceCents,
             'quantity' => $quantity,

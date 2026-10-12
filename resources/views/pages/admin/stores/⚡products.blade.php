@@ -91,6 +91,10 @@ new class extends Component
     #[Validate('boolean')]
     public bool $formAllowMultipleQuantity = false;
 
+    /** Whether a keepsake is paid for from a keepsake allowance like a "Legacy Touch Allowance". */
+    #[Validate('boolean')]
+    public bool $formCountsTowardKeepsakeAllowance = true;
+
     /** A newly-chosen upload waiting to replace the product's image. */
     #[Validate('nullable|image|max:5120')]
     public $formImage = null;
@@ -224,6 +228,7 @@ new class extends Component
         $this->formIsRequired = false;
         $this->formIsActive = true;
         $this->formAllowMultipleQuantity = false;
+        $this->formCountsTowardKeepsakeAllowance = true;
         $this->resetValidation();
 
         Flux::modal('product-form')->show();
@@ -266,6 +271,7 @@ new class extends Component
             ->all();
         $this->formIsActive = $product->is_active;
         $this->formAllowMultipleQuantity = $product->allow_multiple_quantity;
+        $this->formCountsTowardKeepsakeAllowance = $product->counts_toward_keepsake_allowance;
         $this->formImage = null;
         $this->existingImagePath = $product->image_path;
         $this->resetVariantForm();
@@ -363,6 +369,7 @@ new class extends Component
             'per_unit_label' => $hasPerUnitPrice ? ($this->formPerUnitLabel ?: null) : null,
             'is_active' => $this->formIsActive,
             'allow_multiple_quantity' => ! $isKeepsakeAllowance && $this->formAllowMultipleQuantity,
+            'counts_toward_keepsake_allowance' => $validated['formCategory'] !== ProductCategory::Keepsake->value || $this->formCountsTowardKeepsakeAllowance,
         ];
 
         if ($isPackage) {
@@ -576,6 +583,17 @@ new class extends Component
 
         return ProductVariant::where('product_id', $this->editingProductId)->orderBy('sort_order')->get();
     }
+
+    /**
+     * The name of this store's keepsake allowance, e.g. "Legacy Touch
+     * Allowance", or a general name when it has none or more than one.
+     */
+    public function keepsakeAllowanceName(): string
+    {
+        $names = $this->currentStore->products()->ofCategory(ProductCategory::KeepsakeAllowance)->pluck('name')->unique();
+
+        return $names->count() === 1 ? $names->first() : __('keepsake allowance');
+    }
 }; ?>
 
 <div>
@@ -658,6 +676,9 @@ new class extends Component
                                     @endif
                                     @if ($product->is_taxable)
                                         <flux:badge size="sm" color="amber">{{ __('Taxed') }}</flux:badge>
+                                    @endif
+                                    @if ($product->category === ProductCategory::Keepsake && ! $product->counts_toward_keepsake_allowance)
+                                        <flux:badge size="sm" color="zinc">{{ __('Not covered by allowance') }}</flux:badge>
                                     @endif
                                 </div>
                                 @if ($product->variants->isNotEmpty())
@@ -876,6 +897,9 @@ new class extends Component
                 @unless (in_array($formCategory, ['choice', 'keepsake_allowance'], true))
                     <flux:checkbox wire:model="formAllowMultipleQuantity" :label="__('Allow quantity > 1')" />
                 @endunless
+                @if ($formCategory === ProductCategory::Keepsake->value)
+                    <flux:checkbox wire:model="formCountsTowardKeepsakeAllowance" :label="__('Can be paid for with the :allowance', ['allowance' => $this->keepsakeAllowanceName()])" class="col-span-2" />
+                @endif
             </div>
 
             @if ($formCategory === ProductCategory::Choice->value)

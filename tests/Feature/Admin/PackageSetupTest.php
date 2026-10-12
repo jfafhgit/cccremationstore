@@ -100,6 +100,29 @@ test('a keepsake allowance saves its amount, which is required, and other catego
     expect($allowance->fresh()->keepsake_allowance_cents)->toBeNull();
 });
 
+test('a keepsake can be marked as not covered by keepsake allowances', function () {
+    Product::factory()->for($this->store)->category(ProductCategory::KeepsakeAllowance)->create(['name' => 'Legacy Touch Allowance']);
+
+    Livewire::test('pages::admin.stores.products', ['store' => $this->store])
+        ->call('newProduct', ProductCategory::Keepsake->value)
+        ->assertSet('formCountsTowardKeepsakeAllowance', true)
+        ->assertSee('Can be paid for with the Legacy Touch Allowance')
+        ->set('formName', 'Fingerprint Pendant')
+        ->set('formPrice', '150.00')
+        ->set('formCountsTowardKeepsakeAllowance', false)
+        ->call('saveProduct')
+        ->assertHasNoErrors();
+
+    $keepsake = $this->store->products()->firstWhere('name', 'Fingerprint Pendant');
+
+    expect($keepsake->counts_toward_keepsake_allowance)->toBeFalse();
+
+    Livewire::test('pages::admin.stores.products', ['store' => $this->store])
+        ->assertSee('Not covered by allowance')
+        ->call('editProduct', $keepsake->id)
+        ->assertSet('formCountsTowardKeepsakeAllowance', false);
+});
+
 test('a package can include a keepsake allowance', function () {
     $allowance = Product::factory()->for($this->store)->category(ProductCategory::KeepsakeAllowance)->create(['keepsake_allowance_cents' => 30000]);
 
