@@ -130,6 +130,61 @@
             }
         }
 
+        // How much of the top of the window this page covers with its own
+        // fixed or sticky header (or reserves via scroll-padding-top), so the
+        // top of the store, where its cart button is, isn't left underneath.
+        function coveredTop(iframe) {
+            var covered = parseFloat(window.getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+
+            if (!document.elementsFromPoint) {
+                return covered;
+            }
+
+            var rect = iframe.getBoundingClientRect();
+            var xs = [rect.left + 10, rect.left + rect.width / 2, rect.right - 10];
+
+            for (var x = 0; x < xs.length; x++) {
+                var stack = document.elementsFromPoint(Math.max(0, xs[x]), 1);
+
+                for (var s = 0; s < stack.length; s++) {
+                    for (var el = stack[s]; el && el !== document.body; el = el.parentElement) {
+                        var position = window.getComputedStyle(el).position;
+
+                        if ((position === 'fixed' || position === 'sticky') && !el.contains(iframe)) {
+                            var box = el.getBoundingClientRect();
+
+                            if (box.top <= 1) {
+                                covered = Math.max(covered, box.bottom);
+                            }
+                        }
+                    }
+                }
+            }
+
+            return covered;
+        }
+
+        // A new checkout step began; if the visitor is scrolled past the top
+        // of the store (or it's hidden under this page's header), bring it
+        // back into view. Measured again once the scroll settles, because
+        // some headers only slide in when the page scrolls up.
+        function scrollToTopOf(iframe, isCorrection) {
+            var offset = coveredTop(iframe);
+            var top = iframe.getBoundingClientRect().top;
+
+            if (top >= offset - 1) {
+                return;
+            }
+
+            window.scrollTo({ top: window.pageYOffset + top - offset, behavior: 'smooth' });
+
+            if (!isCorrection) {
+                setTimeout(function () {
+                    scrollToTopOf(iframe, true);
+                }, 700);
+            }
+        }
+
         window.addEventListener('scroll', scheduleViewportReport, { passive: true });
         window.addEventListener('resize', scheduleViewportReport);
 
@@ -155,11 +210,8 @@
                     iframes[j].style.minHeight = '0';
                     iframes[j].style.height = Math.ceil(event.data.height) + 'px';
                     scheduleViewportReport();
-                } else if (event.data.type === 'tm-cremation-store:scroll-into-view'
-                    && iframes[j].getBoundingClientRect().top < 0) {
-                    // A new checkout step began, but the visitor is scrolled
-                    // past the top of the store; bring it back into view.
-                    iframes[j].scrollIntoView({ behavior: 'smooth', block: 'start' });
+                } else if (event.data.type === 'tm-cremation-store:scroll-into-view') {
+                    scrollToTopOf(iframes[j]);
                 }
 
                 break;
