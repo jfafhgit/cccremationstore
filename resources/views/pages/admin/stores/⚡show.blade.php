@@ -1025,6 +1025,12 @@ new class extends Component
                     <flux:button size="sm" variant="ghost" wire:click="$set('showStaffForm', true)">{{ __('Add') }}</flux:button>
                 </div>
 
+                <flux:field class="mt-4">
+                    <flux:label>{{ __('Staff login link') }}</flux:label>
+                    <flux:input :value="route('portal.login', ['store' => $currentStore->slug])" readonly copyable />
+                    <flux:description>{{ __('Send this to staff so they can sign in to this store.') }}</flux:description>
+                </flux:field>
+
                 @if ($showStaffForm)
                     <form wire:submit="createStaffUser" class="mt-4 space-y-3">
                         <flux:field>

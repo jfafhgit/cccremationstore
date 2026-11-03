@@ -13,9 +13,6 @@
                         <img src="{{ asset('images/treasured-memories-logo.webp') }}" alt="{{ config('app.name') }}" class="h-11 w-auto sm:h-14" />
                     </a>
                     <div class="flex shrink-0 items-center gap-2">
-                        <flux:button href="{{ route('login') }}" variant="ghost" class="!text-white hover:!bg-white/10 hover:!text-gold-300">
-                            {{ __('Log in') }}
-                        </flux:button>
                         <flux:button href="#contact" variant="primary" class="bg-linear-to-b from-gold-300 to-gold-500 hover:from-gold-200 hover:to-gold-400">
                             {{ __('Request a demo') }}
                         </flux:button>

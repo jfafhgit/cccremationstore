@@ -476,7 +476,28 @@ class Cart
             $this->state['lines'][$key] = $this->lineFor($product, $variant, $quantity);
         }
 
+        if ($this->isSingleQuantityLine($key)) {
+            $this->state['lines'][$key]['quantity'] = min($this->state['lines'][$key]['quantity'], max(1, $this->includedQuantity($key)));
+        }
+
         $this->persist();
+    }
+
+    /**
+     * Whether a line is an add-on / service without "Allow quantity > 1" or
+     * per-unit pricing, so the customer can only ever have one of it.
+     */
+    public function isSingleQuantityLine(string $key): bool
+    {
+        $line = $this->state['lines'][$key] ?? null;
+
+        if (! $line || $line['category'] !== ProductCategory::Addon->value) {
+            return false;
+        }
+
+        $product = Product::find($line['product_id']);
+
+        return $product !== null && ! $product->allow_multiple_quantity && ! $product->hasPerUnitPricing();
     }
 
     /**
@@ -588,6 +609,10 @@ class Cart
 
         // Units the package includes can't be removed either.
         $quantity = max($this->includedQuantity($key), $quantity);
+
+        if ($this->isSingleQuantityLine($key)) {
+            $quantity = min($quantity, max(1, $this->includedQuantity($key)));
+        }
 
         // A choose-one item the package includes is always exactly one.
         if ($this->includedOptionId($this->state['lines'][$key]['product_id'] ?? 0) !== null) {

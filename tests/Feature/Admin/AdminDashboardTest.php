@@ -44,6 +44,13 @@ test('an admin can create a new store', function () {
         ->and($store->slug)->toBe('riverside-cremation-care');
 });
 
+test('the store page shows a staff login link to copy', function () {
+    $store = Store::factory()->create(['slug' => 'riverside']);
+
+    Livewire::test('pages::admin.stores.show', ['store' => $store->id])
+        ->assertSee(route('portal.login', ['store' => 'riverside']));
+});
+
 test('an admin can edit a store and add a staff login', function () {
     $store = Store::factory()->create();
 
