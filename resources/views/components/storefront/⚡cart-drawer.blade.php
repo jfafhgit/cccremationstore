@@ -151,6 +151,8 @@ new class extends Component {
                         <ul class="space-y-4">
                             @foreach ($this->cart()->allLines() as $key => $line)
                                 @php($discountCents = $this->cart()->lineDiscountCents($line))
+                                {{-- Free, or fully covered by the package (not an allowance), so it just reads "Included" with no price or discount. --}}
+                                @php($isIncluded = $this->cart()->lineRegularTotalCents($line) === 0 || ($discountCents > 0 && $this->cart()->lineTotalCents($line) === 0 && ! ($line['allowance_cents'] ?? 0)))
                                 <li class="border-b border-zinc-100 pb-4" wire:key="cart-line-{{ $key }}">
                                 <div class="flex items-start gap-3 sm:gap-4">
                                     @unless (($line['category'] ?? 'package') === 'package')
@@ -164,8 +166,7 @@ new class extends Component {
                                         @endif
                                         @php($basePriceCents = $this->cart()->basePriceCents($line))
                                         @php($regularTotalCents = $this->cart()->lineRegularTotalCents($line))
-                                        {{-- A $0.00 price is something the package comes with, so it's not spelled out. --}}
-                                        @if ($regularTotalCents > 0)
+                                        @unless ($isIncluded)
                                             <p class="mt-1 text-sm text-zinc-500">
                                                 @if ($basePriceCents)
                                                     ${{ number_format($basePriceCents / 100, 2) }} + ${{ number_format($line['unit_price_cents'] / 100, 2) }} {{ ($line['unit_label'] ?? null) ? __('per :unit', ['unit' => $line['unit_label']]) : __('each') }}
@@ -173,7 +174,7 @@ new class extends Component {
                                                     ${{ number_format($line['unit_price_cents'] / 100, 2) }} {{ __('each') }}
                                                 @endif
                                             </p>
-                                        @endif
+                                        @endunless
 
                                         <div class="mt-3 flex items-center justify-between">
                                             @if ($this->isSlot($key) || (($line['is_required'] ?? false) && ! array_key_exists('base_price_cents', $line)) || $this->cart()->includedOptionId($line['product_id']) !== null || $this->cart()->isSingleQuantityLine($key))
@@ -217,10 +218,10 @@ new class extends Component {
                                     </div>
 
                                     <span class="shrink-0 text-sm font-semibold text-zinc-800">
-                                        {{ $regularTotalCents > 0 ? '$'.number_format($regularTotalCents / 100, 2) : __('Included') }}
+                                        {{ $isIncluded ? __('Included') : '$'.number_format($regularTotalCents / 100, 2) }}
                                     </span>
                                 </div>
-                                @if ($discountCents > 0)
+                                @if ($discountCents > 0 && ! $isIncluded)
                                     {{-- Indented to line up with the item details, past the image. --}}
                                     <div class="mt-2 flex items-center justify-between gap-3 pl-[4.75rem] text-sm text-brand-700 sm:pl-24">
                                         <span>

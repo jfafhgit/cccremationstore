@@ -217,11 +217,21 @@ test('the cart shows regular prices with the package discount on its own line', 
     $cart = new Cart($this->store);
     $cart->selectSlot($this->premium->fresh());
     $cart->selectSlot($urn);
+    $cart->updateLineQuantity($this->certificatesKey, 3);
 
     Livewire::test('storefront.cart-drawer', ['store' => $this->store])
         ->assertSeeInOrder(['$350.00', 'Package allowance', '−$200.00'])
-        ->assertSeeInOrder(['$800.00', 'Included with package', '−$800.00'])
-        ->assertSeeInOrder(['$280.00', '2 included with package', '−$280.00']);
+        ->assertSeeInOrder(['$295.00', '2 included with package', '−$280.00']);
+});
+
+test('the cart shows an item the package fully includes as just included', function () {
+    (new Cart($this->store))->selectSlot($this->premium);
+
+    Livewire::test('storefront.cart-drawer', ['store' => $this->store])
+        ->assertSeeInOrder(['Death certificates', 'Included', 'Memorial service', 'Included'])
+        ->assertDontSee('$800.00')
+        ->assertDontSee('$280.00')
+        ->assertDontSee('included with package');
 });
 
 test('an urn the allowance fully covers is not pre-selected unless the store pre-selects urns', function () {
