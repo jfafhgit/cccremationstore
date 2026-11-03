@@ -162,13 +162,18 @@ new class extends Component {
                                         @if ($line['variant_name'] ?? null)
                                             <p class="text-xs text-zinc-500">{{ $line['variant_name'] }}</p>
                                         @endif
-                                        <p class="mt-1 text-sm text-zinc-500">
-                                            @if ($basePriceCents = $this->cart()->basePriceCents($line))
-                                                ${{ number_format($basePriceCents / 100, 2) }} + ${{ number_format($line['unit_price_cents'] / 100, 2) }} {{ ($line['unit_label'] ?? null) ? __('per :unit', ['unit' => $line['unit_label']]) : __('each') }}
-                                            @else
-                                                ${{ number_format($line['unit_price_cents'] / 100, 2) }} {{ __('each') }}
-                                            @endif
-                                        </p>
+                                        @php($basePriceCents = $this->cart()->basePriceCents($line))
+                                        @php($regularTotalCents = $this->cart()->lineRegularTotalCents($line))
+                                        {{-- A $0.00 price is something the package comes with, so it's not spelled out. --}}
+                                        @if ($regularTotalCents > 0)
+                                            <p class="mt-1 text-sm text-zinc-500">
+                                                @if ($basePriceCents)
+                                                    ${{ number_format($basePriceCents / 100, 2) }} + ${{ number_format($line['unit_price_cents'] / 100, 2) }} {{ ($line['unit_label'] ?? null) ? __('per :unit', ['unit' => $line['unit_label']]) : __('each') }}
+                                                @else
+                                                    ${{ number_format($line['unit_price_cents'] / 100, 2) }} {{ __('each') }}
+                                                @endif
+                                            </p>
+                                        @endif
 
                                         <div class="mt-3 flex items-center justify-between">
                                             @if ($this->isSlot($key) || (($line['is_required'] ?? false) && ! array_key_exists('base_price_cents', $line)) || $this->cart()->includedOptionId($line['product_id']) !== null)
@@ -212,7 +217,7 @@ new class extends Component {
                                     </div>
 
                                     <span class="shrink-0 text-sm font-semibold text-zinc-800">
-                                        ${{ number_format($this->cart()->lineRegularTotalCents($line) / 100, 2) }}
+                                        {{ $regularTotalCents > 0 ? '$'.number_format($regularTotalCents / 100, 2) : __('Included') }}
                                     </span>
                                 </div>
                                 @if ($discountCents > 0)

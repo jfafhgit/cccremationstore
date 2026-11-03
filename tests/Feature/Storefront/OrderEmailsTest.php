@@ -57,6 +57,17 @@ describe('the customer confirmation', function () {
             ->not->toContain('Processing fee');
     });
 
+    test('shows items the package covers as included rather than $0.00', function () {
+        OrderItem::factory()->for($this->order)->create(['name_snapshot' => 'Temporary Urn', 'quantity' => 1, 'total_price_cents' => 0]);
+
+        $html = (string) (new OrderPaidNotification($this->order->fresh()))->toMail($this->order)->render();
+
+        expect($html)
+            ->toContain('Temporary Urn')
+            ->toContain('Included')
+            ->not->toContain('$0.00');
+    });
+
     test('offers condolences only when the loved one has passed', function (OrderTiming $timing, bool $expectsCondolences) {
         $this->order->update(['timing' => $timing]);
 

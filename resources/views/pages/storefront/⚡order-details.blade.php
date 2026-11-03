@@ -635,7 +635,7 @@ new class extends Component
                 @if ($this->usesExternalForm())
                     {{ __('Next, if you would like to, you can share information for official records, such as the death certificate.') }}
                 @else
-                    {{ __('Next, if you would like to, you can share information for official records, such as the death certificate, and a memorial story. You can save your progress and come back to this page anytime using the link in your email.') }}
+                    {{ __('Next, if you would like to, you can share information for official records, such as the death certificate, and a memorial obituary story. You can save your progress and come back to this page anytime using the link in your email.') }}
                 @endif
             </flux:subheading>
         </div>
@@ -1006,9 +1006,9 @@ new class extends Component
                     </div>
                 </section>
 
-                {{-- Memorial Story & service wishes --}}
+                {{-- Memorial Obituary Story --}}
                 <section class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
-                    <flux:heading size="lg">{{ __('Memorial Story & service wishes') }} <span class="text-sm font-normal text-zinc-500">{{ __('(optional)') }}</span></flux:heading>
+                    <flux:heading size="lg">{{ __('Memorial Obituary Story') }} <span class="text-sm font-normal text-zinc-500">{{ __('(optional)') }}</span></flux:heading>
                     <flux:text class="mt-1">{{ __('Share as much or as little as you have right now — nothing here is final.') }}</flux:text>
 
                     <flux:heading class="mt-6">{{ __('About their life') }}</flux:heading>
@@ -1042,7 +1042,7 @@ new class extends Component
 
                     <div class="mt-6 space-y-4">
                         <flux:field>
-                            <flux:label>{{ __('Memorial Story (a draft is fine)') }}</flux:label>
+                            <flux:label>{{ __('Memorial Obituary Story (a draft is fine)') }}</flux:label>
                             @if ($this->canWriteMemorialStory())
                                 <flux:description>{{ __('Write your own, or let us draft one from your answers on this form. You can edit it before submitting.') }}</flux:description>
                                 <div class="mb-2 flex flex-col gap-2 rounded-xl border border-brand-200 bg-brand-50 p-3 sm:flex-row sm:items-end">
@@ -1058,7 +1058,7 @@ new class extends Component
                                         type="button"
                                         size="sm"
                                         icon="sparkles"
-                                        x-on:click="if (! $wire.memorialStory || confirm(@js(__('Replace what is in the Memorial Story box with a new draft?')))) $wire.writeMemorialStory()"
+                                        x-on:click="if (! $wire.memorialStory || confirm(@js(__('Replace what is in the Memorial Obituary Story box with a new draft?')))) $wire.writeMemorialStory()"
                                         wire:loading.attr="disabled"
                                         wire:target="writeMemorialStory"
                                         class="!bg-store hover:!bg-store-hover !text-store-foreground"
@@ -1077,6 +1077,15 @@ new class extends Component
                                 <p class="text-xs text-zinc-500">{{ __('Drafts are written with AI using only what you have entered. Please read it carefully and correct anything before submitting.') }}</p>
                             @endif
                         </flux:field>
+                    </div>
+                </section>
+
+                {{-- Service wishes --}}
+                <section class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
+                    <flux:heading size="lg">{{ __('Service wishes') }} <span class="text-sm font-normal text-zinc-500">{{ __('(optional)') }}</span></flux:heading>
+                    <flux:text class="mt-1">{{ __('Share as much or as little as you have right now — nothing here is final.') }}</flux:text>
+
+                    <div class="mt-6 space-y-4">
                         <flux:field>
                             <flux:label>{{ __('Service preferences') }}</flux:label>
                             <flux:description>{{ __('Any thoughts on timing, location, readings, music, or who should be involved.') }}</flux:description>

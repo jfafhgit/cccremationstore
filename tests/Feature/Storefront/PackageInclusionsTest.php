@@ -199,6 +199,17 @@ test('included quantities and allowances are snapshotted on the order', function
         ->and($order->subtotal_cents)->toBe(300000 + 1500 + 15000);
 });
 
+test('the cart shows a no-cost package item as included rather than $0.00', function () {
+    $temporaryUrn = Product::factory()->for($this->store)->category(ProductCategory::Addon)->create(['name' => 'Temporary urn', 'price_cents' => 0]);
+    $this->premium->includedProducts()->attach($temporaryUrn->id, ['included_quantity' => 1]);
+
+    (new Cart($this->store))->selectSlot($this->premium->fresh());
+
+    Livewire::test('storefront.cart-drawer', ['store' => $this->store])
+        ->assertSeeInOrder(['Temporary urn', 'Included'])
+        ->assertDontSee('$0.00');
+});
+
 test('the cart shows regular prices with the package discount on its own line', function () {
     $this->premium->update(['urn_allowance_cents' => 20000]);
     $urn = Product::factory()->for($this->store)->category(ProductCategory::Urn)->create(['price_cents' => 35000]);

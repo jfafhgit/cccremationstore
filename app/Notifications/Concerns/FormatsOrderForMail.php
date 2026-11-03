@@ -60,7 +60,8 @@ trait FormatsOrderForMail
                 'name' => $this->escapeMarkdown($item->name_snapshot),
                 'variant' => $item->variant_snapshot ? $this->escapeMarkdown($item->variant_snapshot) : null,
                 'quantity' => $item->quantity,
-                'total' => '$'.number_format($item->total_price_cents / 100, 2),
+                // Nothing charged means the package covers it.
+                'total' => $item->total_price_cents > 0 ? '$'.number_format($item->total_price_cents / 100, 2) : __('Included'),
             ])->all()),
             'subtotal' => '$'.$order->subtotalInDollars(),
             'tax' => $order->tax_cents > 0 ? '$'.$order->taxInDollars() : null,

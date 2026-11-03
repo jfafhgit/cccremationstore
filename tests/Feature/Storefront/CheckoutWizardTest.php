@@ -701,6 +701,22 @@ test('switching to a package with an urn allowance never swaps in the family pro
     expect($component->instance()->urns()->pluck('id')->all())->toBe([$coveredUrn->id])->not->toContain($familyUrn->id);
 });
 
+test('urns show what they cost on top of the package urn allowance', function () {
+    $coveredUrn = Product::factory()->for($this->store)->category(ProductCategory::Urn)->create(['name' => 'Covered urn', 'price_cents' => 20000]);
+    $upgradeUrn = Product::factory()->for($this->store)->category(ProductCategory::Urn)->create(['name' => 'Upgrade urn', 'price_cents' => 35000]);
+    $this->package->update(['urn_allowance_cents' => 20000]);
+
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $this->package->id)
+        ->call('goToContainers')
+        ->assertSeeInOrder(['Covered urn', 'Included', 'Upgrade urn', '+ $150.00'])
+        ->assertDontSee('$350.00');
+
+    expect($component->instance()->slotPriceLabel($coveredUrn, 'urn'))->toBe('Included')
+        ->and($component->instance()->slotPriceLabel($upgradeUrn, 'urn'))->toBe('+ $150.00');
+});
+
 test('the family provided urn is not offered when the package has an urn allowance', function () {
     $this->store->update(['offers_family_provided_urn' => true, 'offers_family_provided_container' => true]);
     $this->store->syncFamilyProvidedProducts();

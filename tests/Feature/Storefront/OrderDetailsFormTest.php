@@ -339,7 +339,7 @@ describe('the Memorial Story', function () {
 
         vitalStatisticsForm($this->order)
             ->assertDontSee('Write a draft for me')
-            ->assertSee('Memorial Story (a draft is fine)')
+            ->assertSee('Memorial Obituary Story (a draft is fine)')
             ->call('writeMemorialStory');
 
         Http::assertNothingSent();

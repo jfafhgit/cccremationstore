@@ -271,22 +271,23 @@ new class extends Component
     }
 
     /**
-     * What a container / urn costs once the package allowance is applied,
-     * e.g. "Included with your package" or "$150.00 after allowance".
+     * A container / urn's price as shown on its card: with a package
+     * allowance toward the slot, what it costs on top of the package
+     * ("Included" or e.g. "+ $150.00"); otherwise its regular price.
      */
-    public function allowanceNote(Product $product, string $slot): ?string
+    public function slotPriceLabel(Product $product, string $slot): string
     {
         $allowanceCents = $this->allowanceCents($slot);
 
-        if ($allowanceCents === 0 || $product->price_cents === 0) {
-            return null;
+        if ($allowanceCents === 0) {
+            return $product->priceLabel();
         }
 
         if ($product->price_cents <= $allowanceCents) {
-            return __('Included with your package');
+            return __('Included');
         }
 
-        return __(':price after allowance', ['price' => '$'.number_format(($product->price_cents - $allowanceCents) / 100, 2)]);
+        return '+ $'.number_format(($product->price_cents - $allowanceCents) / 100, 2);
     }
 
     /**
@@ -1013,7 +1014,8 @@ new class extends Component
 }; ?>
 
 {{-- A new step should start at its top: on our own page scroll back up to
-     it, and inside an embed let the layout ask the host page to do so. --}}
+     the top of the page (where the cart button is), and inside an embed let
+     the layout ask the host page to do so. --}}
 <div
     class="mx-auto max-w-5xl px-4 py-10 sm:px-6"
     x-data
@@ -1021,7 +1023,8 @@ new class extends Component
         if (window.self !== window.top) {
             window.dispatchEvent(new CustomEvent('tm-cremation-store:step-changed'));
         } else if ($el.getBoundingClientRect().top < 0) {
-            $el.scrollIntoView({ behavior: 'smooth' });
+            {{-- To the very top, so the header's cart button is in view too. --}}
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         }
     })"
 >
@@ -1199,10 +1202,7 @@ new class extends Component
                                         @if ($product->description)
                                             <p class="mt-1 text-xs text-zinc-500">{{ $product->description }}</p>
                                         @endif
-                                        <p class="mt-1 text-sm text-brand-700">{{ $product->priceLabel() }}</p>
-                                        @if ($note = $this->allowanceNote($product, 'container'))
-                                            <p class="text-xs font-medium text-brand-800">{{ $note }}</p>
-                                        @endif
+                                        <p class="mt-1 text-sm text-brand-700">{{ $this->slotPriceLabel($product, 'container') }}</p>
                                     </div>
                                 </button>
                                 @if ($product->imageUrl())
@@ -1248,10 +1248,7 @@ new class extends Component
                                         @if ($product->description)
                                             <p class="mt-1 text-xs text-zinc-500">{{ $product->description }}</p>
                                         @endif
-                                        <p class="mt-1 text-sm text-brand-700">{{ $product->priceLabel() }}</p>
-                                        @if ($note = $this->allowanceNote($product, 'urn'))
-                                            <p class="text-xs font-medium text-brand-800">{{ $note }}</p>
-                                        @endif
+                                        <p class="mt-1 text-sm text-brand-700">{{ $this->slotPriceLabel($product, 'urn') }}</p>
                                     </div>
                                 </button>
                                 @if ($product->imageUrl())
@@ -1557,9 +1554,21 @@ new class extends Component
 
             <div class="mt-8 flex items-center justify-between">
                 <flux:button variant="ghost" wire:click="backTo('addons')">{{ __('Back') }}</flux:button>
-                <flux:button variant="primary" class="!bg-store hover:!bg-store-hover !text-store-foreground" wire:click="goToDetails">
-                    {{ __('Continue') }}
-                </flux:button>
+                <div class="flex flex-wrap items-center justify-end gap-2">
+                    {{-- Back up to the top of the keepsakes, the same way a new step
+                         does (inside an embed the host page does the scrolling). --}}
+                    <flux:button
+                        type="button"
+                        x-on:click="window.self !== window.top
+                            ? window.dispatchEvent(new CustomEvent('tm-cremation-store:step-changed'))
+                            : window.scrollTo({ top: 0, behavior: 'smooth' })"
+                    >
+                        {{ __('Select Additional') }}
+                    </flux:button>
+                    <flux:button variant="primary" class="!bg-store hover:!bg-store-hover !text-store-foreground" wire:click="goToDetails">
+                        {{ __('Continue') }}
+                    </flux:button>
+                </div>
             </div>
         </div>
     @endif
@@ -1671,7 +1680,8 @@ new class extends Component
                                     <p class="text-xs font-medium text-brand-800">{{ __('Includes :amount package credit', ['amount' => '$'.number_format($discountCents / 100, 2)]) }}</p>
                                 @endif
                             </div>
-                            <span class="shrink-0 font-medium text-zinc-800">${{ number_format($cart->lineTotalCents($line) / 100, 2) }}</span>
+                            @php($lineTotalCents = $cart->lineTotalCents($line))
+                            <span class="shrink-0 font-medium text-zinc-800">{{ $lineTotalCents > 0 ? '$'.number_format($lineTotalCents / 100, 2) : __('Included') }}</span>
                         </li>
                     @endforeach
                 </ul>
