@@ -6,6 +6,8 @@ use Illuminate\Support\Facades\URL;
 use Stripe\ApiRequestor;
 use Stripe\HttpClient\ClientInterface;
 use Tests\TestCase;
+use WorkOS\Client as WorkOSClient;
+use WorkOS\RequestClient\RequestClientInterface;
 
 /*
 |--------------------------------------------------------------------------
@@ -215,6 +217,46 @@ function fakeStripe(): object
     ApiRequestor::setHttpClient($fake);
 
     return $fake;
+}
+
+/**
+ * Stands in for WorkOS's API so the real sign-in code runs, with the given
+ * person coming back from AuthKit when the authorization code is exchanged.
+ *
+ * @param  array<string, mixed>  $user
+ */
+function fakeWorkOS(array $user = []): void
+{
+    config([
+        'services.workos.client_id' => 'client_test',
+        'services.workos.secret' => 'sk_test_workos',
+        'services.workos.redirect_url' => 'https://'.config('app.root_domain').'/authenticate',
+    ]);
+
+    WorkOSClient::setRequestClient(new class($user) implements RequestClientInterface
+    {
+        /** @param array<string, mixed> $user */
+        public function __construct(private array $user) {}
+
+        public function request($method, $url, ?array $headers = null, ?array $params = null)
+        {
+            return [json_encode([
+                'user' => [
+                    'object' => 'user',
+                    'id' => 'user_workos_1',
+                    'email' => 'pat@example.com',
+                    'first_name' => 'Pat',
+                    'last_name' => 'Doe',
+                    'email_verified' => true,
+                    'profile_picture_url' => null,
+                    ...$this->user,
+                ],
+                'organization_id' => null,
+                'access_token' => 'access-token',
+                'refresh_token' => 'refresh-token',
+            ]), [], 200];
+        }
+    });
 }
 
 function stripeEvent(string $type, string $account, array $object): array

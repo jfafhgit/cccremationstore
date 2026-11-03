@@ -39,6 +39,9 @@ return [
         'client_id' => env('WORKOS_CLIENT_ID'),
         'secret' => env('WORKOS_API_KEY'),
         'redirect_url' => env('WORKOS_REDIRECT_URL'),
+        // Store staff finish signing in on the root domain, not their store's
+        // subdomain. Defaults to the staff-sso.callback route when unset.
+        'staff_redirect_url' => env('WORKOS_STAFF_REDIRECT_URL'),
     ],
 
     'platform' => [

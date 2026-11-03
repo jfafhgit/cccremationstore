@@ -31,6 +31,15 @@ class LocationSwitchController extends Controller
             ->where('slug', $request->route('location'))
             ->firstOrFail();
 
+        return redirect()->away(self::handoffUrl($storeUser, $location));
+    }
+
+    /**
+     * A single-use link that signs the staff member in at the location. Also
+     * used to finish a WorkOS sign-in, which happens on the root domain.
+     */
+    public static function handoffUrl(StoreUser $storeUser, Store $location): string
+    {
         $token = Str::random(64);
 
         Cache::put(self::cacheKey($token), [
@@ -38,7 +47,7 @@ class LocationSwitchController extends Controller
             'store_id' => $location->id,
         ], self::HANDOFF_LIFETIME_SECONDS);
 
-        return redirect()->away(route('portal.handoff', ['store' => $location->slug, 'token' => $token]));
+        return route('portal.handoff', ['store' => $location->slug, 'token' => $token]);
     }
 
     /**

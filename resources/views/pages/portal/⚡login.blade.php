@@ -20,6 +20,20 @@ new #[Layout('layouts::portal')] class extends Component
 
     public bool $remember = false;
 
+    /**
+     * Why a WorkOS sign-in sent the person back here, if it did.
+     */
+    public ?string $singleSignOnError = null;
+
+    public function mount(): void
+    {
+        $this->singleSignOnError = match (request()->query('sso')) {
+            'no-access' => __('That account does not have access to this location. Ask your funeral home\'s owner or a Treasured Memories admin to add you.'),
+            'failed' => __('Single sign-on did not complete. Please try again.'),
+            default => null,
+        };
+    }
+
     public function login(): void
     {
         $this->validate();
@@ -83,4 +97,15 @@ new #[Layout('layouts::portal')] class extends Component
             {{ __('Sign in') }}
         </flux:button>
     </form>
+
+    <flux:separator :text="__('or')" class="my-6" />
+
+    @if ($singleSignOnError)
+        <flux:callout variant="danger" icon="exclamation-triangle" class="mb-4" :text="$singleSignOnError" />
+    @endif
+
+    {{-- A full page load, not wire:navigate: WorkOS is on another domain. --}}
+    <flux:button :href="route('staff-sso.redirect', ['store' => \App\Models\Store::current()->slug])" class="w-full">
+        {{ __('Sign in with Treasured Memories SSO') }}
+    </flux:button>
 </div>

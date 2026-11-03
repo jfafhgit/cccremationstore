@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Portal\StaffSingleSignOnController;
 use App\Services\AdminSignIn;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Js;
@@ -41,3 +42,8 @@ Route::livewire('pending-approval', 'pages::admin.pending-approval')
 
 Route::post('logout', fn (AuthKitLogoutRequest $request) => $request->logout())
     ->middleware(['auth'])->name('logout');
+
+// Store staff sign in through WorkOS here on the root domain, and are then
+// handed back to their store's subdomain (see StaffSingleSignOnController).
+Route::get('staff-sso/callback', [StaffSingleSignOnController::class, 'callback'])->name('staff-sso.callback');
+Route::get('staff-sso/{store}', [StaffSingleSignOnController::class, 'redirect'])->name('staff-sso.redirect');

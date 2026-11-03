@@ -14,12 +14,13 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 /**
- * A funeral home staff member. One login (email and password) can have
- * access to several locations, with its own role at each.
+ * A funeral home staff member. One login (email and password, or WorkOS)
+ * can have access to several locations, with its own role at each.
  *
  * @property int $id
  * @property string $name
  * @property string $email
+ * @property string|null $workos_id
  * @property string|null $invitation_token
  * @property Carbon|null $invited_at
  * @property Carbon|null $invitation_accepted_at
@@ -41,6 +42,7 @@ class StoreUser extends Authenticatable
         'password',
         'invitation_token',
         'remember_token',
+        'workos_id',
     ];
 
     protected function casts(): array
