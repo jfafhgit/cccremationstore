@@ -1229,6 +1229,9 @@ new class extends Component
                     @if ($this->allowanceCents('urn') > 0)
                         <p class="mb-3 rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-800">{{ __('Your package includes a :amount allowance toward an urn.', ['amount' => '$'.number_format($this->allowanceCents('urn') / 100, 2)]) }}</p>
                     @endif
+                    @if ($this->storeModel()->chargesForFamilyProvidedUrn())
+                        <p class="mb-3 text-xs text-zinc-500">{{ __('The price of the urns includes the care, processing, and placement of the cremains into the urn.') }}</p>
+                    @endif
                     <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                         @foreach ($this->urns() as $product)
                             <div class="relative" wire:key="urn-{{ $product->id }}">

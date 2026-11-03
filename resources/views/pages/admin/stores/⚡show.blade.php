@@ -60,6 +60,11 @@ new class extends Component
 
     public bool $offersFamilyProvidedUrn = false;
 
+    public bool $chargesForFamilyProvidedUrn = false;
+
+    /** The family provided urn charge in dollars, e.g. "150.00". */
+    public string $familyProvidedUrnPrice = '';
+
     /** The funeral home's own Vital Statistics form, used instead of ours when set. */
     public string $vitalStatisticsUrl = '';
 
@@ -144,6 +149,10 @@ new class extends Component
         $this->preselectUrnVault = $store->preselect_urn_vault;
         $this->offersFamilyProvidedContainer = $store->offers_family_provided_container;
         $this->offersFamilyProvidedUrn = $store->offers_family_provided_urn;
+        $this->chargesForFamilyProvidedUrn = $store->charges_for_family_provided_urn;
+        $this->familyProvidedUrnPrice = $store->family_provided_urn_price_cents > 0
+            ? number_format($store->family_provided_urn_price_cents / 100, 2, '.', '')
+            : '';
         $this->vitalStatisticsUrl = $store->vital_statistics_url ?? '';
         $this->contactName = $store->contact_name ?? '';
         $this->contactEmail = $store->contact_email ?? '';
@@ -182,6 +191,8 @@ new class extends Component
             'preselectUrnVault' => ['boolean'],
             'offersFamilyProvidedContainer' => ['boolean'],
             'offersFamilyProvidedUrn' => ['boolean'],
+            'chargesForFamilyProvidedUrn' => ['boolean'],
+            'familyProvidedUrnPrice' => [Rule::requiredIf($this->offersFamilyProvidedUrn && $this->chargesForFamilyProvidedUrn), 'nullable', 'numeric', 'min:0.01', 'max:100000'],
             'vitalStatisticsUrl' => ['nullable', 'url:http,https', 'max:2048'],
             'contactName' => ['nullable', 'string', 'max:255'],
             'contactEmail' => ['nullable', 'email', 'max:255'],
@@ -218,6 +229,11 @@ new class extends Component
             'preselect_urn_vault' => $validated['preselectUrnVault'],
             'offers_family_provided_container' => $validated['offersFamilyProvidedContainer'],
             'offers_family_provided_urn' => $validated['offersFamilyProvidedUrn'],
+            'charges_for_family_provided_urn' => $validated['chargesForFamilyProvidedUrn'],
+            // Only shown while the charge is on; keep the last amount otherwise.
+            'family_provided_urn_price_cents' => filled($validated['familyProvidedUrnPrice'])
+                ? (int) round(((float) $validated['familyProvidedUrnPrice']) * 100)
+                : $this->currentStore->family_provided_urn_price_cents,
             'vital_statistics_url' => $validated['vitalStatisticsUrl'] ?: null,
             'contact_name' => $validated['contactName'] ?: null,
             'contact_email' => $validated['contactEmail'] ?: null,
@@ -848,9 +864,22 @@ new class extends Component
                             <flux:label>{{ __('Family provided options') }}</flux:label>
                             <div class="mt-1 flex flex-col gap-y-2">
                                 <flux:checkbox wire:model="offersFamilyProvidedContainer" :label="__('Add family provided cremation container option')" />
-                                <flux:checkbox wire:model="offersFamilyProvidedUrn" :label="__('Add family provided urn option')" />
+                                <flux:checkbox wire:model.live="offersFamilyProvidedUrn" :label="__('Add family provided urn option')" />
+                                @if ($offersFamilyProvidedUrn)
+                                    <div class="ml-7 flex flex-wrap items-center gap-3">
+                                        <flux:checkbox wire:model.live="chargesForFamilyProvidedUrn" :label="__('Charge for family-provided urn')" />
+                                        @if ($chargesForFamilyProvidedUrn)
+                                            <div class="w-32">
+                                                <flux:input type="number" step="0.01" min="0.01" max="100000" wire:model="familyProvidedUrnPrice" placeholder="150.00" :aria-label="__('Family provided urn price')">
+                                                    <x-slot name="iconLeading"><span class="text-xs text-zinc-400">$</span></x-slot>
+                                                </flux:input>
+                                            </div>
+                                        @endif
+                                    </div>
+                                @endif
                             </div>
-                            <flux:description>{{ __('Adds a no-charge option at the end of the cremation containers or urns, after every other option whatever the sort order, explaining that the family brings their own to the facility before cremation.') }}</flux:description>
+                            <flux:description>{{ __('Adds an option at the end of the cremation containers or urns, after every other option whatever the sort order, explaining that the family brings their own to the facility before cremation. Both are no charge unless you charge for the family provided urn, which covers the care, processing, and placement of the cremains into it.') }}</flux:description>
+                            <flux:error name="familyProvidedUrnPrice" />
                         </flux:field>
                         <flux:field>
                             <flux:label>{{ __('Vital Statistics form (optional)') }}</flux:label>

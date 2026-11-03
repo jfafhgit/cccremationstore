@@ -502,3 +502,43 @@ test('turning the family provided options on and off adds and hides their produc
     Livewire::test('pages::admin.stores.products', ['store' => $store])
         ->assertDontSee('Family Provided Cremation Container');
 });
+
+test('an admin can charge for the family provided urn', function () {
+    $store = Store::factory()->create();
+
+    Livewire::test('pages::admin.stores.show', ['store' => $store->id])
+        ->set('offersFamilyProvidedUrn', true)
+        ->set('chargesForFamilyProvidedUrn', true)
+        ->set('familyProvidedUrnPrice', '125.50')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $urn = $store->products()->where('is_family_provided', true)->sole();
+
+    expect($store->fresh()->only(['charges_for_family_provided_urn', 'family_provided_urn_price_cents']))
+        ->toBe(['charges_for_family_provided_urn' => true, 'family_provided_urn_price_cents' => 12550])
+        ->and($urn->price_cents)->toBe(12550)
+        ->and($urn->description)->toContain('The charge is for the care, processing, and placement of the cremains into the urn.');
+
+    Livewire::test('pages::admin.stores.show', ['store' => $store->id])
+        ->assertSet('familyProvidedUrnPrice', '125.50')
+        ->set('chargesForFamilyProvidedUrn', false)
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($urn->fresh()->price_cents)->toBe(0)
+        ->and($urn->fresh()->description)->not->toContain('The charge is for');
+});
+
+test('charging for the family provided urn needs a price', function () {
+    $store = Store::factory()->create();
+
+    Livewire::test('pages::admin.stores.show', ['store' => $store->id])
+        ->set('offersFamilyProvidedUrn', true)
+        ->set('chargesForFamilyProvidedUrn', true)
+        ->set('familyProvidedUrnPrice', '')
+        ->call('save')
+        ->assertHasErrors(['familyProvidedUrnPrice' => 'required']);
+
+    expect($store->fresh()->charges_for_family_provided_urn)->toBeFalse();
+});

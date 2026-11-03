@@ -50,6 +50,15 @@ class StoreFactory extends Factory
         return $this->state(['requires_urn_vault' => true]);
     }
 
+    public function chargesForFamilyProvidedUrn(int $priceCents = 15000): static
+    {
+        return $this->state([
+            'offers_family_provided_urn' => true,
+            'charges_for_family_provided_urn' => true,
+            'family_provided_urn_price_cents' => $priceCents,
+        ]);
+    }
+
     public function stripeConnected(): static
     {
         return $this->state([

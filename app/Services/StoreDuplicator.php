@@ -39,6 +39,8 @@ class StoreDuplicator
         'preselect_urn_vault',
         'offers_family_provided_container',
         'offers_family_provided_urn',
+        'charges_for_family_provided_urn',
+        'family_provided_urn_price_cents',
         'location_pricing_enabled',
         'timezone',
         'platform_fee_model',

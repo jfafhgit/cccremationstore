@@ -680,6 +680,53 @@ test('the family provided urn is always the last option, can be chosen, and is n
     $component->call('selectUrn', $familyUrn->id)->assertSet('urnId', $familyUrn->id);
 });
 
+test('a charged family provided urn shows its price and the urn disclosure, and the charge reaches the order', function () {
+    $this->store->update([
+        'offers_family_provided_urn' => true,
+        'charges_for_family_provided_urn' => true,
+        'family_provided_urn_price_cents' => 12500,
+    ]);
+    $this->store->syncFamilyProvidedProducts();
+    $familyUrn = $this->store->products()->where('is_family_provided', true)->sole();
+
+    Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $this->package->id)
+        ->call('goToContainers')
+        ->assertSeeInOrder([
+            'The price of the urns includes the care, processing, and placement of the cremains into the urn.',
+            'Family Provided Urn',
+            'The charge is for the care, processing, and placement of the cremains into the urn.',
+            '$125.00',
+        ])
+        ->call('selectUrn', $familyUrn->id);
+
+    $cart = new Cart($this->store);
+    $order = app(CheckoutService::class)->createOrder($this->store, $cart, [
+        'purchaser_first_name' => 'Sam',
+        'purchaser_last_name' => 'Rivera',
+        'purchaser_email' => 'sam@example.com',
+        'relationship_to_deceased' => 'Adult child',
+        'deceased_first_name' => 'Pat',
+        'deceased_last_name' => 'Rivera',
+    ]);
+
+    expect($order->items()->where('product_id', $familyUrn->id)->sole()->total_price_cents)->toBe(12500)
+        ->and($order->subtotal_cents)->toBe($this->package->price_cents + 12500);
+});
+
+test('the urn disclosure is not shown when the family provided urn is free', function () {
+    $this->store->update(['offers_family_provided_urn' => true]);
+    $this->store->syncFamilyProvidedProducts();
+
+    Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $this->package->id)
+        ->call('goToContainers')
+        ->assertSee('Family Provided Urn')
+        ->assertDontSee('The price of the urns includes');
+});
+
 test('switching to a package with an urn allowance never swaps in the family provided urn', function () {
     $this->store->update(['offers_family_provided_urn' => true]);
     $this->store->syncFamilyProvidedProducts();
