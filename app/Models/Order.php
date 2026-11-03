@@ -225,13 +225,17 @@ class Order extends Model
      * The signed link the purchaser uses to fill in the longer, in-depth
      * intake form after payment is secured. Not time-limited, since a
      * grieving family may reasonably come back to it days later.
+     *
+     * $embedded marks the link as opened from inside the embed's iframe,
+     * so the form renders without our own header and sizes the frame to fit.
      */
-    public function detailsUrl(): string
+    public function detailsUrl(bool $embedded = false): string
     {
-        return URL::signedRoute('storefront.order-details', [
+        return URL::signedRoute('storefront.order-details', array_filter([
             'store' => $this->store->slug,
             'order' => $this,
-        ]);
+            'embed' => $embedded ? 1 : null,
+        ]));
     }
 
     /**

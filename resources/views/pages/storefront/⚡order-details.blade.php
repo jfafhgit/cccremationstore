@@ -16,7 +16,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
-use Livewire\Attributes\Layout;
+use Illuminate\View\View;
 use Livewire\Component;
 use Stripe\Exception\ApiErrorException;
 use Stripe\PaymentIntent;
@@ -28,7 +28,7 @@ use Stripe\PaymentIntent;
  * Families can save and come back; staff are only emailed once it is
  * submitted complete. The same link is also Stripe's payment return_url.
  */
-new #[Layout('layouts::storefront')] class extends Component
+new class extends Component
 {
     // Deliberately not named "$order" — Livewire matches public property
     // names against test/mount parameters, and the route segment is also
@@ -156,6 +156,9 @@ new #[Layout('layouts::storefront')] class extends Component
     /** The PaymentIntent status as last confirmed with Stripe, if known. */
     public ?string $paymentStatus = null;
 
+    /** Opened from the embed's iframe after payment (see Order::detailsUrl()). */
+    public bool $embedded = false;
+
     /**
      * The {order} route parameter arrives as a raw id, not an Eloquent
      * model — we resolve it ourselves, scoped to the current store, rather
@@ -166,6 +169,7 @@ new #[Layout('layouts::storefront')] class extends Component
     public function mount(int|string $order): void
     {
         $this->currentOrder = Store::current()->orders()->with('detail')->findOrFail($order);
+        $this->embedded = request()->boolean('embed');
 
         $this->confirmPayment(app(CheckoutService::class));
 
@@ -183,6 +187,11 @@ new #[Layout('layouts::storefront')] class extends Component
             $this->nextOfKinPhone = $this->currentOrder->purchaser_phone ?? '';
             $this->nextOfKinEmail = $this->currentOrder->purchaser_email ?? '';
         }
+    }
+
+    public function render(): View
+    {
+        return $this->view()->layout($this->embedded ? 'layouts::storefront-embed' : 'layouts::storefront');
     }
 
     private function fillFrom(OrderDetail $detail): void
@@ -603,14 +612,16 @@ new #[Layout('layouts::storefront')] class extends Component
     }
 }; ?>
 
-<div class="mx-auto max-w-3xl px-4 py-10 sm:px-6">
+{{-- Arriving here from the embed's payment step, the host page is likely
+     scrolled down past the top of the form, so ask it to bring it into view. --}}
+<div class="mx-auto max-w-3xl px-4 py-10 sm:px-6" @if ($embedded) x-data x-init="window.self !== window.top && window.parent.postMessage({ type: 'tm-cremation-store:scroll-into-view' }, '*')" @endif>
     @if ($this->isAwaitingPayment())
         <div class="rounded-2xl border border-brand-100 bg-white p-6 shadow-sm sm:p-8">
             <flux:heading size="xl" class="font-serif">{{ __('We haven\'t received your payment yet.') }}</flux:heading>
             <flux:subheading class="mt-1">
                 {{ __('We couldn\'t confirm a payment for order :number. If you just paid, you\'ll receive a confirmation email shortly. Otherwise, you can return to checkout to complete your order — your selections have been saved.', ['number' => $currentOrder->order_number]) }}
             </flux:subheading>
-            <flux:button :href="route('storefront.start')" variant="primary" class="mt-6 !bg-store hover:!bg-store-hover !text-store-foreground">{{ __('Return to checkout') }}</flux:button>
+            <flux:button :href="route($embedded ? 'storefront.embed' : 'storefront.start')" variant="primary" class="mt-6 !bg-store hover:!bg-store-hover !text-store-foreground">{{ __('Return to checkout') }}</flux:button>
         </div>
     @else
         <div class="rounded-2xl border border-brand-100 bg-white p-6 shadow-sm sm:p-8">

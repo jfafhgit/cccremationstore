@@ -101,8 +101,9 @@
         }
 
         // The frame is sized to its content, so this page scrolls instead of
-        // the frame. Tell each frame how far its top is scrolled out of view
-        // so its sticky elements (like the keepsake allowance) stay visible.
+        // the frame. Tell each frame how far its top is scrolled out of view,
+        // and how much of it is on screen, so its sticky elements (like the
+        // keepsake allowance) and overlays (like the image zoom) stay visible.
         var viewportFrame = null;
 
         function reportViewport() {
@@ -110,9 +111,14 @@
 
             for (var k = 0; k < iframes.length; k++) {
                 if (iframes[k].contentWindow) {
+                    var rect = iframes[k].getBoundingClientRect();
+                    var visibleTop = Math.max(0, -rect.top);
+                    var visibleBottom = Math.min(rect.height, window.innerHeight - rect.top);
+
                     iframes[k].contentWindow.postMessage({
                         type: 'tm-cremation-store:viewport',
-                        top: Math.max(0, -iframes[k].getBoundingClientRect().top),
+                        top: visibleTop,
+                        height: Math.max(0, visibleBottom - visibleTop),
                     }, '*');
                 }
             }

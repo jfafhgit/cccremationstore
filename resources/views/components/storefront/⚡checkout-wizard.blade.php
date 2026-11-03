@@ -999,7 +999,7 @@ new class extends Component
             return;
         }
 
-        $this->redirectAfterPayment = $order->detailsUrl();
+        $this->redirectAfterPayment = $order->detailsUrl(embedded: $this->context === 'embed');
         $this->step = 'payment';
 
         $this->dispatch(
@@ -1316,11 +1316,16 @@ new class extends Component
                 <p class="mt-6 text-sm text-zinc-500">{{ __('No container or urn options are available for this arrangement — you can continue to the next step.') }}</p>
             @endif
 
-            <div x-show="zoom" style="display: none" x-transition.opacity class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/80 p-4" x-on:click="zoom = null" role="dialog" aria-modal="true">
-                <button type="button" class="absolute right-4 top-4 flex size-10 items-center justify-center rounded-full bg-white text-zinc-800" x-on:click="zoom = null" aria-label="{{ __('Close image') }}">
-                    <flux:icon.x-mark class="size-5" />
-                </button>
-                <img x-bind:src="zoom?.src" x-bind:alt="zoom?.name" class="max-h-full max-w-full rounded-lg object-contain shadow-2xl" x-on:click.stop>
+            {{-- In the embed the frame is as tall as the whole store, so the image
+                 is centered in the part of the frame that's on screen, which
+                 embed.js reports as --tm-viewport-top/--tm-viewport-height. --}}
+            <div x-show="zoom" style="display: none" x-transition.opacity class="fixed inset-0 z-50 bg-zinc-900/80" x-on:click="zoom = null" role="dialog" aria-modal="true">
+                <div class="absolute inset-x-0 top-[var(--tm-viewport-top,0px)] flex h-[var(--tm-viewport-height,100%)] items-center justify-center p-4">
+                    <button type="button" class="absolute right-4 top-4 flex size-10 items-center justify-center rounded-full bg-white text-zinc-800" x-on:click="zoom = null" aria-label="{{ __('Close image') }}">
+                        <flux:icon.x-mark class="size-5" />
+                    </button>
+                    <img x-bind:src="zoom?.src" x-bind:alt="zoom?.name" class="max-h-full max-w-full rounded-lg object-contain shadow-2xl" x-on:click.stop>
+                </div>
             </div>
 
             <div class="mt-8 flex items-center justify-between">
@@ -1538,11 +1543,16 @@ new class extends Component
                 <p class="mt-6 text-sm text-zinc-500">{{ __('No keepsakes are available for this option — you can continue to the next step.') }}</p>
             @endforelse
 
-            <div x-show="zoom" style="display: none" x-transition.opacity class="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/80 p-4" x-on:click="zoom = null" role="dialog" aria-modal="true">
-                <button type="button" class="absolute right-4 top-4 flex size-10 items-center justify-center rounded-full bg-white text-zinc-800" x-on:click="zoom = null" aria-label="{{ __('Close image') }}">
-                    <flux:icon.x-mark class="size-5" />
-                </button>
-                <img x-bind:src="zoom?.src" x-bind:alt="zoom?.name" class="max-h-full max-w-full rounded-lg object-contain shadow-2xl" x-on:click.stop>
+            {{-- In the embed the frame is as tall as the whole store, so the image
+                 is centered in the part of the frame that's on screen, which
+                 embed.js reports as --tm-viewport-top/--tm-viewport-height. --}}
+            <div x-show="zoom" style="display: none" x-transition.opacity class="fixed inset-0 z-50 bg-zinc-900/80" x-on:click="zoom = null" role="dialog" aria-modal="true">
+                <div class="absolute inset-x-0 top-[var(--tm-viewport-top,0px)] flex h-[var(--tm-viewport-height,100%)] items-center justify-center p-4">
+                    <button type="button" class="absolute right-4 top-4 flex size-10 items-center justify-center rounded-full bg-white text-zinc-800" x-on:click="zoom = null" aria-label="{{ __('Close image') }}">
+                        <flux:icon.x-mark class="size-5" />
+                    </button>
+                    <img x-bind:src="zoom?.src" x-bind:alt="zoom?.name" class="max-h-full max-w-full rounded-lg object-contain shadow-2xl" x-on:click.stop>
+                </div>
             </div>
 
             <div class="mt-8 flex items-center justify-between">

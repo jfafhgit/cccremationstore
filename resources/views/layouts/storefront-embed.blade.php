@@ -107,6 +107,14 @@
 
                 window.addEventListener('tm-cremation-store:step-changed', function () {
                     window.parent.postMessage({ type: 'tm-cremation-store:scroll-into-view' }, '*');
+
+                    // A plain fixed-height iframe (for sites that don't allow
+                    // embed.js) scrolls inside itself, so start the new step
+                    // at its top. When embed.js sizes the frame to fit, there's
+                    // nothing to scroll and this does nothing.
+                    if (document.documentElement.scrollHeight > window.innerHeight) {
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
                 });
 
                 // wire:navigate swaps the body, so observe the new wrapper too.
@@ -121,8 +129,9 @@
 
                 // The parent page does the scrolling, so sticky elements here
                 // never move on their own. embed.js reports how far this frame's
-                // top is scrolled above the visitor's view; sticky elements
-                // offset their "top" by it to stay on screen.
+                // top is scrolled above the visitor's view, and how much of the
+                // frame is on screen; sticky elements and overlays use these to
+                // stay where the visitor can see them.
                 window.addEventListener('message', function (event) {
                     if (event.source !== window.parent || !event.data || event.data.type !== 'tm-cremation-store:viewport') {
                         return;
@@ -130,6 +139,12 @@
 
                     var top = Math.max(0, Number(event.data.top) || 0);
                     document.documentElement.style.setProperty('--tm-viewport-top', top + 'px');
+
+                    var height = Number(event.data.height);
+
+                    if (height > 0) {
+                        document.documentElement.style.setProperty('--tm-viewport-height', height + 'px');
+                    }
                 });
             })();
 

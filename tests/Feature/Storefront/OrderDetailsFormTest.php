@@ -345,3 +345,17 @@ describe('the Memorial Story', function () {
         Http::assertNothingSent();
     });
 });
+
+test('the form opened from the embed renders without the storefront header', function () {
+    $this->store->update(['website_url' => 'https://riverside.example']);
+
+    $this->get($this->order->detailsUrl(embedded: true))
+        ->assertOk()
+        ->assertSeeHtml('id="tm-embed-content"')
+        ->assertDontSee("Back to {$this->store->name} website");
+
+    $this->get($this->order->detailsUrl())
+        ->assertOk()
+        ->assertDontSeeHtml('id="tm-embed-content"')
+        ->assertSee("Back to {$this->store->name} website");
+});
