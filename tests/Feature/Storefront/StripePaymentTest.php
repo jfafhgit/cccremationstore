@@ -311,3 +311,34 @@ test('the payment step lists everything in the cart alongside the payment form',
         ->assertSeeInOrder(['Your order', 'Direct Cremation', '$1,000.00', 'Fingerprint Pendant', 'Qty 2', '$100.00', 'Total due today', '$1,100.00'])
         ->assertSeeHtml('id="payment-element"');
 });
+
+test('the payment step summary leaves out the family provided container and the no burial urn vault', function () {
+    $package = Product::factory()->for($this->store)->category(ProductCategory::Package)->create(['name' => 'Direct Cremation']);
+    $familyContainer = Product::factory()->for($this->store)->category(ProductCategory::Container)->create(['name' => 'Family Provided Cremation Container', 'price_cents' => 0, 'is_family_provided' => true]);
+    $noBurial = Product::factory()->for($this->store)->category(ProductCategory::UrnVault)->create(['name' => 'No Burial', 'price_cents' => 0]);
+
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->call('selectPackage', $package->id)
+        ->call('goToContainers')
+        ->call('selectContainer', $familyContainer->id)
+        ->call('selectUrnVault', $noBurial->id)
+        ->call('goToAddons')
+        ->call('goToKeepsakes')
+        ->call('goToDetails')
+        ->set('deceasedFirstName', 'Pat')
+        ->set('deceasedLastName', 'Rivera')
+        ->set('relationshipToDeceased', 'Adult child')
+        ->set('purchaserFirstName', 'Sam')
+        ->set('purchaserLastName', 'Rivera')
+        ->set('purchaserEmail', 'sam@example.com')
+        ->set('purchaserPhone', '555-0100')
+        ->call('submitDetails');
+
+    $component->assertSet('step', 'payment')
+        ->assertSee('Direct Cremation')
+        ->assertDontSee('Family Provided Cremation Container')
+        ->assertDontSee('No Burial');
+
+    expect((new Cart($this->store))->allLines()->keys()->all())->toContain('container', 'urn_vault');
+});

@@ -895,6 +895,28 @@ class Cart
         return $lines;
     }
 
+    /**
+     * The lines shown to the customer in the cart. Placeholder choices that
+     * aren't really items, the family provided cremation container and a
+     * free urn vault ("No Burial"), stay in the cart but aren't listed.
+     *
+     * @return Collection<string, CartLine>
+     */
+    public function displayLines(): Collection
+    {
+        $lines = $this->allLines();
+
+        $hiddenProductIds = Product::query()
+            ->whereKey($lines->pluck('product_id')->all())
+            ->where(fn ($query) => $query
+                ->where(fn ($query) => $query->where('category', ProductCategory::Container)->where('is_family_provided', true))
+                ->orWhere(fn ($query) => $query->where('category', ProductCategory::UrnVault)->where('price_cents', 0)))
+            ->pluck('id')
+            ->all();
+
+        return $lines->reject(fn (array $line): bool => in_array($line['product_id'], $hiddenProductIds, true));
+    }
+
     public function isEmpty(): bool
     {
         return $this->allLines()->isEmpty();
@@ -918,11 +940,6 @@ class Cart
     public function hasUrnVault(): bool
     {
         return $this->state['urn_vault'] !== null;
-    }
-
-    public function itemCount(): int
-    {
-        return (int) $this->allLines()->sum('quantity');
     }
 
     public function subtotalCents(): int

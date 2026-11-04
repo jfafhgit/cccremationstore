@@ -55,3 +55,39 @@ test('the checkout wizard cannot set a single-quantity add-on above one', functi
     expect($lines->get("{$this->single->id}-0")['quantity'])->toBe(1)
         ->and($lines->get("{$this->multiple->id}-0")['quantity'])->toBe(3);
 });
+
+test('the cart drawer hides the family provided container and the no burial urn vault', function () {
+    $familyContainer = Product::factory()->for($this->store)->category(ProductCategory::Container)->create(['name' => 'Family Provided Cremation Container', 'price_cents' => 0, 'is_family_provided' => true]);
+    $noBurial = Product::factory()->for($this->store)->category(ProductCategory::UrnVault)->create(['name' => 'No Burial', 'price_cents' => 0]);
+    $urn = Product::factory()->for($this->store)->category(ProductCategory::Urn)->create(['name' => 'Bronze Urn']);
+    $cart = new Cart($this->store);
+    $cart->selectSlot($familyContainer);
+    $cart->selectSlot($noBurial);
+    $cart->selectSlot($urn);
+
+    Livewire::test('storefront.cart-drawer', ['store' => $this->store])
+        ->assertSee('Bronze Urn')
+        ->assertDontSee('Family Provided Cremation Container')
+        ->assertDontSee('No Burial');
+
+    expect($cart->allLines()->keys()->all())->toContain('container', 'urn_vault');
+});
+
+test('the cart button marks a non-empty cart without showing a count', function () {
+    $component = Livewire::test('storefront.cart-drawer', ['store' => $this->store])
+        ->assertDontSeeHtml('data-cart-indicator');
+
+    $cart = new Cart($this->store);
+    $cart->addLine($this->multiple, quantity: 3);
+
+    $component->call('refreshCart')
+        ->assertSeeHtml('data-cart-indicator');
+});
+
+test('the cart drawer still shows a paid urn vault', function () {
+    $vault = Product::factory()->for($this->store)->category(ProductCategory::UrnVault)->create(['name' => 'Concrete Vault', 'price_cents' => 45000]);
+    (new Cart($this->store))->selectSlot($vault);
+
+    Livewire::test('storefront.cart-drawer', ['store' => $this->store])
+        ->assertSee('Concrete Vault');
+});

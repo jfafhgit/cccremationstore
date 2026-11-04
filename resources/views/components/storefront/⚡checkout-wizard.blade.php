@@ -1668,7 +1668,7 @@ new class extends Component
                 <flux:heading size="lg" class="font-serif">{{ __('Your order') }}</flux:heading>
     
                 <ul class="mt-4 divide-y divide-zinc-100 text-sm">
-                    @foreach ($cart->allLines() as $key => $line)
+                    @foreach ($cart->displayLines() as $key => $line)
                         @php($discountCents = $cart->lineDiscountCents($line))
                         <li class="flex items-start justify-between gap-3 py-3 first:pt-0" wire:key="summary-line-{{ $key }}">
                             <div class="min-w-0">

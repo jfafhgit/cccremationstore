@@ -109,10 +109,8 @@ new class extends Component {
     >
         <span class="relative flex size-10 items-center justify-center rounded-full border border-brand-200 bg-white text-brand-800 transition hover:bg-brand-50">
             <flux:icon.shopping-bag class="size-5" />
-            @if ($store && $this->cart()->itemCount() > 0)
-                <span class="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-store text-[10px] font-semibold text-store-foreground">
-                    {{ $this->cart()->itemCount() }}
-                </span>
+            @if ($store && ! $this->cart()->isEmpty())
+                <span class="absolute -right-0.5 -top-0.5 size-3 rounded-full bg-store ring-2 ring-white" data-cart-indicator aria-hidden="true"></span>
             @endif
         </span>
         @if ($store && ! $this->cart()->isEmpty())
@@ -149,7 +147,7 @@ new class extends Component {
                         <p class="text-sm text-zinc-500">{{ __("You haven't selected anything yet.") }}</p>
                     @elseif ($store)
                         <ul class="space-y-4">
-                            @foreach ($this->cart()->allLines() as $key => $line)
+                            @foreach ($this->cart()->displayLines() as $key => $line)
                                 @php($discountCents = $this->cart()->lineDiscountCents($line))
                                 {{-- Free, or fully covered by the package (not an allowance), so it just reads "Included" with no price or discount. --}}
                                 @php($isIncluded = $this->cart()->lineRegularTotalCents($line) === 0 || ($discountCents > 0 && $this->cart()->lineTotalCents($line) === 0 && ! ($line['allowance_cents'] ?? 0)))
