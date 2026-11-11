@@ -63,6 +63,15 @@ test('the allowance only applies while its product is in the cart', function () 
         ->and($this->cart->lineTotalCents($this->cart->allLines()->get($this->pendant->id.'-0')))->toBe(20000);
 });
 
+test('an allowance line is limited to a single quantity', function () {
+    $key = $this->legacyTouch->id.'-0';
+
+    $this->cart->updateLineQuantity($key, 3);
+
+    expect($this->cart->isSingleQuantityLine($key))->toBeTrue()
+        ->and($this->cart->allLines()->get($key)['quantity'])->toBe(1);
+});
+
 test('the keepsakes step shows how much of the allowance is left', function () {
     Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
         ->set('step', 'keepsakes')

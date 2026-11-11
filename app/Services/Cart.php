@@ -485,11 +485,16 @@ class Cart
 
     /**
      * Whether a line is an add-on / service without "Allow quantity > 1" or
-     * per-unit pricing, so the customer can only ever have one of it.
+     * per-unit pricing, or a keepsake allowance, so the customer can only
+     * ever have one of it.
      */
     public function isSingleQuantityLine(string $key): bool
     {
         $line = $this->state['lines'][$key] ?? null;
+
+        if ($line && $line['category'] === ProductCategory::KeepsakeAllowance->value) {
+            return true;
+        }
 
         if (! $line || $line['category'] !== ProductCategory::Addon->value) {
             return false;

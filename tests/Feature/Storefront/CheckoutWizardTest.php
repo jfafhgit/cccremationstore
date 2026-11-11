@@ -694,7 +694,7 @@ test('a charged family provided urn shows its price and the urn disclosure, and 
         ->call('selectPackage', $this->package->id)
         ->call('goToContainers')
         ->assertSeeInOrder([
-            'The price of the urns includes the care, processing, and placement of the cremains into the urn.',
+            'The price of our urns includes the care, processing, and placement of the cremains into the urn.',
             'Family Provided Urn',
             'The charge is for the care, processing, and placement of the cremains into the urn.',
             '$125.00',
@@ -724,7 +724,7 @@ test('the urn disclosure is not shown when the family provided urn is free', fun
         ->call('selectPackage', $this->package->id)
         ->call('goToContainers')
         ->assertSee('Family Provided Urn')
-        ->assertDontSee('The price of the urns includes');
+        ->assertDontSee('The price of our urns includes');
 });
 
 test('switching to a package with an urn allowance never swaps in the family provided urn', function () {
