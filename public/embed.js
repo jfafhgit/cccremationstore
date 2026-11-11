@@ -185,6 +185,25 @@
             }
         }
 
+        // The visitor made a choice and the store wants its next section
+        // (top px below the frame's top) at the top of the window, just
+        // below any header this page covers it with.
+        function scrollToOffsetIn(iframe, top, isCorrection) {
+            var target = window.pageYOffset + iframe.getBoundingClientRect().top + top - coveredTop(iframe) - 16;
+
+            if (Math.abs(target - window.pageYOffset) < 2) {
+                return;
+            }
+
+            window.scrollTo({ top: target, behavior: 'smooth' });
+
+            if (!isCorrection) {
+                setTimeout(function () {
+                    scrollToOffsetIn(iframe, top, true);
+                }, 700);
+            }
+        }
+
         window.addEventListener('scroll', scheduleViewportReport, { passive: true });
         window.addEventListener('resize', scheduleViewportReport);
 
@@ -212,6 +231,8 @@
                     scheduleViewportReport();
                 } else if (event.data.type === 'tm-cremation-store:scroll-into-view') {
                     scrollToTopOf(iframes[j]);
+                } else if (event.data.type === 'tm-cremation-store:scroll-to') {
+                    scrollToOffsetIn(iframes[j], Math.max(0, Number(event.data.top) || 0));
                 }
 
                 break;

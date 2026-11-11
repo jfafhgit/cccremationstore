@@ -1170,7 +1170,35 @@ new class extends Component
 
     {{-- Step 2: Cremation container, urn & urn vault --}}
     @if ($step === 'containers')
-        <div class="rounded-2xl border border-brand-100 bg-white p-6 shadow-sm sm:p-8" x-data="{ zoom: null }" x-on:keydown.escape.window="zoom = null">
+        {{-- After a choice, move on to the next section with its heading and
+             description in view. Inside an embed the host page does the
+             scrolling, so ask it (via embed.js) to bring that spot into view. --}}
+        <div
+            class="rounded-2xl border border-brand-100 bg-white p-6 shadow-sm sm:p-8"
+            x-data="{
+                zoom: null,
+                scrollToSection(section) {
+                    if (! section) {
+                        return;
+                    }
+
+                    if (window.self === window.top) {
+                        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+                        return;
+                    }
+
+                    const top = section.getBoundingClientRect().top + window.scrollY;
+
+                    window.parent.postMessage({ type: 'tm-cremation-store:scroll-to', top: top }, '*');
+
+                    if (document.documentElement.scrollHeight > window.innerHeight) {
+                        window.scrollTo({ top: top - 16, behavior: 'smooth' });
+                    }
+                },
+            }"
+            x-on:keydown.escape.window="zoom = null"
+        >
             <flux:heading size="xl" class="font-serif">{{ $this->urnVaults()->isNotEmpty() ? __('Cremation container, urn & vault') : __('Cremation container & urn') }}</flux:heading>
             <flux:subheading class="mt-1">{{ __('Choose what fits — anything marked required must be selected before you continue.') }}</flux:subheading>
 
@@ -1186,7 +1214,7 @@ new class extends Component
                     <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                         @foreach ($this->containers() as $product)
                             <div class="relative" wire:key="container-{{ $product->id }}">
-                                <button type="button" wire:click="selectContainer({{ $product->id }})" @class([
+                                <button type="button" x-on:click="$wire.selectContainer({{ $product->id }}).then(() => scrollToSection($refs.urns ?? $refs.urnVaults))" @class([
                                     'block h-full w-full overflow-hidden rounded-xl border text-left transition',
                                     'border-2 border-brand-600 bg-brand-50 ring-2 ring-brand-600/30' => $containerId === $product->id,
                                     'border border-zinc-200 hover:border-brand-300' => $containerId !== $product->id,
@@ -1221,7 +1249,7 @@ new class extends Component
             @endif
 
             @if ($this->urns()->isNotEmpty())
-                <div class="mt-8">
+                <div class="mt-8 scroll-mt-6" x-ref="urns">
                     <flux:heading size="lg">{{ __('Urn') }}</flux:heading>
                     @if ($this->storeModel()->requires_urn)
                         <p class="mb-3 text-xs text-zinc-500">{{ __('An urn selection is required to continue.') }}</p>
@@ -1235,7 +1263,7 @@ new class extends Component
                     <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                         @foreach ($this->urns() as $product)
                             <div class="relative" wire:key="urn-{{ $product->id }}">
-                                <button type="button" wire:click="selectUrn({{ $product->id }})" @class([
+                                <button type="button" x-on:click="$wire.selectUrn({{ $product->id }}).then(() => scrollToSection($refs.urnVaults))" @class([
                                     'block h-full w-full overflow-hidden rounded-xl border text-left transition',
                                     'border-2 border-brand-600 bg-brand-50 ring-2 ring-brand-600/30' => $urnId === $product->id,
                                     'border border-zinc-200 hover:border-brand-300' => $urnId !== $product->id,
@@ -1270,7 +1298,7 @@ new class extends Component
             @endif
 
             @if ($this->urnVaults()->isNotEmpty())
-                <div class="mt-8">
+                <div class="mt-8 scroll-mt-6" x-ref="urnVaults">
                     <flux:heading size="lg">{{ __('Urn vault') }}</flux:heading>
                     <p class="mb-3 text-xs text-zinc-500">
                         {{ $this->storeModel()->requires_urn_vault ? __('An urn vault selection is required to continue.') : __('Most cemeteries require a vault when an urn is buried.') }}
