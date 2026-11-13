@@ -84,11 +84,11 @@ test('an optional option can be cleared', function () {
     expect((new Cart($this->store))->selectedVariantId($this->handling->id))->toBeNull();
 });
 
-test('an optional item left unanswered counts as No thanks', function () {
+test('an optional item is not pre-answered and can be left unanswered', function () {
     $this->handling->update(['is_required' => false]);
 
     wizardAtAddons($this->package)
-        ->assertSeeHtml('value="" checked')
+        ->assertDontSeeHtml('value="" checked')
         ->call('goToKeepsakes')
         ->assertHasNoErrors()
         ->assertSet('step', 'keepsakes');
@@ -113,7 +113,8 @@ test('No thanks is not overridden by the default option on a return visit', func
     wizardAtAddons($this->package)
         ->call('selectExtraOption', $this->handling->id, null)
         ->call('backTo', 'containers')
-        ->call('goToAddons');
+        ->call('goToAddons')
+        ->assertSeeHtml('value="" checked');
 
     expect((new Cart($this->store))->selectedVariantId($this->handling->id))->toBeNull();
 });

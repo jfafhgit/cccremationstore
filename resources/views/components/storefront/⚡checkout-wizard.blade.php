@@ -1480,7 +1480,7 @@ new class extends Component
                                             @endforeach
                                             @unless ($product->is_required || $this->includesOption($product->id))
                                                 <label class="flex cursor-pointer items-start gap-2 text-sm text-zinc-500">
-                                                    <input type="radio" name="extra-option-{{ $product->id }}" value="" @checked($selectedOptionId === null) wire:click="selectExtraOption({{ $product->id }}, null)" class="mt-1 accent-[var(--color-brand-700)]" />
+                                                    <input type="radio" name="extra-option-{{ $product->id }}" value="" @checked($selectedOptionId === null && $this->cart()->hasDeclinedOption($product->id)) wire:click="selectExtraOption({{ $product->id }}, null)" class="mt-1 accent-[var(--color-brand-700)]" />
                                                     <span>{{ __('No thanks') }}</span>
                                                 </label>
                                             @endunless
