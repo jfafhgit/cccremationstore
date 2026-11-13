@@ -68,6 +68,20 @@ describe('the customer confirmation', function () {
             ->not->toContain('$0.00');
     });
 
+    test('leaves out a free urn vault but lists a paid one', function () {
+        OrderItem::factory()->for($this->order)->create(['name_snapshot' => 'No Burial', 'category_snapshot' => 'urn_vault', 'quantity' => 1, 'unit_price_cents' => 0, 'total_price_cents' => 0]);
+
+        $html = (string) (new OrderPaidNotification($this->order->fresh()))->toMail($this->order)->render();
+
+        expect($html)->not->toContain('No Burial');
+
+        OrderItem::factory()->for($this->order)->create(['name_snapshot' => 'Concrete Vault', 'category_snapshot' => 'urn_vault', 'quantity' => 1, 'unit_price_cents' => 45000, 'total_price_cents' => 45000]);
+
+        $html = (string) (new OrderPaidNotification($this->order->fresh()))->toMail($this->order)->render();
+
+        expect($html)->toContain('Concrete Vault');
+    });
+
     test('offers condolences only when the loved one has passed', function (OrderTiming $timing, bool $expectsCondolences) {
         $this->order->update(['timing' => $timing]);
 

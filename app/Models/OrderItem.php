@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\ProductCategory;
 use Database\Factories\OrderItemFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -77,6 +78,16 @@ class OrderItem extends Model
     public function discountCents(): int
     {
         return max(0, $this->regularTotalCents() - $this->total_price_cents);
+    }
+
+    /**
+     * A free urn vault ("No Burial") is a placeholder answer, not an item,
+     * so the customer's emails leave it out, as their cart did.
+     */
+    public function isNoUrnVault(): bool
+    {
+        return $this->category_snapshot === ProductCategory::UrnVault->value
+            && $this->regularTotalCents() === 0;
     }
 
     /**

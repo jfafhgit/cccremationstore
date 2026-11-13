@@ -56,7 +56,7 @@ trait FormatsOrderForMail
         return [
             'orderNumber' => $order->order_number,
             'paidAt' => $order->paid_at?->setTimezone($order->store->timezone)->format('F j, Y \a\t g:i A T'),
-            'items' => array_values($order->items->map(fn (OrderItem $item): array => [
+            'items' => array_values($order->items->reject(fn (OrderItem $item): bool => $item->isNoUrnVault())->map(fn (OrderItem $item): array => [
                 'name' => $this->escapeMarkdown($item->name_snapshot),
                 'variant' => $item->variant_snapshot ? $this->escapeMarkdown($item->variant_snapshot) : null,
                 'quantity' => $item->quantity,
