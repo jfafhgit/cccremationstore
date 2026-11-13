@@ -204,6 +204,19 @@
             }
         }
 
+        // The store wants a spot (bottom px below the frame's top) brought
+        // up into view, without scrolling past another spot (limit px below
+        // the frame's top) so it stays below any header this page has.
+        function revealIn(iframe, bottom, limit) {
+            var frameTop = iframe.getBoundingClientRect().top;
+            var overflow = frameTop + bottom + 16 - window.innerHeight;
+            var by = Math.min(overflow, frameTop + limit - coveredTop(iframe) - 16);
+
+            if (by > 0) {
+                window.scrollTo({ top: window.pageYOffset + by, behavior: 'smooth' });
+            }
+        }
+
         window.addEventListener('scroll', scheduleViewportReport, { passive: true });
         window.addEventListener('resize', scheduleViewportReport);
 
@@ -233,6 +246,8 @@
                     scrollToTopOf(iframes[j]);
                 } else if (event.data.type === 'tm-cremation-store:scroll-to') {
                     scrollToOffsetIn(iframes[j], Math.max(0, Number(event.data.top) || 0));
+                } else if (event.data.type === 'tm-cremation-store:reveal') {
+                    revealIn(iframes[j], Number(event.data.bottom) || 0, Number(event.data.limit) || 0);
                 }
 
                 break;

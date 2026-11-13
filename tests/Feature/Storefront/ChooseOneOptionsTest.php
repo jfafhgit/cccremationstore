@@ -84,19 +84,16 @@ test('an optional option can be cleared', function () {
     expect((new Cart($this->store))->selectedVariantId($this->handling->id))->toBeNull();
 });
 
-test('an optional item must be answered, with an option or No thanks, to continue', function () {
+test('an optional item left unanswered counts as No thanks', function () {
     $this->handling->update(['is_required' => false]);
 
-    $component = wizardAtAddons($this->package)
+    wizardAtAddons($this->package)
+        ->assertSeeHtml('value="" checked')
         ->call('goToKeepsakes')
-        ->assertHasErrors("options.{$this->handling->id}")
-        ->assertSee('Please choose an option for Handling of cremated remains, or No thanks.')
-        ->assertSet('step', 'addons');
-
-    $component->call('selectExtraOption', $this->handling->id, null)
         ->assertHasNoErrors()
-        ->call('goToKeepsakes')
         ->assertSet('step', 'keepsakes');
+
+    expect((new Cart($this->store))->selectedVariantId($this->handling->id))->toBeNull();
 });
 
 test('the store\'s default option is pre-selected', function () {

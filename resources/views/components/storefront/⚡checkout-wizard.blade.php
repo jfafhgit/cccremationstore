@@ -408,14 +408,6 @@ new class extends Component
     }
 
     /**
-     * Whether the customer answered an optional "choose one" item with "No thanks".
-     */
-    public function declinedOption(int $productId): bool
-    {
-        return $this->cart()->hasDeclinedOption($productId);
-    }
-
-    /**
      * What a selected service / add-on currently adds to the order at its
      * chosen quantity, after anything the package covers.
      */
@@ -841,18 +833,17 @@ new class extends Component
     }
 
     /**
-     * Every "choose one" item needs an answer, an option or "No thanks",
-     * before the customer moves on. Each unanswered item gets its own error.
+     * Required "choose one" items, and ones the package includes, need an
+     * option before the customer moves on; an optional item left unanswered
+     * counts as "No thanks". Each missing item gets its own error.
      */
     public function goToKeepsakes(): void
     {
-        $unanswered = $this->cart()->unansweredOptions();
+        $unanswered = $this->cart()->missingRequiredOptions();
 
         if ($unanswered->isNotEmpty()) {
             foreach ($unanswered as $product) {
-                $this->addError("options.{$product->id}", $product->is_required || $this->includesOption($product->id)
-                    ? __('Please choose an option for :name.', ['name' => $product->name])
-                    : __('Please choose an option for :name, or No thanks.', ['name' => $product->name]));
+                $this->addError("options.{$product->id}", __('Please choose an option for :name.', ['name' => $product->name]));
             }
 
             $this->addError('options', trans_choice('Please make a selection for the item marked above to continue.|Please make a selection for each item marked above to continue.', $unanswered->count()));
@@ -1059,7 +1050,37 @@ new class extends Component
 
     {{-- Step 1: Timing & Package --}}
     @if ($step === 'timing')
-        <div>
+        {{-- After choosing a package, scroll just enough to bring Continue into
+             view, never so far that the chosen package leaves the top. Inside
+             an embed sized to fit, the host page scrolls (via embed.js). --}}
+        <div
+            x-data="{
+                revealContinue(card) {
+                    const button = this.$refs.continue;
+
+                    if (! button || ! card) {
+                        return;
+                    }
+
+                    if (window.self === window.top || document.documentElement.scrollHeight > window.innerHeight) {
+                        const overflow = button.getBoundingClientRect().bottom + 16 - window.innerHeight;
+                        const by = Math.min(overflow, card.getBoundingClientRect().top - 16);
+
+                        if (by > 0) {
+                            window.scrollBy({ top: by, behavior: 'smooth' });
+                        }
+
+                        return;
+                    }
+
+                    window.parent.postMessage({
+                        type: 'tm-cremation-store:reveal',
+                        bottom: button.getBoundingClientRect().bottom + window.scrollY,
+                        limit: card.getBoundingClientRect().top + window.scrollY,
+                    }, '*');
+                },
+            }"
+        >
             <flux:heading size="xl" class="font-serif">{{ __('A few details to get started') }}</flux:heading>
             <flux:subheading class="mt-1">{{ __('This helps us show you appropriate options.') }}</flux:subheading>
 
@@ -1113,7 +1134,7 @@ new class extends Component
                         @forelse ($this->isALaCarte() ? collect([$this->basePackage()])->filter() : $this->packages() as $product)
                             <button
                                 type="button"
-                                @if (! $this->isALaCarte()) wire:click="selectPackage({{ $product->id }})" @endif
+                                @if (! $this->isALaCarte()) x-on:click="$wire.selectPackage({{ $product->id }}).then(() => revealContinue($el))" @endif
                                 {{-- flex-col + justify-start: a <button> otherwise vertically
                                      centers its content when the grid stretches it to row height. --}}
                                 @class([
@@ -1152,7 +1173,7 @@ new class extends Component
                     <flux:error name="package" :deep="false" class="mt-2" />
                 </div>
 
-                <div class="mt-8 flex justify-end">
+                <div class="mt-8 flex justify-end" x-ref="continue">
                     <flux:button variant="primary" class="!bg-store hover:!bg-store-hover !text-store-foreground" wire:click="goToContainers" :disabled="! $packageId">
                         {{ __('Continue') }}
                     </flux:button>
@@ -1459,7 +1480,7 @@ new class extends Component
                                             @endforeach
                                             @unless ($product->is_required || $this->includesOption($product->id))
                                                 <label class="flex cursor-pointer items-start gap-2 text-sm text-zinc-500">
-                                                    <input type="radio" name="extra-option-{{ $product->id }}" value="" @checked($selectedOptionId === null && $this->declinedOption($product->id)) wire:click="selectExtraOption({{ $product->id }}, null)" class="mt-1 accent-[var(--color-brand-700)]" />
+                                                    <input type="radio" name="extra-option-{{ $product->id }}" value="" @checked($selectedOptionId === null) wire:click="selectExtraOption({{ $product->id }}, null)" class="mt-1 accent-[var(--color-brand-700)]" />
                                                     <span>{{ __('No thanks') }}</span>
                                                 </label>
                                             @endunless
