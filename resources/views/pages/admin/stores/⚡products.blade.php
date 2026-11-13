@@ -18,6 +18,9 @@ new class extends Component
 {
     use WithFileUploads;
 
+    /** The included-option value for a choose-one item the family picks any option of. */
+    private const CUSTOMERS_CHOICE = 'any';
+
     public Store $currentStore;
 
     public ?int $editingProductId = null;
@@ -54,7 +57,7 @@ new class extends Component
     /**
      * A package's included add-ons / services / keepsakes, keyed by product ID.
      *
-     * @var array<int, array{included: bool, quantity: int|string}>
+     * @var array<int, array{included: bool, quantity: int|string, variant_id: int|string|null}>
      */
     public array $formIncludedProducts = [];
 
@@ -259,7 +262,10 @@ new class extends Component
             ->mapWithKeys(fn (Product $included) => [$included->id => [
                 'included' => true,
                 'quantity' => $included->pivot->included_quantity,
-                'variant_id' => $included->pivot->included_variant_id,
+                // A choose-one item with no option set lets the family pick any one.
+                'variant_id' => $included->category === ProductCategory::Choice
+                    ? ($included->pivot->included_variant_id ?? self::CUSTOMERS_CHOICE)
+                    : null,
             ]])
             ->all();
         $this->formContainerAllowance = $product->container_allowance_cents !== null ? number_format($product->container_allowance_cents / 100, 2, '.', '') : '';
@@ -301,7 +307,7 @@ new class extends Component
                 ? ["formIncludedProducts.{$includable->id}.variant_id" => [
                     "required_if_accepted:formIncludedProducts.{$includable->id}.included",
                     'nullable',
-                    Rule::in($includable->variants->pluck('id')),
+                    Rule::in([...$includable->variants->pluck('id'), self::CUSTOMERS_CHOICE]),
                 ]]
                 : ["formIncludedProducts.{$includable->id}.quantity" => ['nullable', 'integer', $includable->hasPerUnitPricing() ? 'min:0' : 'min:1', 'max:999']]
             )->all();
@@ -465,7 +471,7 @@ new class extends Component
         return collect($this->formIncludedProducts)
             ->filter(fn (array $selection, int $productId) => ($selection['included'] ?? false) && $includableIds->contains($productId))
             ->map(fn (array $selection, int $productId) => $includable->firstWhere('id', $productId)->category === ProductCategory::Choice
-                ? ['included_quantity' => 1, 'included_variant_id' => (int) $selection['variant_id']]
+                ? ['included_quantity' => 1, 'included_variant_id' => $selection['variant_id'] === self::CUSTOMERS_CHOICE ? null : (int) $selection['variant_id']]
                 : ['included_quantity' => ($selection['quantity'] ?? '') === '' ? 1 : (int) $selection['quantity'], 'included_variant_id' => null])
             ->all();
     }
@@ -837,7 +843,7 @@ new class extends Component
                     <flux:heading size="sm" class="text-zinc-500">{{ __('Included add-ons, services & keepsakes') }}</flux:heading>
                     <p class="text-xs text-zinc-500">{{ __('Checked items are free with this package. The family can still add more at the regular price where quantity allows.') }}</p>
                     <p class="text-xs text-zinc-500">{{ __('For items with a base price plus a per-unit price, the package always covers the base price. Enter 0 to cover only the base price, so the family pays just the per-unit price (e.g. the death certificate service, then each certificate).') }}</p>
-                    <p class="text-xs text-zinc-500">{{ __('For a choose-one item, pick the option the package includes. Families can upgrade to options that cost more, paying the difference; if no option costs more, the item is not shown to them at all.') }}</p>
+                    <p class="text-xs text-zinc-500">{{ __("For a choose-one item, pick the option the package includes, or \"Family's choice\" to let the family pick any one of them (the package covers the lowest-priced option). Families can upgrade to options that cost more, paying the difference.") }}</p>
                     @forelse ($this->includableProducts() as $includable)
                         <div class="flex items-center justify-between gap-3" wire:key="includable-{{ $includable->id }}">
                             <flux:checkbox wire:model.live="formIncludedProducts.{{ $includable->id }}.included" :label="$includable->name.' ('.$includable->category->label().')'" />
@@ -846,6 +852,7 @@ new class extends Component
                                     @if ($includable->category === ProductCategory::Choice)
                                         <flux:select size="sm" wire:model="formIncludedProducts.{{ $includable->id }}.variant_id" class="w-44" :aria-label="__('Included option')">
                                             <option value="">{{ __('Choose the included option') }}</option>
+                                            <option value="any">{{ __("Family's choice") }}</option>
                                             @foreach ($includable->variants as $option)
                                                 <option value="{{ $option->id }}">{{ $option->name }}</option>
                                             @endforeach

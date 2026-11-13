@@ -175,7 +175,7 @@ new class extends Component {
                                         @endunless
 
                                         <div class="mt-3 flex items-center justify-between">
-                                            @if ($this->isSlot($key) || (($line['is_required'] ?? false) && ! array_key_exists('base_price_cents', $line)) || $this->cart()->includedOptionId($line['product_id']) !== null || $this->cart()->isSingleQuantityLine($key))
+                                            @if ($this->isSlot($key) || (($line['is_required'] ?? false) && ! array_key_exists('base_price_cents', $line)) || $this->cart()->includesOption($line['product_id']) || $this->cart()->isSingleQuantityLine($key))
                                                 <span class="text-xs text-zinc-400">{{ __('Qty: 1') }}</span>
                                             @else
                                                 <div class="flex items-center gap-2">

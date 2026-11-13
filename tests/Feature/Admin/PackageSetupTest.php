@@ -196,3 +196,22 @@ test('a package can include one option of a choose-one item, which is required',
 
     expect($this->package->fresh()->includedProducts->first()->pivot->included_variant_id)->toBe($refrigeration->id);
 });
+
+test('a package can include a choose-one item as the family\'s choice of any option', function () {
+    $handling = Product::factory()->for($this->store)->category(ProductCategory::Choice)->create(['name' => 'Remains Handling']);
+    ProductVariant::factory()->for($handling)->create(['name' => 'Pick up']);
+
+    $component = Livewire::test('pages::admin.stores.products', ['store' => $this->store])
+        ->call('editProduct', $this->package->id)
+        ->set('formIncludedProducts', [$handling->id => ['included' => true, 'variant_id' => 'any']])
+        ->call('saveProduct')
+        ->assertHasNoErrors();
+
+    $inclusion = $this->package->fresh()->includedProducts->sole();
+
+    expect($inclusion->id)->toBe($handling->id)
+        ->and($inclusion->pivot->included_variant_id)->toBeNull();
+
+    $component->call('editProduct', $this->package->id)
+        ->assertSet("formIncludedProducts.{$handling->id}.variant_id", 'any');
+});

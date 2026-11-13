@@ -138,9 +138,11 @@ class Product extends Model
     {
         $includedProducts = $this->includedProducts
             ->where('is_active', true)
-            ->reject(fn (Product $product) => $product->category === ProductCategory::Choice && ! $product->includedOption())
+            ->reject(fn (Product $product) => $product->category === ProductCategory::Choice && $product->variants->isEmpty())
             ->map(fn (Product $product) => match (true) {
-                $product->category === ProductCategory::Choice => "{$product->name} ({$product->includedOption()->name})",
+                $product->category === ProductCategory::Choice && $product->includedOption() !== null => "{$product->name} ({$product->includedOption()->name})",
+                // With no option set, the family picks any one of them.
+                $product->category === ProductCategory::Choice => "{$product->name} ({$product->variants->pluck('name')->join(', ', ' or ')})",
                 $product->pivot->included_quantity === 0 => __(':name (service fee)', ['name' => $product->name]),
                 $product->pivot->included_quantity > 1 => "{$product->name} ({$product->pivot->included_quantity})",
                 default => $product->name,

@@ -271,17 +271,32 @@ test('every urn is shown when the allowance would hide them all', function () {
     expect($component->instance()->urns())->toHaveCount(2);
 });
 
-test('switching to a package that hides the chosen urn swaps in the urn it covers', function () {
-    $this->premium->update(['urn_allowance_cents' => 20000, 'hide_options_below_allowance' => true]);
-    $cheapUrn = Product::factory()->for($this->store)->category(ProductCategory::Urn)->create(['price_cents' => 5000]);
-    $coveredUrn = Product::factory()->for($this->store)->category(ProductCategory::Urn)->create(['price_cents' => 20000]);
+test('switching to a different package starts the cart over, keeping the timing', function () {
+    $urn = Product::factory()->for($this->store)->category(ProductCategory::Urn)->create(['price_cents' => 5000]);
+    $flowers = Product::factory()->for($this->store)->category(ProductCategory::Addon)->create(['name' => 'Flower arrangement']);
+    $flowersKey = $flowers->id.'-0';
 
-    Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+    $component = Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
         ->call('selectTiming', 'immediate')
         ->call('selectPackage', $this->basic->id)
-        ->call('selectUrn', $cheapUrn->id)
-        ->call('selectPackage', $this->premium->id)
-        ->assertSet('urnId', $coveredUrn->id);
+        ->call('selectUrn', $urn->id)
+        ->call('toggleExtra', $flowers->id)
+        // Choosing the same package again keeps everything.
+        ->call('selectPackage', $this->basic->id)
+        ->assertSet('urnId', $urn->id);
+
+    expect((new Cart($this->store))->allLines()->has($flowersKey))->toBeTrue();
+
+    $component->call('selectPackage', $this->premium->id)
+        ->assertSet('urnId', null)
+        ->assertSet('timing', 'immediate');
+
+    $cart = new Cart($this->store);
+
+    expect($cart->hasUrn())->toBeFalse()
+        ->and($cart->allLines()->has($flowersKey))->toBeFalse()
+        ->and($cart->includedQuantity($this->memorialKey))->toBe(1)
+        ->and($cart->state()['package']['product_id'])->toBe($this->premium->id);
 });
 
 test('the addons step leaves out items the package includes', function () {

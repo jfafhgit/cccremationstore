@@ -363,13 +363,13 @@ new class extends Component
 
     /**
      * An option's price, or for an item the package includes: "Included" for
-     * the included option and the extra cost of each upgrade.
+     * the options it covers and the extra cost of each upgrade.
      */
     public function optionPriceLabel(Product $product, ProductVariant $option): string
     {
-        $includedOption = $product->variants->firstWhere('id', $this->includedOptionId($product->id));
+        $creditCents = $this->cart()->packageOptionCreditCents($product->id);
 
-        if (! $includedOption) {
+        if ($creditCents === null) {
             return '$'.number_format($product->optionPriceCents($option) / 100, 2);
         }
 
@@ -377,7 +377,7 @@ new class extends Component
             return __('Included');
         }
 
-        return '+$'.number_format(($product->optionPriceCents($option) - $product->optionPriceCents($includedOption)) / 100, 2);
+        return '+$'.number_format(($product->optionPriceCents($option) - $creditCents) / 100, 2);
     }
 
     /**
@@ -503,21 +503,19 @@ new class extends Component
     }
 
     /**
-     * When the package includes one of a choose-one item's options, offer
-     * only the options it fully covers (the same price) and the ones that
-     * cost more; with nothing else to choose, the item isn't shown at all
-     * (it's listed on the package instead).
+     * When the package includes a choose-one item, offer only the options it
+     * fully covers and the ones that cost more; with nothing else to choose,
+     * the item isn't shown at all (it's listed on the package instead).
      */
     private function withUpgradesOnly(Product $product): ?Product
     {
-        $includedOption = $product->variants->firstWhere('id', $this->includedOptionId($product->id));
+        $creditCents = $this->cart()->packageOptionCreditCents($product->id);
 
-        if (! $includedOption) {
+        if ($creditCents === null) {
             return $product;
         }
 
-        $includedCents = $product->optionPriceCents($includedOption);
-        $options = $product->variants->filter(fn (ProductVariant $option) => $product->optionPriceCents($option) >= $includedCents);
+        $options = $product->variants->filter(fn (ProductVariant $option) => $product->optionPriceCents($option) >= $creditCents);
 
         if ($options->count() < 2) {
             return null;
@@ -527,14 +525,14 @@ new class extends Component
     }
 
     /**
-     * Whether the package covers this option in full: the included option
-     * itself, or another option at the same price.
+     * Whether the package covers this option in full: the included option,
+     * or another option at the same price.
      */
     public function isCoveredOption(Product $product, ProductVariant $option): bool
     {
-        $includedOption = $product->variants->firstWhere('id', $this->includedOptionId($product->id));
+        $creditCents = $this->cart()->packageOptionCreditCents($product->id);
 
-        return $includedOption !== null && $product->optionPriceCents($option) <= $product->optionPriceCents($includedOption);
+        return $creditCents !== null && $product->optionPriceCents($option) <= $creditCents;
     }
 
     /**
@@ -547,11 +545,11 @@ new class extends Component
     }
 
     /**
-     * The option of a choose-one item the selected package includes, if any.
+     * Whether the selected package includes this choose-one item.
      */
-    public function includedOptionId(int $productId): ?int
+    public function includesOption(int $productId): bool
     {
-        return $this->cart()->includedOptionId($productId);
+        return $this->cart()->includesOption($productId);
     }
 
     /**
@@ -642,36 +640,10 @@ new class extends Component
         }
 
         $this->packageId = $productId;
-        $this->cart()->selectSlot($product);
-        $this->replaceUnavailableSlotSelections();
+        // A different package starts the cart over.
+        $this->cart()->selectPackage($product);
         $this->syncFromCart();
         $this->dispatch('cart-updated');
-    }
-
-    /**
-     * A new package may hide the container or urn already chosen (when it
-     * hides options below its allowance), so swap in the option it covers.
-     */
-    private function replaceUnavailableSlotSelections(): void
-    {
-        $cart = $this->cart();
-
-        foreach (['container' => $this->containers(), 'urn' => $this->urns()] as $slot => $options) {
-            $selectedProductId = $cart->state()[$slot]['product_id'] ?? null;
-
-            if ($selectedProductId === null || $options->contains('id', $selectedProductId)) {
-                continue;
-            }
-
-            // Bringing their own is the family's choice, never a stand-in.
-            $options = $options->reject(fn (Product $product) => $product->is_family_provided);
-
-            $replacement = $options->firstWhere('price_cents', '<=', $cart->packageAllowanceCents($slot)) ?? $options->first();
-
-            if ($replacement) {
-                $cart->selectSlot($replacement);
-            }
-        }
     }
 
     public function selectContainer(int $productId, ?int $variantId = null): void
@@ -878,7 +850,7 @@ new class extends Component
 
         if ($unanswered->isNotEmpty()) {
             foreach ($unanswered as $product) {
-                $this->addError("options.{$product->id}", $product->is_required
+                $this->addError("options.{$product->id}", $product->is_required || $this->includesOption($product->id)
                     ? __('Please choose an option for :name.', ['name' => $product->name])
                     : __('Please choose an option for :name, or No thanks.', ['name' => $product->name]));
             }
@@ -1438,12 +1410,12 @@ new class extends Component
                                         </div>
                                         <div class="shrink-0 sm:text-right">
                                             <p class="text-sm text-brand-700">{{ match (true) {
-                                                $hasOptions && $this->includedOptionId($product->id) && $this->hasUpgradeOption($product) => __('Upgrade available'),
+                                                $hasOptions && $this->includesOption($product->id) && $this->hasUpgradeOption($product) => __('Upgrade available'),
                                                 $hasOptions => __('Choose one'),
                                                 $includedQty > 0 || $this->includesBaseFee($product->id) => $this->includedNote($product, $includedQty),
                                                 default => $product->priceLabel(),
                                             } }}</p>
-                                            @if ($includedQty > 0 || $this->includesBaseFee($product->id) || $this->includedOptionId($product->id))
+                                            @if ($includedQty > 0 || $this->includesBaseFee($product->id) || $this->includesOption($product->id))
                                                 <span class="mt-1 inline-block rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Included with your package') }}</span>
                                             @elseif ($product->is_required)
                                                 <span class="mt-1 inline-block rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-800">{{ __('Required') }}</span>
@@ -1455,7 +1427,7 @@ new class extends Component
                                     @if ($hasOptions)
                                         <fieldset class="space-y-1 border-t border-brand-200 py-2 pr-3 pl-11">
                                             <legend class="sr-only">{{ __('Options for :name', ['name' => $product->name]) }}</legend>
-                                            @php($includedOptionId = $this->includedOptionId($product->id))
+                                            @php($isIncludedOption = $this->includesOption($product->id))
                                             @foreach ($product->variants as $option)
                                                 <div wire:key="extra-{{ $product->id }}-option-{{ $option->id }}" @if ($option->description) x-data="{ detail: false }" @endif>
                                                     <label class="flex cursor-pointer items-start gap-2 text-sm text-zinc-700">
@@ -1463,7 +1435,7 @@ new class extends Component
                                                         <span class="flex-1">
                                                             {{ $option->name }}
                                                             {{-- With an included option, the price sits beside the name so the upgrade reads clearly. --}}
-                                                            @if ($includedOptionId)
+                                                            @if ($isIncludedOption)
                                                                 <span @class([
                                                                     'ml-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium',
                                                                     'bg-brand-100 text-brand-800' => $this->isCoveredOption($product, $option),
@@ -1476,7 +1448,7 @@ new class extends Component
                                                                 </button>
                                                             @endif
                                                         </span>
-                                                        @unless ($includedOptionId)
+                                                        @unless ($isIncludedOption)
                                                             <span class="font-medium text-brand-700">{{ $this->optionPriceLabel($product, $option) }}</span>
                                                         @endunless
                                                     </label>
@@ -1485,7 +1457,7 @@ new class extends Component
                                                     @endif
                                                 </div>
                                             @endforeach
-                                            @unless ($product->is_required || $this->includedOptionId($product->id))
+                                            @unless ($product->is_required || $this->includesOption($product->id))
                                                 <label class="flex cursor-pointer items-start gap-2 text-sm text-zinc-500">
                                                     <input type="radio" name="extra-option-{{ $product->id }}" value="" @checked($selectedOptionId === null && $this->declinedOption($product->id)) wire:click="selectExtraOption({{ $product->id }}, null)" class="mt-1 accent-[var(--color-brand-700)]" />
                                                     <span>{{ __('No thanks') }}</span>

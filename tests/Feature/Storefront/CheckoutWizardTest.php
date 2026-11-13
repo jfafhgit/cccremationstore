@@ -727,7 +727,7 @@ test('the urn disclosure is not shown when the family provided urn is free', fun
         ->assertDontSee('The price of our urns includes');
 });
 
-test('switching to a package with an urn allowance never swaps in the family provided urn', function () {
+test('switching to a package with an urn allowance clears the urn and never offers the family provided urn', function () {
     $this->store->update(['offers_family_provided_urn' => true]);
     $this->store->syncFamilyProvidedProducts();
     $familyUrn = $this->store->products()->where('is_family_provided', true)->sole();
@@ -743,7 +743,7 @@ test('switching to a package with an urn allowance never swaps in the family pro
         ->call('selectPackage', $this->package->id)
         ->call('selectUrn', $cheapUrn->id)
         ->call('selectPackage', $premium->id)
-        ->assertSet('urnId', $coveredUrn->id);
+        ->assertSet('urnId', null);
 
     expect($component->instance()->urns()->pluck('id')->all())->toBe([$coveredUrn->id])->not->toContain($familyUrn->id);
 });
@@ -777,12 +777,12 @@ test('the family provided urn is not offered when the package has an urn allowan
         ->call('selectPackage', $this->package->id)
         ->call('selectUrn', $familyUrn->id)
         ->call('selectPackage', $premium->id)
-        ->assertSet('urnId', $urn->id);
+        ->assertSet('urnId', null);
 
     expect($component->instance()->urns()->pluck('id')->all())->toBe([$urn->id])
         ->and($component->instance()->containers()->pluck('id')->all())->toBe([$familyContainer->id]);
 
-    $component->call('selectUrn', $familyUrn->id)->assertSet('urnId', $urn->id);
+    $component->call('selectUrn', $familyUrn->id)->assertSet('urnId', null);
 });
 
 test('a required urn does not block an order when the only urn is a family provided one the package hides', function () {

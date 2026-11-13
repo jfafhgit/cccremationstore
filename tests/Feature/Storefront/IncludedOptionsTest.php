@@ -139,6 +139,48 @@ test('an included option can be swapped for another at the same price, and decli
     expect((new Cart($this->store))->hasDeclinedOption($handling->id))->toBeTrue();
 });
 
+test('a package can include the family\'s choice of any option, covering the lowest-priced one', function () {
+    $handling = Product::factory()->for($this->store)->category(ProductCategory::Choice)->create([
+        'name' => 'Remains Handling',
+        'price_cents' => 5000,
+        'is_required' => false,
+    ]);
+    $pickUp = ProductVariant::factory()->for($handling)->create(['name' => 'Pick up', 'price_delta_cents' => 0, 'sort_order' => 0]);
+    $ship = ProductVariant::factory()->for($handling)->create(['name' => 'Ship', 'price_delta_cents' => 0, 'sort_order' => 1]);
+    $courier = ProductVariant::factory()->for($handling)->create(['name' => 'Courier', 'price_delta_cents' => 2000, 'sort_order' => 2]);
+    $this->standard->includedProducts()->attach($handling->id, ['included_quantity' => 1, 'included_variant_id' => null]);
+
+    Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
+        ->call('selectTiming', 'immediate')
+        ->assertSee('Remains Handling (Pick up, Ship or Courier)');
+
+    $component = addonsStepFor($this->standard);
+
+    expect((new Cart($this->store))->selectedVariantId($handling->id))->toBeNull()
+        ->and($component->instance()->optionPriceLabel($handling, $ship))->toBe('Included')
+        ->and($component->instance()->optionPriceLabel($handling, $courier))->toBe('+$20.00');
+
+    $component->call('selectExtraOption', $handling->id, null)
+        ->call('selectExtraOption', $this->care->id, $this->refrigeration->id)
+        ->call('goToKeepsakes')
+        ->assertHasErrors("options.{$handling->id}")
+        ->call('selectExtraOption', $handling->id, $ship->id)
+        ->call('goToKeepsakes')
+        ->assertHasNoErrors();
+
+    $cart = new Cart($this->store);
+
+    expect($cart->hasDeclinedOption($handling->id))->toBeFalse()
+        ->and($cart->lineTotalCents($cart->allLines()->get($handling->id.'-'.$ship->id)))->toBe(0);
+
+    $cart->selectOption($handling, $courier);
+    expect($cart->lineTotalCents($cart->allLines()->get($handling->id.'-'.$courier->id)))->toBe(2000);
+
+    // Removing the upgrade goes back to an option the package covers.
+    $cart->removeLine($handling->id.'-'.$courier->id);
+    expect($cart->selectedVariantId($handling->id))->toBe($pickUp->id);
+});
+
 test('the package card lists the included option', function () {
     Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
         ->call('selectTiming', 'immediate')

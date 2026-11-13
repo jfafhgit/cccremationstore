@@ -310,6 +310,27 @@ class Cart
         };
     }
 
+    /**
+     * Select a package. Switching to a different package starts the cart
+     * over, keeping only the timing and city chosen before it (and the
+     * pending order, so checkout updates it rather than creating another).
+     */
+    public function selectPackage(Product $package): void
+    {
+        $currentPackageId = $this->state['package']['product_id'] ?? null;
+
+        if ($currentPackageId !== null && $currentPackageId !== $package->id) {
+            $this->state = [
+                ...$this->emptyState(),
+                'timing' => $this->state['timing'],
+                'location_id' => $this->state['location_id'],
+                'pending_order_id' => $this->state['pending_order_id'] ?? null,
+            ];
+        }
+
+        $this->selectSlot($package);
+    }
+
     public function selectSlot(Product $product, ?ProductVariant $variant = null): void
     {
         $slot = $this->slotKeyFor($product->category);
@@ -524,7 +545,7 @@ class Cart
      */
     public function clearOption(Product $product): void
     {
-        if ($product->is_required || $this->includedOptionId($product->id) !== null) {
+        if ($product->is_required || $this->includesOption($product->id)) {
             return;
         }
 
@@ -558,14 +579,16 @@ class Cart
     }
 
     /**
-     * Required "choose one" products the customer hasn't picked an option
-     * for yet.
+     * Required "choose one" products, and ones the package includes, that
+     * the customer hasn't picked an option for yet.
      *
      * @return Collection<int, Product>
      */
     public function missingRequiredOptions(): Collection
     {
-        return $this->unansweredOptions()->where('is_required', true)->values();
+        return $this->unansweredOptions()
+            ->filter(fn (Product $product) => $product->is_required || $this->includesOption($product->id))
+            ->values();
     }
 
     /**
@@ -620,7 +643,7 @@ class Cart
         }
 
         // A choose-one item the package includes is always exactly one.
-        if ($this->includedOptionId($this->state['lines'][$key]['product_id'] ?? 0) !== null) {
+        if ($this->includesOption($this->state['lines'][$key]['product_id'] ?? 0)) {
             $quantity = 1;
         }
 
@@ -638,12 +661,16 @@ class Cart
     public function removeLine(string $key): void
     {
         $line = $this->state['lines'][$key] ?? null;
-        $includedOptionId = $line ? $this->includedOptionId($line['product_id']) : null;
 
-        if ($includedOptionId !== null) {
-            // Removing an upgrade goes back to the option the package includes.
-            if ($line['variant_id'] !== $includedOptionId && ($option = ProductVariant::find($includedOptionId))) {
-                $this->selectOption($option->product, $option);
+        if ($line && $this->includesOption($line['product_id'])) {
+            // Removing an upgrade goes back to an option the package covers.
+            if (! $this->isCoveredOptionLine($line) && ($product = Product::with('variants')->find($line['product_id']))) {
+                $option = $product->variants->firstWhere('id', $this->includedOptionId($product->id))
+                    ?? $product->variants->sortBy(fn (ProductVariant $variant) => $product->optionPriceCents($variant))->first();
+
+                if ($option) {
+                    $this->selectOption($product, $option);
+                }
             }
 
             return;
@@ -669,18 +696,29 @@ class Cart
      */
     /**
      * Record the option of a choose-one item the package includes, and select
-     * it unless the customer already chose an option that costs more.
+     * it unless the customer already chose an option that costs more. With
+     * no option set, the family picks any one and the package covers the
+     * lowest-priced option.
      */
     private function includeOption(Product $product): void
     {
-        $option = $product->includedOption();
+        $option = $product->includedOption() ?? ($product->variants->count() === 1 ? $product->variants->first() : null);
+
+        $includedCents = $option
+            ? $product->optionPriceCents($option)
+            : $product->variants->min(fn (ProductVariant $variant) => $product->optionPriceCents($variant));
+
+        if ($includedCents === null) {
+            return;
+        }
+
+        $this->state['included_options'][$product->id] = ['variant_id' => $option?->id, 'credit_cents' => $includedCents];
+        // An included item can't be declined.
+        $this->state['declined_options'] = array_values(array_diff($this->declinedOptionIds(), [$product->id]));
 
         if (! $option) {
             return;
         }
-
-        $includedCents = $product->optionPriceCents($option);
-        $this->state['included_options'][$product->id] = ['variant_id' => $option->id, 'credit_cents' => $includedCents];
 
         $selected = $product->variants->firstWhere('id', $this->selectedVariantId($product->id));
 
@@ -690,11 +728,30 @@ class Cart
     }
 
     /**
-     * The option of a choose-one item the selected package includes, if any.
+     * The option of a choose-one item the selected package includes, if it
+     * names one (null too when the family picks any option).
      */
     public function includedOptionId(int $productId): ?int
     {
         return $this->state['included_options'][$productId]['variant_id'] ?? null;
+    }
+
+    /**
+     * Whether the selected package includes this choose-one item, either a
+     * set option or the family's choice of any.
+     */
+    public function includesOption(int $productId): bool
+    {
+        return array_key_exists($productId, $this->state['included_options'] ?? []);
+    }
+
+    /**
+     * How much of a choose-one item's price the selected package covers, or
+     * null when the package doesn't include it.
+     */
+    public function packageOptionCreditCents(int $productId): ?int
+    {
+        return $this->includesOption($productId) ? (int) $this->state['included_options'][$productId]['credit_cents'] : null;
     }
 
     /**
@@ -705,7 +762,7 @@ class Cart
      */
     public function isCoveredOptionLine(array $line): bool
     {
-        return $this->includedOptionId($line['product_id']) !== null
+        return $this->includesOption($line['product_id'])
             && ($line['variant_id'] ?? null) !== null
             && $this->lineTotalCents($line) === 0;
     }
