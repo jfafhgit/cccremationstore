@@ -133,7 +133,12 @@
         // How much of the top of the window this page covers with its own
         // fixed or sticky header (or reserves via scroll-padding-top), so the
         // top of the store, where its cart button is, isn't left underneath.
+        // Site builders often pin tall fixed layers (backgrounds, wrappers,
+        // hidden menus) to the top too; anything taller than a header could
+        // be is ignored, or the store would be scrolled to just below it,
+        // off the bottom of the screen.
         function coveredTop(iframe) {
+            var maxHeader = window.innerHeight * 0.3;
             var covered = parseFloat(window.getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
 
             if (!document.elementsFromPoint) {
@@ -153,7 +158,7 @@
                         if ((position === 'fixed' || position === 'sticky') && !el.contains(iframe)) {
                             var box = el.getBoundingClientRect();
 
-                            if (box.top <= 1) {
+                            if (box.top <= 1 && box.bottom <= maxHeader) {
                                 covered = Math.max(covered, box.bottom);
                             }
                         }
@@ -161,7 +166,7 @@
                 }
             }
 
-            return covered;
+            return Math.min(covered, maxHeader);
         }
 
         // A new checkout step began; if the visitor is scrolled past the top

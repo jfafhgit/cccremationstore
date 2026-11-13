@@ -1184,17 +1184,22 @@ new class extends Component
 
     {{-- Step 2: Cremation container, urn & urn vault --}}
     @if ($step === 'containers')
-        {{-- After a choice, move on to the next section with its heading and
-             description in view. Inside an embed the host page does the
-             scrolling, so ask it (via embed.js) to bring that spot into view. --}}
+        {{-- After the first choice in a section, move on to the next section
+             with its heading and description in view. Later choices there (a
+             customer comparing options) stay put. Inside an embed the host
+             page does the scrolling, so ask it (via embed.js) to bring that
+             spot into view. --}}
         <div
             class="rounded-2xl border border-brand-100 bg-white p-6 shadow-sm sm:p-8"
             x-data="{
                 zoom: null,
-                scrollToSection(section) {
-                    if (! section) {
+                movedOnFrom: {},
+                scrollToSection(section, from) {
+                    if (! section || this.movedOnFrom[from]) {
                         return;
                     }
+
+                    this.movedOnFrom[from] = true;
 
                     if (window.self === window.top) {
                         section.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1228,7 +1233,7 @@ new class extends Component
                     <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                         @foreach ($this->containers() as $product)
                             <div class="relative" wire:key="container-{{ $product->id }}">
-                                <button type="button" x-on:click="$wire.selectContainer({{ $product->id }}).then(() => scrollToSection($refs.urns ?? $refs.urnVaults))" @class([
+                                <button type="button" x-on:click="$wire.selectContainer({{ $product->id }}).then(() => scrollToSection($refs.urns ?? $refs.urnVaults, 'container'))" @class([
                                     'block h-full w-full overflow-hidden rounded-xl border text-left transition',
                                     'border-2 border-brand-600 bg-brand-50 ring-2 ring-brand-600/30' => $containerId === $product->id,
                                     'border border-zinc-200 hover:border-brand-300' => $containerId !== $product->id,
@@ -1248,8 +1253,8 @@ new class extends Component
                                     </div>
                                 </button>
                                 @if ($product->imageUrl())
-                                    <button type="button" class="absolute right-2 top-2 flex size-6 items-center justify-center rounded-full bg-white/90 text-zinc-700 shadow hover:bg-white" x-on:click="zoom = { src: @js($product->imageUrl()), name: @js($product->name) }" aria-label="{{ __('View full size image of :name', ['name' => $product->name]) }}">
-                                        <flux:icon.magnifying-glass-plus class="size-4" />
+                                    <button type="button" class="group absolute right-0.5 top-0.5 flex size-11 items-center justify-center rounded-full" x-on:click="zoom = { src: @js($product->imageUrl()), name: @js($product->name) }" aria-label="{{ __('View full size image of :name', ['name' => $product->name]) }}">
+                                        <span class="flex size-9 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-800 shadow-md transition group-hover:scale-105 group-hover:bg-brand-50"><flux:icon.magnifying-glass-plus class="size-5" /></span>
                                     </button>
                                 @endif
                             </div>
@@ -1281,7 +1286,7 @@ new class extends Component
                     <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                         @foreach ($this->urns() as $product)
                             <div class="relative" wire:key="urn-{{ $product->id }}">
-                                <button type="button" x-on:click="$wire.selectUrn({{ $product->id }}).then(() => scrollToSection($refs.urnVaults))" @class([
+                                <button type="button" x-on:click="$wire.selectUrn({{ $product->id }}).then(() => scrollToSection($refs.urnVaults, 'urn'))" @class([
                                     'block h-full w-full overflow-hidden rounded-xl border text-left transition',
                                     'border-2 border-brand-600 bg-brand-50 ring-2 ring-brand-600/30' => $urnId === $product->id,
                                     'border border-zinc-200 hover:border-brand-300' => $urnId !== $product->id,
@@ -1301,8 +1306,8 @@ new class extends Component
                                     </div>
                                 </button>
                                 @if ($product->imageUrl())
-                                    <button type="button" class="absolute right-2 top-2 flex size-6 items-center justify-center rounded-full bg-white/90 text-zinc-700 shadow hover:bg-white" x-on:click="zoom = { src: @js($product->imageUrl()), name: @js($product->name) }" aria-label="{{ __('View full size image of :name', ['name' => $product->name]) }}">
-                                        <flux:icon.magnifying-glass-plus class="size-4" />
+                                    <button type="button" class="group absolute right-0.5 top-0.5 flex size-11 items-center justify-center rounded-full" x-on:click="zoom = { src: @js($product->imageUrl()), name: @js($product->name) }" aria-label="{{ __('View full size image of :name', ['name' => $product->name]) }}">
+                                        <span class="flex size-9 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-800 shadow-md transition group-hover:scale-105 group-hover:bg-brand-50"><flux:icon.magnifying-glass-plus class="size-5" /></span>
                                     </button>
                                 @endif
                             </div>
@@ -1345,8 +1350,8 @@ new class extends Component
                                     </div>
                                 </button>
                                 @if ($product->imageUrl())
-                                    <button type="button" class="absolute right-2 top-2 flex size-6 items-center justify-center rounded-full bg-white/90 text-zinc-700 shadow hover:bg-white" x-on:click="zoom = { src: @js($product->imageUrl()), name: @js($product->name) }" aria-label="{{ __('View full size image of :name', ['name' => $product->name]) }}">
-                                        <flux:icon.magnifying-glass-plus class="size-4" />
+                                    <button type="button" class="group absolute right-0.5 top-0.5 flex size-11 items-center justify-center rounded-full" x-on:click="zoom = { src: @js($product->imageUrl()), name: @js($product->name) }" aria-label="{{ __('View full size image of :name', ['name' => $product->name]) }}">
+                                        <span class="flex size-9 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-800 shadow-md transition group-hover:scale-105 group-hover:bg-brand-50"><flux:icon.magnifying-glass-plus class="size-5" /></span>
                                     </button>
                                 @endif
                             </div>
