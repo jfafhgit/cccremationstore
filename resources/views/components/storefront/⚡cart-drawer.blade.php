@@ -195,7 +195,7 @@ new class extends Component {
                                                 </div>
                                             @endif
 
-                                            @if (($line['variant_id'] ?? null) !== null && $line['variant_id'] === $this->cart()->includedOptionId($line['product_id']))
+                                            @if ($this->cart()->isCoveredOptionLine($line))
                                                 <span class="text-xs font-medium text-brand-700">{{ __('Included') }}</span>
                                             @elseif ($this->isRequiredKey($key, $line))
                                                 <span class="text-xs font-medium text-brand-700">{{ in_array($key, ['container', 'urn', 'urn_vault'], true) ? __('Selection Required') : __('Required') }}</span>

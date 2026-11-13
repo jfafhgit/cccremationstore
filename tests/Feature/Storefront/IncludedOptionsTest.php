@@ -106,6 +106,39 @@ test('an included option with nothing to upgrade to is hidden but still on the o
         ->and($careItem->discountLabel())->toBe('Included with package');
 });
 
+test('an included option can be swapped for another at the same price, and declined only without the package', function () {
+    $handling = Product::factory()->for($this->store)->category(ProductCategory::Choice)->create([
+        'name' => 'Remains Handling',
+        'price_cents' => 5000,
+        'is_required' => false,
+    ]);
+    $pickUp = ProductVariant::factory()->for($handling)->create(['name' => 'Pick up', 'price_delta_cents' => 0, 'sort_order' => 0]);
+    $ship = ProductVariant::factory()->for($handling)->create(['name' => 'Ship', 'price_delta_cents' => 0, 'sort_order' => 1]);
+    $this->standard->includedProducts()->attach($handling->id, ['included_quantity' => 1, 'included_variant_id' => $pickUp->id]);
+
+    $component = addonsStepFor($this->standard);
+
+    expect($component->instance()->extras()->firstWhere('id', $handling->id)->variants->pluck('id')->all())
+        ->toBe([$pickUp->id, $ship->id]);
+
+    $component->call('selectExtraOption', $handling->id, null)
+        ->call('selectExtraOption', $handling->id, $ship->id)
+        ->assertDontSee('+$0.00');
+
+    $cart = new Cart($this->store);
+    $shipLine = $cart->allLines()->get($handling->id.'-'.$ship->id);
+
+    expect($cart->selectedVariantId($handling->id))->toBe($ship->id)
+        ->and($cart->lineTotalCents($shipLine))->toBe(0)
+        ->and($cart->isCoveredOptionLine($shipLine))->toBeTrue();
+
+    addonsStepFor($this->basic)
+        ->call('selectExtraOption', $handling->id, null)
+        ->assertSee('No thanks');
+
+    expect((new Cart($this->store))->hasDeclinedOption($handling->id))->toBeTrue();
+});
+
 test('the package card lists the included option', function () {
     Livewire::test('storefront.checkout-wizard', ['context' => 'page'])
         ->call('selectTiming', 'immediate')

@@ -373,7 +373,7 @@ new class extends Component
             return '$'.number_format($product->optionPriceCents($option) / 100, 2);
         }
 
-        if ($option->id === $includedOption->id) {
+        if ($this->isCoveredOption($product, $option)) {
             return __('Included');
         }
 
@@ -504,8 +504,9 @@ new class extends Component
 
     /**
      * When the package includes one of a choose-one item's options, offer
-     * only that option and the ones that cost more; with nothing to upgrade
-     * to, the item isn't shown at all (it's listed on the package instead).
+     * only the options it fully covers (the same price) and the ones that
+     * cost more; with nothing else to choose, the item isn't shown at all
+     * (it's listed on the package instead).
      */
     private function withUpgradesOnly(Product $product): ?Product
     {
@@ -518,11 +519,31 @@ new class extends Component
         $includedCents = $product->optionPriceCents($includedOption);
         $options = $product->variants->filter(fn (ProductVariant $option) => $product->optionPriceCents($option) >= $includedCents);
 
-        if (! $options->contains(fn (ProductVariant $option) => $product->optionPriceCents($option) > $includedCents)) {
+        if ($options->count() < 2) {
             return null;
         }
 
         return $product->setRelation('variants', $options->values());
+    }
+
+    /**
+     * Whether the package covers this option in full: the included option
+     * itself, or another option at the same price.
+     */
+    public function isCoveredOption(Product $product, ProductVariant $option): bool
+    {
+        $includedOption = $product->variants->firstWhere('id', $this->includedOptionId($product->id));
+
+        return $includedOption !== null && $product->optionPriceCents($option) <= $product->optionPriceCents($includedOption);
+    }
+
+    /**
+     * Whether a choose-one item the package includes offers an option that
+     * costs more than the included one.
+     */
+    public function hasUpgradeOption(Product $product): bool
+    {
+        return $product->variants->contains(fn (ProductVariant $option) => ! $this->isCoveredOption($product, $option));
     }
 
     /**
@@ -1205,12 +1226,12 @@ new class extends Component
             @if ($this->containers()->isNotEmpty())
                 <div class="mt-8">
                     <flux:heading size="lg">{{ __('Cremation container') }}</flux:heading>
-                    <p class="mb-3 text-xs text-zinc-500">
-                        {{ $this->storeModel()->requires_container ? __('Required by law for dignified care and handling.') : __('Optional — you can also decide later.') }}
-                    </p>
-                    @if ($this->allowanceCents('container') > 0)
-                        <p class="mb-3 rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-800">{{ __('Your package includes a :amount allowance toward a cremation container.', ['amount' => '$'.number_format($this->allowanceCents('container') / 100, 2)]) }}</p>
-                    @endif
+                    <div class="mb-3 space-y-1 rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-800">
+                        <p>{{ $this->storeModel()->requires_container ? __('Required by law for dignified care and handling.') : __('Optional — you can also decide later.') }}</p>
+                        @if ($this->allowanceCents('container') > 0)
+                            <p>{{ __('Your package includes a :amount allowance toward a cremation container.', ['amount' => '$'.number_format($this->allowanceCents('container') / 100, 2)]) }}</p>
+                        @endif
+                    </div>
                     <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                         @foreach ($this->containers() as $product)
                             <div class="relative" wire:key="container-{{ $product->id }}">
@@ -1251,14 +1272,18 @@ new class extends Component
             @if ($this->urns()->isNotEmpty())
                 <div class="mt-8 scroll-mt-6" x-ref="urns">
                     <flux:heading size="lg">{{ __('Urn') }}</flux:heading>
-                    @if ($this->storeModel()->requires_urn)
-                        <p class="mb-3 text-xs text-zinc-500">{{ __('An urn selection is required to continue.') }}</p>
-                    @endif
-                    @if ($this->allowanceCents('urn') > 0)
-                        <p class="mb-3 rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-800">{{ __('Your package includes a :amount allowance toward an urn.', ['amount' => '$'.number_format($this->allowanceCents('urn') / 100, 2)]) }}</p>
-                    @endif
-                    @if ($this->storeModel()->chargesForFamilyProvidedUrn())
-                        <p class="mb-3 text-xs text-zinc-500">{{ __('The price of our urns includes the care, processing, and placement of the cremains into the urn.') }}</p>
+                    @if ($this->storeModel()->requires_urn || $this->allowanceCents('urn') > 0 || $this->storeModel()->chargesForFamilyProvidedUrn())
+                        <div class="mb-3 space-y-1 rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-800">
+                            @if ($this->storeModel()->requires_urn)
+                                <p>{{ __('An urn selection is required to continue.') }}</p>
+                            @endif
+                            @if ($this->allowanceCents('urn') > 0)
+                                <p>{{ __('Your package includes a :amount allowance toward an urn.', ['amount' => '$'.number_format($this->allowanceCents('urn') / 100, 2)]) }}</p>
+                            @endif
+                            @if ($this->storeModel()->chargesForFamilyProvidedUrn())
+                                <p>{{ __('The price of our urns includes the care, processing, and placement of the cremains into the urn.') }}</p>
+                            @endif
+                        </div>
                     @endif
                     <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                         @foreach ($this->urns() as $product)
@@ -1300,9 +1325,10 @@ new class extends Component
             @if ($this->urnVaults()->isNotEmpty())
                 <div class="mt-8 scroll-mt-6" x-ref="urnVaults">
                     <flux:heading size="lg">{{ __('Urn vault') }}</flux:heading>
-                    <p class="mb-3 text-xs text-zinc-500">
-                        {{ $this->storeModel()->requires_urn_vault ? __('An urn vault selection is required to continue.') : __('Most cemeteries require a vault when an urn is buried.') }}
-                    </p>
+                    <div class="mb-3 space-y-1 rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-800">
+                        <p>{{ $this->storeModel()->requires_urn_vault ? __('An urn vault selection is required to continue.') : __('Most cemeteries require a vault when an urn is buried.') }}</p>
+                        <p><span class="font-semibold">{{ __('Laying a loved one to rest:') }}</span> {{ __('Our urn vaults give the urn lasting protection when cremated remains are buried. They meet the requirements of most cemeteries for in-ground burial.') }}</p>
+                    </div>
                     <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                         @foreach ($this->urnVaults() as $product)
                             <div class="relative" wire:key="urn-vault-{{ $product->id }}">
@@ -1412,7 +1438,7 @@ new class extends Component
                                         </div>
                                         <div class="shrink-0 sm:text-right">
                                             <p class="text-sm text-brand-700">{{ match (true) {
-                                                $hasOptions && $this->includedOptionId($product->id) => __('Upgrade available'),
+                                                $hasOptions && $this->includedOptionId($product->id) && $this->hasUpgradeOption($product) => __('Upgrade available'),
                                                 $hasOptions => __('Choose one'),
                                                 $includedQty > 0 || $this->includesBaseFee($product->id) => $this->includedNote($product, $includedQty),
                                                 default => $product->priceLabel(),
@@ -1440,9 +1466,9 @@ new class extends Component
                                                             @if ($includedOptionId)
                                                                 <span @class([
                                                                     'ml-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium',
-                                                                    'bg-brand-100 text-brand-800' => $option->id === $includedOptionId,
-                                                                    'border border-brand-300 bg-white text-brand-700' => $option->id !== $includedOptionId,
-                                                                ])>{{ $option->id === $includedOptionId ? __('Included') : __(':price upgrade', ['price' => $this->optionPriceLabel($product, $option)]) }}</span>
+                                                                    'bg-brand-100 text-brand-800' => $this->isCoveredOption($product, $option),
+                                                                    'border border-brand-300 bg-white text-brand-700' => ! $this->isCoveredOption($product, $option),
+                                                                ])>{{ $this->isCoveredOption($product, $option) ? __('Included') : __(':price upgrade', ['price' => $this->optionPriceLabel($product, $option)]) }}</span>
                                                             @endif
                                                             @if ($option->description)
                                                                 <button type="button" class="ml-1 text-xs text-brand-700 underline hover:text-brand-900" x-on:click.prevent="detail = ! detail" x-bind:aria-expanded="detail" aria-controls="option-detail-{{ $option->id }}">

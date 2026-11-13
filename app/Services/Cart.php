@@ -698,6 +698,19 @@ class Cart
     }
 
     /**
+     * Whether the package covers this choose-one line in full: its included
+     * option, or another option at the same price.
+     *
+     * @param  CartLine  $line
+     */
+    public function isCoveredOptionLine(array $line): bool
+    {
+        return $this->includedOptionId($line['product_id']) !== null
+            && ($line['variant_id'] ?? null) !== null
+            && $this->lineTotalCents($line) === 0;
+    }
+
+    /**
      * What the package covers of a choose-one line: the included option's price.
      *
      * @param  CartLine  $line
