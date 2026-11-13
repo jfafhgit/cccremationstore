@@ -151,6 +151,8 @@ new class extends Component {
                                 @php($discountCents = $this->cart()->lineDiscountCents($line))
                                 {{-- Free, or fully covered by the package (not an allowance), so it just reads "Included" with no price or discount. --}}
                                 @php($isIncluded = $this->cart()->lineRegularTotalCents($line) === 0 || ($discountCents > 0 && $this->cart()->lineTotalCents($line) === 0 && ! ($line['allowance_cents'] ?? 0)))
+                                {{-- A base-fee item with units the package includes shows only what the extra units cost, with no discount line. --}}
+                                @php($showsExtraUnitsOnly = ! $isIncluded && ($line['included_quantity'] ?? 0) > 0 && ($line['base_price_cents'] ?? 0) > 0)
                                 <li class="border-b border-zinc-100 pb-4" wire:key="cart-line-{{ $key }}">
                                 <div class="flex items-start gap-3 sm:gap-4">
                                     @unless (($line['category'] ?? 'package') === 'package')
@@ -166,7 +168,9 @@ new class extends Component {
                                         @php($regularTotalCents = $this->cart()->lineRegularTotalCents($line))
                                         @unless ($isIncluded)
                                             <p class="mt-1 text-sm text-zinc-500">
-                                                @if ($basePriceCents)
+                                                @if ($showsExtraUnitsOnly)
+                                                    ${{ number_format($line['unit_price_cents'] / 100, 2) }} {{ ($line['unit_label'] ?? null) ? __('per additional :unit', ['unit' => $line['unit_label']]) : __('each additional') }}
+                                                @elseif ($basePriceCents)
                                                     ${{ number_format($basePriceCents / 100, 2) }} + ${{ number_format($line['unit_price_cents'] / 100, 2) }} {{ ($line['unit_label'] ?? null) ? __('per :unit', ['unit' => $line['unit_label']]) : __('each') }}
                                                 @else
                                                     ${{ number_format($line['unit_price_cents'] / 100, 2) }} {{ __('each') }}
@@ -216,10 +220,10 @@ new class extends Component {
                                     </div>
 
                                     <span class="shrink-0 text-sm font-semibold text-zinc-800">
-                                        {{ $isIncluded ? __('Included') : '$'.number_format($regularTotalCents / 100, 2) }}
+                                        {{ $isIncluded ? __('Included') : '$'.number_format(($showsExtraUnitsOnly ? $this->cart()->lineTotalCents($line) : $regularTotalCents) / 100, 2) }}
                                     </span>
                                 </div>
-                                @if ($discountCents > 0 && ! $isIncluded)
+                                @if ($discountCents > 0 && ! $isIncluded && ! $showsExtraUnitsOnly)
                                     {{-- Indented to line up with the item details, past the image. --}}
                                     <div class="mt-2 flex items-center justify-between gap-3 pl-[4.75rem] text-sm text-brand-700 sm:pl-24">
                                         <span>

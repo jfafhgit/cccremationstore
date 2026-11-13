@@ -143,7 +143,7 @@ test('the Vital Statistics form link is hidden for unpaid orders and stores usin
         ->assertDontSee('Open Vital Statistics form');
 });
 
-test('order items show their regular price with the package discount on its own line', function () {
+test('order items show an allowance as a discount and only the extra units of a base-fee item', function () {
     Auth::guard('store')->login($this->staff);
     $order = Order::factory()->create(['store_id' => $this->store->id, 'paid_at' => now()]);
     OrderItem::factory()->for($order)->create([
@@ -163,7 +163,10 @@ test('order items show their regular price with the package discount on its own 
 
     Livewire::test('pages::portal.order-detail', ['order' => $order->id])
         ->assertSeeInOrder(['Walnut Urn', '$350.00', 'Package allowance', '−$200.00'])
-        ->assertSeeInOrder(['Death certificates', '$295.00', '2 included with package', '−$280.00']);
+        ->assertSeeInOrder(['Death certificates', '$15.00', '1 additional', '$15.00'])
+        ->assertDontSee('$295.00')
+        ->assertDontSee('included with package')
+        ->assertDontSee('−$280.00');
 });
 
 test('an order from a different store cannot be viewed in the portal', function () {

@@ -80,6 +80,25 @@ class OrderItem extends Model
     }
 
     /**
+     * Whether this is a base-fee item with units the package included and
+     * extra units charged, shown as just the cost of those extra units.
+     */
+    public function showsExtraUnitsOnly(): bool
+    {
+        return $this->base_price_cents_snapshot > 0
+            && $this->included_quantity > 0
+            && $this->total_price_cents > 0;
+    }
+
+    /**
+     * Units charged beyond those the package included.
+     */
+    public function extraQuantity(): int
+    {
+        return max(0, $this->quantity - $this->included_quantity);
+    }
+
+    /**
      * E.g. "Package allowance" or "2 included with package".
      */
     public function discountLabel(): string

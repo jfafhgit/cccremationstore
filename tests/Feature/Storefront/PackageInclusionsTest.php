@@ -210,7 +210,7 @@ test('the cart shows a no-cost package item as included rather than $0.00', func
         ->assertDontSee('$0.00');
 });
 
-test('the cart shows regular prices with the package discount on its own line', function () {
+test('the cart shows an allowance as a discount and only the extra units of a base-fee item', function () {
     $this->premium->update(['urn_allowance_cents' => 20000]);
     $urn = Product::factory()->for($this->store)->category(ProductCategory::Urn)->create(['price_cents' => 35000]);
 
@@ -221,7 +221,10 @@ test('the cart shows regular prices with the package discount on its own line', 
 
     Livewire::test('storefront.cart-drawer', ['store' => $this->store])
         ->assertSeeInOrder(['$350.00', 'Package allowance', '−$200.00'])
-        ->assertSeeInOrder(['$295.00', '2 included with package', '−$280.00']);
+        ->assertSeeInOrder(['Death certificates', '$15.00 per additional copy', '$15.00'])
+        ->assertDontSee('$295.00')
+        ->assertDontSee('included with package')
+        ->assertDontSee('−$280.00');
 });
 
 test('the cart shows an item the package fully includes as just included', function () {

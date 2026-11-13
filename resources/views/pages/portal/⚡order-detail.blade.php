@@ -94,11 +94,16 @@ new #[Layout('layouts::portal')] class extends Component
                             @endif
                         </div>
                         <div class="text-right">
-                            <p>${{ number_format($item->regularTotalCents() / 100, 2) }}</p>
-                            <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ $item->quantity }} &times; ${{ number_format($item->unit_price_cents / 100, 2) }}</p>
+                            @if ($item->showsExtraUnitsOnly())
+                                <p>${{ number_format($item->total_price_cents / 100, 2) }}</p>
+                                <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ __(':count additional', ['count' => $item->extraQuantity()]) }} &times; ${{ number_format($item->unit_price_cents / 100, 2) }}</p>
+                            @else
+                                <p>${{ number_format($item->regularTotalCents() / 100, 2) }}</p>
+                                <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ $item->quantity }} &times; ${{ number_format($item->unit_price_cents / 100, 2) }}</p>
+                            @endif
                         </div>
                     </div>
-                    @if ($item->discountCents() > 0)
+                    @if ($item->discountCents() > 0 && ! $item->showsExtraUnitsOnly())
                         <div class="mt-1 flex items-center justify-between text-zinc-500 dark:text-zinc-400">
                             <span class="pl-4">{{ $item->discountLabel() }}</span>
                             <span>&minus;${{ number_format($item->discountCents() / 100, 2) }}</span>
