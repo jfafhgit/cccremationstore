@@ -111,6 +111,15 @@ return [
             'expire' => 60,
             'throttle' => 60,
         ],
+
+        // Funeral home staff. Reset links open on the store's own subdomain
+        // (see StaffPasswordResetNotification).
+        'store_users' => [
+            'provider' => 'store_users',
+            'table' => 'store_user_password_reset_tokens',
+            'expire' => 60,
+            'throttle' => 60,
+        ],
     ],
 
     /*

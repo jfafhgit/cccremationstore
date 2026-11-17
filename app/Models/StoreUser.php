@@ -145,6 +145,35 @@ class StoreUser extends Authenticatable
     }
 
     /**
+     * The "choose a new password" page on the store's subdomain where the
+     * reset was requested.
+     */
+    public function passwordResetUrl(Store $store, string $token): string
+    {
+        return route('portal.password.reset', [
+            'store' => $store->slug,
+            'token' => $token,
+            'email' => $this->email,
+        ]);
+    }
+
+    /**
+     * Set a new password from a reset link. Following the link proves the
+     * staff member owns the email, so it also retires any pending invitation
+     * and signs out other remembered devices.
+     */
+    public function resetPassword(string $password): void
+    {
+        $this->forceFill([
+            'password' => $password,
+            'remember_token' => Str::random(60),
+            'invitation_token' => null,
+            'invitation_accepted_at' => $this->invitation_accepted_at ?? now(),
+            'email_verified_at' => $this->email_verified_at ?? now(),
+        ])->save();
+    }
+
+    /**
      * Set the password the staff member chose and retire the invitation.
      */
     public function acceptInvitation(string $password): void

@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('portal')->name('portal.')->group(function (): void {
     Route::middleware('guest:store')->group(function (): void {
         Route::livewire('login', 'pages::portal.login')->name('login');
+        Route::livewire('forgot-password', 'pages::portal.forgot-password')->name('password.request');
+        Route::livewire('reset-password/{token}', 'pages::portal.reset-password')->name('password.reset');
     });
 
     // Link from a staff invitation email. The page checks the token itself so

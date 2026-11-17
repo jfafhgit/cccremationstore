@@ -86,7 +86,10 @@ new #[Layout('layouts::portal')] class extends Component
         </flux:field>
 
         <flux:field>
-            <flux:label>{{ __('Password') }}</flux:label>
+            <div class="flex items-center justify-between">
+                <flux:label>{{ __('Password') }}</flux:label>
+                <flux:link :href="route('portal.password.request')" wire:navigate class="text-sm">{{ __('Forgot your password?') }}</flux:link>
+            </div>
             <flux:input type="password" wire:model="password" autocomplete="current-password" />
             <flux:error name="password" />
         </flux:field>
