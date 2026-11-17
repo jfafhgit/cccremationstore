@@ -79,8 +79,6 @@ new class extends Component
 
     public string $addressZip = '';
 
-    public string $phone = '';
-
     public string $citizenship = 'United States';
 
     /**
@@ -214,7 +212,6 @@ new class extends Component
         $this->addressCity = $detail->address_city ?? '';
         $this->addressState = $detail->address_state?->value ?? '';
         $this->addressZip = $detail->address_zip ?? '';
-        $this->phone = $detail->phone ?? '';
         $this->citizenship = $detail->citizenship ?? 'United States';
         $this->ssnOnFile = $detail->maskedSsn();
         $this->race = $detail->race ?? '';
@@ -326,7 +323,6 @@ new class extends Component
             'addressCity' => ['nullable', 'string', 'max:255'],
             'addressState' => ['nullable', Rule::enum(UsState::class)],
             'addressZip' => ['nullable', 'regex:/^\d{5}(-\d{4})?$/'],
-            'phone' => ['nullable', 'string', 'max:30'],
             'citizenship' => ['nullable', 'string', 'max:255'],
             'ssn' => ['nullable', 'regex:/^\d{3}-?\d{2}-?\d{4}$/'],
             'race' => ['nullable', 'string', 'max:255'],
@@ -553,7 +549,6 @@ new class extends Component
             'address_city' => $this->addressCity ?: null,
             'address_state' => $this->addressState ?: null,
             'address_zip' => $this->addressZip ?: null,
-            'phone' => $this->phone ?: null,
             'citizenship' => $this->citizenship ?: null,
             'race' => $this->race ?: null,
             'hispanic_origin' => $this->booleanFrom($this->hispanicOrigin),
@@ -831,11 +826,6 @@ new class extends Component
                             <flux:error name="addressZip" />
                         </flux:field>
 
-                        <flux:field class="sm:col-span-3">
-                            <flux:label>{{ __('Phone') }}</flux:label>
-                            <flux:input type="tel" wire:model="phone" autocomplete="off" />
-                            <flux:error name="phone" />
-                        </flux:field>
                         <flux:field class="sm:col-span-3">
                             <flux:label>{{ __('Citizen of') }}</flux:label>
                             <flux:input wire:model="citizenship" />

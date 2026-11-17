@@ -1,9 +1,11 @@
 <?php
 
 use App\Enums\OrderTiming;
+use App\Enums\ProductCategory;
 use App\Models\Order;
 use App\Models\OrderDetail;
 use App\Models\OrderItem;
+use App\Models\Product;
 use App\Models\Store;
 use App\Models\StoreUser;
 use App\Notifications\NewOrderNotification;
@@ -181,7 +183,34 @@ describe('the Vital Statistics alert', function () {
 
         $html = (string) (new OrderDetailsSubmittedNotification($this->order->fresh()))->toMail($this->staff)->render();
 
-        expect($html)->toContain('Pacemaker and/or defibrillator reported');
+        expect($html)->toContain('Pacemaker and/or defibrillator reported')
+            ->not->toContain('Pacemaker removal fee not paid');
+    });
+
+    test('says when a reported pacemaker\'s removal fee was not paid', function () {
+        Product::factory()->for($this->store)->category(ProductCategory::Addon)->create(['name' => 'Pacemaker Removal']);
+        $this->order->detail->update(['has_pacemaker' => true]);
+
+        $html = (string) (new OrderDetailsSubmittedNotification($this->order->fresh()))->toMail($this->staff)->render();
+
+        expect($html)->toContain('Pacemaker removal fee not paid');
+
+        OrderItem::factory()->for($this->order)->create(['category_snapshot' => 'addon', 'name_snapshot' => 'Pacemaker Removal']);
+
+        $html = (string) (new OrderDetailsSubmittedNotification($this->order->fresh()))->toMail($this->staff)->render();
+
+        expect($html)->toContain('Pacemaker and/or defibrillator reported')
+            ->not->toContain('Pacemaker removal fee not paid');
+    });
+
+    test('calls out a Social Security number that was not entered', function () {
+        expect((string) (new OrderDetailsSubmittedNotification($this->order))->toMail($this->staff)->render())
+            ->not->toContain('Social Security number not entered');
+
+        $this->order->detail->update(['ssn' => null]);
+
+        expect((string) (new OrderDetailsSubmittedNotification($this->order->fresh()))->toMail($this->staff)->render())
+            ->toContain('Social Security number not entered');
     });
 
     test('says when the family changed answers they already sent', function () {

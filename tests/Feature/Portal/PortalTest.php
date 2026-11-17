@@ -1,8 +1,10 @@
 <?php
 
+use App\Enums\ProductCategory;
 use App\Models\Order;
 use App\Models\OrderDetail;
 use App\Models\OrderItem;
+use App\Models\Product;
 use App\Models\Store;
 use App\Models\StoreUser;
 use Illuminate\Support\Facades\Auth;
@@ -117,6 +119,47 @@ test('staff see Vital Statistics with the Social Security number masked until th
         ->assertSee('Pacemaker and/or defibrillator reported')
         ->call('revealSsn')
         ->assertSee('123-45-6789');
+});
+
+test('staff are told when a reported pacemaker\'s removal fee was not paid', function () {
+    Auth::guard('store')->login($this->staff);
+    Product::factory()->for($this->store)->category(ProductCategory::Addon)->create(['name' => 'Pacemaker Removal']);
+    $order = Order::factory()->for($this->store)->paid()->create();
+    OrderDetail::factory()->for($order)->submitted()->create(['ssn' => '123-45-6789', 'has_pacemaker' => true]);
+
+    Livewire::test('pages::portal.order-detail', ['order' => $order->id])
+        ->assertSee('Pacemaker and/or defibrillator reported')
+        ->assertSee('Pacemaker removal fee not paid');
+
+    OrderItem::factory()->for($order)->create(['category_snapshot' => 'addon', 'name_snapshot' => 'Pacemaker Removal']);
+
+    Livewire::test('pages::portal.order-detail', ['order' => $order->id])
+        ->assertSee('Pacemaker and/or defibrillator reported')
+        ->assertDontSee('Pacemaker removal fee not paid');
+});
+
+test('staff are not told a pacemaker fee is unpaid when the store does not sell one', function () {
+    Auth::guard('store')->login($this->staff);
+    $order = Order::factory()->for($this->store)->paid()->create();
+    OrderDetail::factory()->for($order)->submitted()->create(['ssn' => '123-45-6789', 'has_pacemaker' => true]);
+
+    Livewire::test('pages::portal.order-detail', ['order' => $order->id])
+        ->assertSee('Pacemaker and/or defibrillator reported')
+        ->assertDontSee('Pacemaker removal fee not paid');
+});
+
+test('staff are told when the Social Security number was not entered', function () {
+    Auth::guard('store')->login($this->staff);
+    $order = Order::factory()->for($this->store)->paid()->create();
+    $detail = OrderDetail::factory()->for($order)->submitted()->create(['ssn' => null]);
+
+    Livewire::test('pages::portal.order-detail', ['order' => $order->id])
+        ->assertSee('Social Security number not entered');
+
+    $detail->update(['ssn' => '123-45-6789']);
+
+    Livewire::test('pages::portal.order-detail', ['order' => $order->id])
+        ->assertDontSee('Social Security number not entered');
 });
 
 test('staff can open the Vital Statistics form from a paid order, even after it was submitted', function () {

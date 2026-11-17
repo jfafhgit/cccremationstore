@@ -224,6 +224,16 @@ class Product extends Model
         };
     }
 
+    /**
+     * Whether a product (or order item) name is a store's pacemaker or
+     * defibrillator removal charge. Stores name their own products, so this
+     * goes by the words they all use rather than a setting.
+     */
+    public static function namesPacemakerCharge(?string $name): bool
+    {
+        return (bool) preg_match('/pacemaker|defibrillator/i', (string) $name);
+    }
+
     public function priceInDollars(): string
     {
         return number_format($this->price_cents / 100, 2);

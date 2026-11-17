@@ -80,7 +80,6 @@ class OrderDetail extends Model
         'address_city',
         'address_state',
         'address_zip',
-        'phone',
         'date_of_birth',
         'born_outside_us',
         'birth_city',
@@ -164,6 +163,56 @@ class OrderDetail extends Model
     }
 
     /**
+     * The warnings staff see above the answers, on the order page and in
+     * the Vital Statistics email: a pacemaker to remove (and whether its fee
+     * went unpaid) and a missing Social Security number.
+     *
+     * @return array<int, array{title: string, body: string}>
+     */
+    public function staffAlerts(): array
+    {
+        $alerts = [];
+
+        if ($this->has_pacemaker) {
+            $alerts[] = [
+                'title' => __('Pacemaker and/or defibrillator reported.'),
+                'body' => __('It must be removed before cremation.')
+                    .($this->isPacemakerFeeUnpaid() ? ' '.__('Pacemaker removal fee not paid.') : ''),
+            ];
+        }
+
+        if (blank($this->ssn)) {
+            $alerts[] = [
+                'title' => __('Social Security number not entered.'),
+                'body' => __('It is needed for the death certificate.'),
+            ];
+        }
+
+        return $alerts;
+    }
+
+    /**
+     * A pacemaker was reported, the store sells a removal charge, and the
+     * order has none. Stores without such a product charge for it some
+     * other way, so they are never told it went unpaid.
+     */
+    public function isPacemakerFeeUnpaid(): bool
+    {
+        if (! $this->has_pacemaker) {
+            return false;
+        }
+
+        $order = $this->order;
+
+        if ($order->items->contains(fn (OrderItem $item): bool => Product::namesPacemakerCharge($item->name_snapshot))) {
+            return false;
+        }
+
+        return $order->store->products()->active()->pluck('name')
+            ->contains(fn (string $name): bool => Product::namesPacemakerCharge($name));
+    }
+
+    /**
      * "•••-••-1234", safe to show without revealing the whole number.
      */
     public function maskedSsn(): ?string
@@ -198,7 +247,6 @@ class OrderDetail extends Model
                 'Date of passing' => $order->timing === OrderTiming::Immediate ? $this->date_of_death?->format('F j, Y') : null,
                 'Place of passing' => $order->timing === OrderTiming::Immediate ? $this->place_of_death : null,
                 'Address' => $this->address(),
-                'Phone' => $this->phone,
                 'Citizen of' => $this->citizenship,
                 self::SSN_LABEL => $this->maskedSsn(),
                 'Race' => $this->race,

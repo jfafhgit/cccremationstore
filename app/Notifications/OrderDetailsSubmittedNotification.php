@@ -50,7 +50,7 @@ class OrderDetailsSubmittedNotification extends Notification implements ShouldQu
                 'orderNumber' => $order->order_number,
                 'deceasedName' => $this->escapeMarkdown($order->deceasedName()),
                 'purchaserName' => $this->escapeMarkdown($order->purchaserName()),
-                'hasPacemaker' => $detail?->has_pacemaker === true,
+                'alerts' => $detail?->staffAlerts() ?? [],
                 'sections' => array_map(
                     fn (array $answers): array => array_map($this->escapeMarkdown(...), $answers),
                     $detail?->sections() ?? [],

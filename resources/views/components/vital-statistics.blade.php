@@ -15,9 +15,9 @@
         @endif
     </div>
 
-    @if ($detail->has_pacemaker)
-        <flux:callout variant="warning" icon="exclamation-triangle" class="mt-4" :heading="__('Pacemaker and/or defibrillator reported. It must be removed before cremation.')" />
-    @endif
+    @foreach ($detail->staffAlerts() as $alert)
+        <flux:callout variant="warning" icon="exclamation-triangle" class="mt-4" :heading="$alert['title'].' '.$alert['body']" />
+    @endforeach
 
     @foreach ($detail->sections() as $heading => $answers)
         <div class="mt-5">

@@ -7,11 +7,11 @@
 {{ $purchaserName }} completed the Vital Statistics for order {{ $orderNumber }}.
 @endif
 
-@if ($hasPacemaker)
+@foreach ($alerts as $alert)
 <x-mail::panel>
-**Pacemaker and/or defibrillator reported.** It must be removed before cremation.
+**{{ $alert['title'] }}** {{ $alert['body'] }}
 </x-mail::panel>
-@endif
+@endforeach
 
 @foreach ($sections as $heading => $answers)
 ## {{ $heading }}

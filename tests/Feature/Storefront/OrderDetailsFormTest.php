@@ -156,6 +156,24 @@ test('changing answers after submitting tells staff it was updated', function ()
         ->and($subjects[1])->toStartWith('Vital Statistics updated');
 });
 
+test('the loved one\'s phone number is no longer asked for or shown, but one already on file is kept', function () {
+    completeVitalStatistics(vitalStatisticsForm($this->order))->call('submit');
+    DB::table('order_details')->where('order_id', $this->order->id)->update(['phone' => '555-0199']);
+
+    completeVitalStatistics(vitalStatisticsForm($this->order))
+        ->assertDontSee('555-0199')
+        ->set('occupation', 'Librarian (retired)')
+        ->call('submit')
+        ->assertHasNoErrors();
+
+    $detail = $this->order->fresh()->detail;
+    $staffEmail = (string) (new OrderDetailsSubmittedNotification($this->order->fresh()))->toMail($this->staff)->render();
+
+    expect(DB::table('order_details')->where('order_id', $this->order->id)->value('phone'))->toBe('555-0199')
+        ->and($detail->sections()['Death certificate information'])->not->toHaveKey('Phone')
+        ->and($staffEmail)->not->toContain('555-0199');
+});
+
 test('answers to questions that no longer apply are not kept', function () {
     completeVitalStatistics(vitalStatisticsForm($this->order))
         ->set('maritalStatus', MaritalStatus::NeverMarried->value)
