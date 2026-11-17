@@ -1,9 +1,11 @@
 <?php
 
 use App\Enums\StoreUserRole;
+use App\Models\Order;
 use App\Models\Store;
 use App\Models\StoreUser;
 use App\Models\User;
+use App\Notifications\NewOrderNotification;
 use App\Notifications\StoreStaffInvitationNotification;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -98,6 +100,58 @@ describe('admin managing access', function () {
             ->call('removeStaffUser', $single->id);
 
         expect(StoreUser::find($single->id))->toBeNull();
+    });
+});
+
+describe('order emails', function () {
+    beforeEach(function () {
+        Notification::fake();
+        $this->actingAs(User::factory()->create());
+    });
+
+    test('an admin can turn off one location\'s order emails for a staff login, and back on', function () {
+        $component = Livewire::test('pages::admin.stores.show', ['store' => $this->south])
+            ->call('toggleStaffOrderEmails', $this->storeUser->id)
+            ->assertSee('No order emails');
+
+        $this->south->notifyStaff(new NewOrderNotification(Order::factory()->for($this->south)->create()));
+        Notification::assertNotSentTo($this->storeUser, NewOrderNotification::class);
+
+        $this->north->notifyStaff(new NewOrderNotification(Order::factory()->for($this->north)->create()));
+        Notification::assertSentToTimes($this->storeUser, NewOrderNotification::class, 1);
+
+        $component->call('toggleStaffOrderEmails', $this->storeUser->id)->assertDontSee('No order emails');
+
+        $this->south->notifyStaff(new NewOrderNotification(Order::factory()->for($this->south)->create()));
+        Notification::assertSentToTimes($this->storeUser, NewOrderNotification::class, 2);
+    });
+
+    test('staff with order emails off can still see the location\'s orders', function () {
+        $this->storeUser->stores()->updateExistingPivot($this->south->id, ['receives_order_emails' => false]);
+        $order = Order::factory()->for($this->south)->create();
+        actingAsTenant($this->south);
+
+        $this->actingAs($this->storeUser, 'store')
+            ->get(route('portal.order-detail', ['order' => $order]))
+            ->assertOk();
+    });
+
+    test('the main email is still alerted when the staff login sharing its address has order emails off', function () {
+        $this->south->update(['general_email' => 'jordan@example.com']);
+        $this->storeUser->stores()->updateExistingPivot($this->south->id, ['receives_order_emails' => false]);
+
+        $this->south->notifyStaff(new NewOrderNotification(Order::factory()->for($this->south)->create()));
+
+        Notification::assertNotSentTo($this->storeUser, NewOrderNotification::class);
+        Notification::assertSentOnDemand(NewOrderNotification::class, fn ($notification, $channels, $notifiable) => $notifiable->routes['mail'] === 'jordan@example.com');
+    });
+
+    test('an admin cannot change order emails for someone without access to the store', function () {
+        $outsider = StoreUser::factory()->forStore(Store::factory()->create())->create();
+
+        Livewire::test('pages::admin.stores.show', ['store' => $this->south])
+            ->call('toggleStaffOrderEmails', $outsider->id)
+            ->assertNotFound();
     });
 });
 

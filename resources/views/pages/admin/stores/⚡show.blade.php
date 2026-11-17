@@ -514,6 +514,22 @@ new class extends Component
     }
 
     /**
+     * Turn this location's order emails (new purchases, Vital Statistics,
+     * refunds) on or off for one staff login. They can still see every
+     * order in the portal either way.
+     */
+    public function toggleStaffOrderEmails(int $storeUserId): void
+    {
+        $membership = $this->currentStore->staff()->findOrFail($storeUserId)->membership;
+
+        $membership->update(['receives_order_emails' => ! $membership->receives_order_emails]);
+
+        Flux::toast(variant: 'success', text: $membership->receives_order_emails
+            ? __('Order emails turned on.')
+            : __('Order emails turned off. They can still see orders in the portal.'));
+    }
+
+    /**
      * Take away this store's access only. A login left with no locations at
      * all is deleted.
      */
@@ -1065,6 +1081,9 @@ new class extends Component
                             <div>
                                 <p class="font-medium text-zinc-800 dark:text-zinc-100">{{ $staff->name }}</p>
                                 <p class="text-xs text-zinc-400">{{ $staff->email }} &middot; {{ $staff->membership->role->value }}</p>
+                                @unless ($staff->membership->receives_order_emails)
+                                    <p class="text-xs text-zinc-400">{{ __('No order emails') }}</p>
+                                @endunless
                                 @if ($staff->stores_count > 1)
                                     <p class="text-xs text-zinc-400">{{ trans_choice('Also at :count other location|Also at :count other locations', $staff->stores_count - 1) }}</p>
                                 @endif
@@ -1080,6 +1099,9 @@ new class extends Component
                                         {{ $staff->invited_at ? __('Resend invitation') : __('Send invitation') }}
                                     </flux:button>
                                 @endunless
+                                <flux:button size="sm" variant="ghost" wire:click="toggleStaffOrderEmails({{ $staff->id }})">
+                                    {{ $staff->membership->receives_order_emails ? __('Turn off emails') : __('Turn on emails') }}
+                                </flux:button>
                                 <flux:button size="sm" variant="ghost" wire:click="removeStaffUser({{ $staff->id }})" wire:confirm="{{ __('Remove this person\'s access to :store?', ['store' => $currentStore->name]) }}">
                                     {{ __('Remove') }}
                                 </flux:button>

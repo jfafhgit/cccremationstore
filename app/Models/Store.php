@@ -280,28 +280,31 @@ class Store extends Model
         return $this->belongsToMany(StoreUser::class, 'store_memberships')
             ->using(StoreMembership::class)
             ->as('membership')
-            ->withPivot('id', 'role')
+            ->withPivot('id', 'role', 'receives_order_emails')
             ->withTimestamps();
     }
 
     /**
-     * Staff (any role) who have chosen a password and can sign in, and so
-     * should hear about new orders.
+     * Staff (any role) who have chosen a password and can sign in, and have
+     * not turned off order emails for this location.
      *
      * @return Collection<int, StoreUser>
      */
-    public function signedUpStaff(): Collection
+    public function staffReceivingOrderEmails(): Collection
     {
-        return $this->staff()->whereNotNull('invitation_accepted_at')->get();
+        return $this->staff()
+            ->wherePivot('receives_order_emails', true)
+            ->whereNotNull('invitation_accepted_at')
+            ->get();
     }
 
     /**
-     * Alert the store's staff who can sign in, plus its general email (unless
-     * a staff member already uses that address).
+     * Alert the store's staff who want order emails, plus its general email
+     * (unless one of them already uses that address).
      */
     public function notifyStaff(Notification $notification): void
     {
-        $staff = $this->signedUpStaff();
+        $staff = $this->staffReceivingOrderEmails();
 
         if ($staff->isNotEmpty()) {
             NotificationFacade::send($staff, $notification);

@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\Pivot;
  * @property int $store_id
  * @property int $store_user_id
  * @property StoreUserRole $role
+ * @property bool $receives_order_emails
  */
 class StoreMembership extends Pivot
 {
@@ -23,6 +24,7 @@ class StoreMembership extends Pivot
     {
         return [
             'role' => StoreUserRole::class,
+            'receives_order_emails' => 'boolean',
         ];
     }
 }

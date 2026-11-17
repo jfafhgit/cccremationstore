@@ -65,7 +65,7 @@ class StoreUser extends Authenticatable
         return $this->belongsToMany(Store::class, 'store_memberships')
             ->using(StoreMembership::class)
             ->as('membership')
-            ->withPivot('id', 'role')
+            ->withPivot('id', 'role', 'receives_order_emails')
             ->withTimestamps();
     }
 
